@@ -1,0 +1,1004 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta http-equiv="Content-Style-Type" content="text/css">
+  <title></title>
+  <meta name="Generator" content="Cocoa HTML Writer">
+  <meta name="CocoaVersion" content="1504.84">
+  <style type="text/css">
+    p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica}
+    p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica; min-height: 14.0px}
+    p.p3 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px 'PingFang SC'}
+    span.s1 {font: 12.0px Helvetica}
+    span.s2 {font: 12.0px 'Apple Color Emoji'}
+    span.s3 {font: 12.0px 'Lucida Grande'}
+  </style>
+</head>
+<body>
+<p class="p1">&lt;!DOCTYPE html&gt;</p>
+<p class="p1">&lt;html lang="it"&gt;</p>
+<p class="p1">&lt;head&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;meta charset="UTF-8"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;title&gt;Robot AI&lt;/title&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;style&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>:root {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>--bg:<span class="Apple-converted-space">      </span>#0f172a;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>--surface: #1e293b;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>--card:<span class="Apple-converted-space">    </span>#263348;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>--accent:<span class="Apple-converted-space">  </span>#10a37f;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>--accent2: #4f46e5;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>--text:<span class="Apple-converted-space">    </span>#f1f5f9;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>--muted: <span class="Apple-converted-space">  </span>#64748b;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>--danger:<span class="Apple-converted-space">  </span>#ef4444;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>--warn:<span class="Apple-converted-space">    </span>#f59e0b;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>--radius:<span class="Apple-converted-space">  </span>16px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>body {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: var(--bg);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: var(--text);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>min-height: 100dvh;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: flex;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>flex-direction: column;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>/* ─── SCREEN INIT ─── */</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#screenInit {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>flex: 1;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: flex;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>flex-direction: column;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>align-items: center;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>justify-content: center;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>padding: 30px 24px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>gap: 24px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>.logo-big { font-size: 4rem; }</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>h1 { font-size: 1.6rem; font-weight: 800; letter-spacing: 1px; }</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>.card {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: var(--surface);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-radius: var(--radius);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>padding: 22px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>width: 100%;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>max-width: 420px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>.card label {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: block;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-size: .75rem;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: var(--muted);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>margin-bottom: 6px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>letter-spacing: .5px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>text-transform: uppercase;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>.card input, .card select {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>width: 100%;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: var(--card);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border: 1px solid #334155;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-radius: 10px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: var(--text);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-size: 1rem;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>padding: 12px 14px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>outline: none;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>margin-bottom: 16px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>-webkit-appearance: none;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.card input:focus, .card select:focus { border-color: var(--accent); }</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>.hint {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-size: .72rem;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: var(--muted);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>margin-top: -12px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>margin-bottom: 16px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>.btn-primary {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>width: 100%;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: linear-gradient(135deg, var(--accent), #0d7f63);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: #fff;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border: none;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-radius: 14px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-size: 1.2rem;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-weight: 800;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>padding: 18px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>cursor: pointer;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>letter-spacing: 1px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>transition: opacity .15s, transform .1s;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.btn-primary:active { opacity: .85; transform: scale(.98); }</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>/* ─── SCREEN MAIN ─── */</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#screenMain {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: none;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>flex: 1;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>flex-direction: column;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>/* Header */</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.topbar {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: var(--surface);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>padding: 14px 18px 12px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: flex;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>align-items: center;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>justify-content: space-between;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-bottom: 1px solid #1e3a5f22;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>.topbar .char-name {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-size: 1rem;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-weight: 700;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>.status-dot {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>width: 10px; height: 10px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-radius: 50%;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: var(--muted);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: inline-block;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>margin-right: 6px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>transition: background .3s;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.status-dot.connected { background: var(--accent); box-shadow: 0 0 6px var(--accent); }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.status-dot.error { background: var(--danger); }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.status-dot.talking { background: var(--warn); animation: pulse .6s ease infinite alternate; }</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>@keyframes pulse { to { opacity: .4; } }</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>.status-label { font-size: .78rem; color: var(--muted); }</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>/* Visualizer */</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#vizCanvas {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: block;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>width: 100%;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>height: 70px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: var(--bg);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>/* Log / transcript */</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#log {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>flex: 1;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>overflow-y: auto;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>padding: 16px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: flex;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>flex-direction: column;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>gap: 10px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-size: .88rem;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>.msg {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>padding: 10px 14px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-radius: 12px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>max-width: 88%;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>line-height: 1.5;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>word-break: break-word;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.msg.robot {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: var(--surface);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>align-self: flex-start;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-bottom-left-radius: 4px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.msg.user {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: #163d2e;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>align-self: flex-end;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-bottom-right-radius: 4px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: #a7f3d0;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.msg.system {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: transparent;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: var(--muted);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-size: .75rem;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>align-self: center;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-style: italic;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>/* Bottom controls */</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.controls {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: var(--surface);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-top: 1px solid #1e3a5f22;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>padding: 14px 18px 24px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: flex;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>flex-direction: column;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>gap: 12px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>.controls-row {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: flex;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>gap: 10px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>align-items: center;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>.btn-round {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>flex: 1;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>height: 60px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-radius: 14px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border: none;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-size: .9rem;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-weight: 700;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>cursor: pointer;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: flex;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>align-items: center;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>justify-content: center;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>gap: 8px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>transition: opacity .15s, transform .1s;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>letter-spacing: .5px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.btn-round:active { opacity: .8; transform: scale(.97); }</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>#btnConnect {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: linear-gradient(135deg, var(--accent), #0d7f63);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: #fff;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#btnConnect.active {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: linear-gradient(135deg, var(--danger), #b91c1c);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>#btnMute {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: var(--card);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: var(--text);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>flex: 0 0 60px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>width: 60px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#btnMute.muted { background: #7f1d1d; color: #fca5a5; }</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>/* Gain slider */</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.slider-row {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: flex;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>align-items: center;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>gap: 10px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-size: .78rem;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: var(--muted);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.slider-row input[type=range] {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>flex: 1;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>accent-color: var(--accent);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>height: 4px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.slider-val {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>min-width: 36px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>text-align: right;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-variant-numeric: tabular-nums;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>/* Token / timer bar */</p>
+<p class="p1"><span class="Apple-converted-space">    </span>.info-bar {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: flex;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>justify-content: space-between;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-size: .72rem;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: var(--muted);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>padding: 0 2px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>/* Settings panel (collapsible) */</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#settingsPanel {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: var(--card);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-radius: var(--radius);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>padding: 16px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: none;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>flex-direction: column;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>gap: 10px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#settingsPanel.open { display: flex; }</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>#settingsPanel label {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-size: .72rem;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: var(--muted);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>text-transform: uppercase;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>letter-spacing: .4px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>margin-bottom: 2px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: block;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#settingsPanel select, #settingsPanel input {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>width: 100%;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: var(--surface);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border: 1px solid #334155;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-radius: 8px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: var(--text);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-size: .9rem;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>padding: 8px 10px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>-webkit-appearance: none;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>.settings-grid {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: grid;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>grid-template-columns: 1fr 1fr;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>gap: 10px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>.btn-settings {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: transparent;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border: 1px solid #334155;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-radius: 10px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: var(--muted);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-size: .78rem;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>padding: 8px 12px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>cursor: pointer;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>display: flex;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>align-items: center;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>gap: 6px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>/* Toast */</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#toast {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>position: fixed;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>bottom: 100px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>left: 50%;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>transform: translateX(-50%);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>background: #1e293b;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: var(--text);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>border-radius: 20px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>padding: 10px 20px;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>font-size: .82rem;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>opacity: 0;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>transition: opacity .3s;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>pointer-events: none;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>z-index: 999;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>white-space: nowrap;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#toast.show { opacity: 1; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;/style&gt;</p>
+<p class="p1">&lt;/head&gt;</p>
+<p class="p1">&lt;body&gt;</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">&lt;!-- </span>══════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">     </span>SCHERMATA INIZIALE</p>
+<p class="p3">══════════════════════════════════════<span class="s1"> --&gt;</span></p>
+<p class="p1">&lt;div id="screenInit"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;div class="logo-big"&gt;<span class="s2">🤖</span>&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;h1&gt;Robot AI&lt;/h1&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;div class="card"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;label&gt;API Key OpenAI&lt;/label&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;input type="password" id="apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;div class="hint"&gt;<span class="s2">🔒</span> Rimane solo in RAM — scompare alla chiusura&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;label&gt;Voce&lt;/label&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;select id="initVoice"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;option value="alloy"&gt;Alloy&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;option value="echo"&gt;Echo&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;option value="shimmer"&gt;Shimmer&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;option value="verse"&gt;Verse&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;option value="coral"&gt;Coral&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;option value="ash"&gt;Ash&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;/select&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;label&gt;Modello&lt;/label&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;select id="initModel"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;option value="gpt-4o-realtime-preview"&gt;gpt-4o-realtime-preview&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;option value="gpt-4o-mini-realtime-preview"&gt;gpt-4o-mini-realtime-preview&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;/select&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;button class="btn-primary" onclick="goMain()"&gt;<span class="s2">🚀</span> AVVIA&lt;/button&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;/div&gt;</p>
+<p class="p1">&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">&lt;!-- </span>══════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">     </span>SCHERMATA PRINCIPALE</p>
+<p class="p3">══════════════════════════════════════<span class="s1"> --&gt;</span></p>
+<p class="p1">&lt;div id="screenMain"&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;!-- Topbar --&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;div class="topbar"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;span class="char-name" id="charName"&gt;<span class="s2">🤖</span> Robot AI&lt;/span&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;span class="status-dot" id="statusDot"&gt;&lt;/span&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;span class="status-label" id="statusLabel"&gt;Disconnesso&lt;/span&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;!-- Visualizer --&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;canvas id="vizCanvas"&gt;&lt;/canvas&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;!-- Transcript --&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;div id="log"&gt;&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;!-- Controls --&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;div class="controls"&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;!-- Info bar --&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;div class="info-bar"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;span id="timerLabel"&gt;<span class="s2">⏱</span> --:--&lt;/span&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;span id="tokenLabel"&gt;<span class="s2">💰</span> -- tok&lt;/span&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;span id="costLabel"&gt;$--.--&lt;/span&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;!-- Settings panel --&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;div id="settingsPanel"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;div class="settings-grid"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;label&gt;VAD Threshold&lt;/label&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;input type="number" id="cfgVadThresh" value="0.5" step="0.05" min="0" max="1"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;label&gt;Silenzio (ms)&lt;/label&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;input type="number" id="cfgSilenceMs" value="700" step="50"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;label&gt;Temperatura&lt;/label&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;input type="number" id="cfgTemp" value="0.8" step="0.05" min="0" max="1.2"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;label&gt;Eagerness&lt;/label&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;select id="cfgEagerness"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;option value="auto"&gt;Auto&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;option value="low"&gt;Low&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;option value="medium"&gt;Medium&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;option value="high"&gt;High&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;/select&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;label&gt;Voce&lt;/label&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;select id="cfgVoice"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;option value="alloy"&gt;Alloy&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;option value="echo"&gt;Echo&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;option value="shimmer"&gt;Shimmer&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;option value="verse"&gt;Verse&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;option value="coral"&gt;Coral&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;option value="ash"&gt;Ash&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;/select&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;label&gt;Barge-in&lt;/label&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;select id="cfgBargein"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;option value="true"&gt;Attivo&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">            </span>&lt;option value="false"&gt;Disattivo&lt;/option&gt;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>&lt;/select&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;label&gt;Istruzioni (system prompt)&lt;/label&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;textarea id="cfgSystem" rows="4"</p>
+<p class="p1"><span class="Apple-converted-space">        </span>style="width:100%;background:var(--surface);border:1px solid #334155;border-radius:8px;</p>
+<p class="p1"><span class="Apple-converted-space">               </span>color:var(--text);font-size:.85rem;padding:8px 10px;resize:vertical;outline:none"&gt;</p>
+<p class="p1">Sei un assistente vocale simpatico e conciso. Rispondi sempre in italiano.&lt;/textarea&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;!-- Main row --&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;div class="controls-row"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;button class="btn-round" id="btnConnect" onclick="toggleConnect()"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;span id="btnConnectIcon"&gt;<span class="s2">📡</span>&lt;/span&gt;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>&lt;span id="btnConnectLabel"&gt;CONNETTI&lt;/span&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;/button&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;button class="btn-round" id="btnMute" onclick="toggleMute()"&gt;<span class="s2">🎙</span>&lt;/button&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;!-- Gain row --&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;div class="slider-row"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;span&gt;<span class="s2">🎙</span> Gain&lt;/span&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;input type="range" id="gainSlider" min="0.5" max="5" step="0.1" value="1"</p>
+<p class="p1"><span class="Apple-converted-space">             </span>oninput="setGain(this.value)"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;span class="slider-val" id="gainVal"&gt;1.0×&lt;/span&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;!-- Buttons row 2 --&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;div class="controls-row" style="gap:8px"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;button class="btn-settings" onclick="toggleSettings()"&gt;<span class="s2">⚙️</span> Impostazioni&lt;/button&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;button class="btn-settings" onclick="speedTest()"&gt;<span class="s2">📶</span> Speed&lt;/button&gt;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>&lt;button class="btn-settings" id="btnRec" onclick="toggleRec()"&gt;<span class="s2">⏺</span> REC&lt;/button&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;/div&gt;</p>
+<p class="p1">&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1">&lt;!-- Toast --&gt;</p>
+<p class="p1">&lt;div id="toast"&gt;&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1">&lt;script&gt;</p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>STATO GLOBALE</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">let API_KEY = '';</p>
+<p class="p1">let ws = null;</p>
+<p class="p1">let audioCtx = null;</p>
+<p class="p1">let workletNode = null;</p>
+<p class="p1">let micStream = null;</p>
+<p class="p1">let muted = false;</p>
+<p class="p1">let connected = false;</p>
+<p class="p1">let settingsOpen = false;</p>
+<p class="p2"><br></p>
+<p class="p1">// Token / cost tracking</p>
+<p class="p1">let totalInputTok = 0, totalOutputTok = 0;</p>
+<p class="p1">const PRICE_IN = 5.00 / 1e6; <span class="Apple-converted-space">  </span>// $ per token (gpt-4o-realtime)</p>
+<p class="p1">const PRICE_OUT = 20.00 / 1e6;</p>
+<p class="p2"><br></p>
+<p class="p1">// Timer silenzio</p>
+<p class="p1">let silenceTimer = null;</p>
+<p class="p1">let silenceStart = null;</p>
+<p class="p2"><br></p>
+<p class="p1">// REC</p>
+<p class="p1">let recChunks = [];</p>
+<p class="p1">let isRecording = false;</p>
+<p class="p1">let recSampleRate = 24000;</p>
+<p class="p2"><br></p>
+<p class="p1">// Visualizer</p>
+<p class="p1">const vizCanvas = document.getElementById('vizCanvas');</p>
+<p class="p1">const vizCtx = vizCanvas.getContext('2d');</p>
+<p class="p1">let analyser = null;</p>
+<p class="p1">let vizFrame = null;</p>
+<p class="p2"><br></p>
+<p class="p1">// Transcript corrente del robot (per streaming)</p>
+<p class="p1">let currentRobotMsg = null;</p>
+<p class="p1">let currentRobotText = '';</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>INIT</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">function goMain() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>API_KEY = document.getElementById('apiKey').value.trim();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (!API_KEY.startsWith('sk-')) {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>toast('<span class="s2">❌</span> Inserisci una API key valida (sk-...)'); return;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>// Sync impostazioni iniziali</p>
+<p class="p1"><span class="Apple-converted-space">  </span>document.getElementById('cfgVoice').value = document.getElementById('initVoice').value;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>document.getElementById('screenInit').style.display = 'none';</p>
+<p class="p1"><span class="Apple-converted-space">  </span>document.getElementById('screenMain').style.display = 'flex';</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>resizeViz();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>window.addEventListener('resize', resizeViz);</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">function resizeViz() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>vizCanvas.width = vizCanvas.offsetWidth * devicePixelRatio;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>vizCanvas.height = vizCanvas.offsetHeight * devicePixelRatio;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>vizCtx.scale(devicePixelRatio, devicePixelRatio);</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>CONNESSIONE</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">async function toggleConnect() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (connected) {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>disconnect();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>} else {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>await connect();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">async function connect() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>setStatus('connecting');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>addLog('Connessione a OpenAI Realtime...', 'system');</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>try {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Mic</p>
+<p class="p1"><span class="Apple-converted-space">    </span>micStream = await navigator.mediaDevices.getUserMedia({</p>
+<p class="p1"><span class="Apple-converted-space">      </span>audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 24000 }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>});</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>audioCtx = new AudioContext({ sampleRate: 24000 });</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Analyser per visualizer</p>
+<p class="p1"><span class="Apple-converted-space">    </span>analyser = audioCtx.createAnalyser();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>analyser.fftSize = 256;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const src = audioCtx.createMediaStreamSource(micStream);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>src.connect(analyser);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// AudioWorklet</p>
+<p class="p1"><span class="Apple-converted-space">    </span>await audioCtx.audioWorklet.addModule('audio-processor.js');</p>
+<p class="p1"><span class="Apple-converted-space">    </span>workletNode = new AudioWorkletNode(audioCtx, 'pcm16-processor');</p>
+<p class="p1"><span class="Apple-converted-space">    </span>workletNode.port.onmessage = onMicChunk;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>analyser.connect(workletNode);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Non connect a destination (non vogliamo sentire il mic in cuffia)</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// WebSocket</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const model = document.getElementById('initModel').value;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ws = new WebSocket(</p>
+<p class="p1"><span class="Apple-converted-space">      </span>`wss://api.openai.com/v1/realtime?model=${model}`,</p>
+<p class="p1"><span class="Apple-converted-space">      </span>['realtime', `openai-insecure-api-key.${API_KEY}`, 'openai-beta.realtime-v1']</p>
+<p class="p1"><span class="Apple-converted-space">    </span>);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ws.binaryType = 'arraybuffer';</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>ws.onopen = () =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>sendSessionUpdate();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>setStatus('connected');</p>
+<p class="p1"><span class="Apple-converted-space">      </span>connected = true;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>updateConnectBtn();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>addLog('<span class="s2">✅</span> Connesso! Parla pure...', 'system');</p>
+<p class="p1"><span class="Apple-converted-space">      </span>startViz();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>};</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>ws.onmessage = onWsMessage;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>ws.onerror = (e) =&gt; { toast('<span class="s2">❌</span> Errore WebSocket'); disconnect(); };</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ws.onclose = (e) =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (connected) { addLog('<span class="s2">🔌</span> Connessione chiusa', 'system'); disconnect(); }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>};</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>} catch(e) {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>toast('<span class="s2">❌</span> ' + e.message);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>setStatus('error');</p>
+<p class="p1"><span class="Apple-converted-space">    </span>disconnect();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">function disconnect() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>connected = false;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (ws) { try { ws.close(); } catch(e){} ws = null; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (workletNode) { workletNode.port.postMessage({cmd:'stop'}); workletNode = null; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (micStream) { micStream.getTracks().forEach(t =&gt; t.stop()); micStream = null; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (audioCtx) { audioCtx.close(); audioCtx = null; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (vizFrame) { cancelAnimationFrame(vizFrame); vizFrame = null; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>analyser = null;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>setStatus('disconnected');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>updateConnectBtn();</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>SESSION CONFIG</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">function sendSessionUpdate() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const voice<span class="Apple-converted-space">    </span>= document.getElementById('cfgVoice').value;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const system <span class="Apple-converted-space">  </span>= document.getElementById('cfgSystem').value.trim();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const temp <span class="Apple-converted-space">    </span>= parseFloat(document.getElementById('cfgTemp').value);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const silence<span class="Apple-converted-space">  </span>= parseInt(document.getElementById('cfgSilenceMs').value);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const thresh <span class="Apple-converted-space">  </span>= parseFloat(document.getElementById('cfgVadThresh').value);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const eagerness= document.getElementById('cfgEagerness').value;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const bargein<span class="Apple-converted-space">  </span>= document.getElementById('cfgBargein').value === 'true';</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>ws.send(JSON.stringify({</p>
+<p class="p1"><span class="Apple-converted-space">    </span>type: 'session.update',</p>
+<p class="p1"><span class="Apple-converted-space">    </span>session: {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>modalities: ['audio', 'text'],</p>
+<p class="p1"><span class="Apple-converted-space">      </span>voice,</p>
+<p class="p1"><span class="Apple-converted-space">      </span>instructions: system,</p>
+<p class="p1"><span class="Apple-converted-space">      </span>temperature: temp,</p>
+<p class="p1"><span class="Apple-converted-space">      </span>turn_detection: {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>type: 'server_vad',</p>
+<p class="p1"><span class="Apple-converted-space">        </span>threshold: thresh,</p>
+<p class="p1"><span class="Apple-converted-space">        </span>silence_duration_ms: silence,</p>
+<p class="p1"><span class="Apple-converted-space">        </span>prefix_padding_ms: 300,</p>
+<p class="p1"><span class="Apple-converted-space">        </span>create_response: true,</p>
+<p class="p1"><span class="Apple-converted-space">        </span>interrupt_response: bargein,</p>
+<p class="p1"><span class="Apple-converted-space">        </span>eagerness</p>
+<p class="p1"><span class="Apple-converted-space">      </span>},</p>
+<p class="p1"><span class="Apple-converted-space">      </span>input_audio_format: 'pcm16',</p>
+<p class="p1"><span class="Apple-converted-space">      </span>output_audio_format: 'pcm16',</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}));</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>AUDIO IN (mic <span class="s3">→</span> ws)</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">function onMicChunk(e) {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (!ws || ws.readyState !== WebSocket.OPEN || muted) return;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const pcm = new Int16Array(e.data);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const b64 = btoa(String.fromCharCode(...new Uint8Array(pcm.buffer)));</p>
+<p class="p1"><span class="Apple-converted-space">  </span>ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }));</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>AUDIO OUT (ws <span class="s3">→</span> speaker)</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">let audioQueue = [];</p>
+<p class="p1">let isPlaying = false;</p>
+<p class="p2"><br></p>
+<p class="p1">function onWsMessage(e) {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>let msg;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>try { msg = JSON.parse(e.data); } catch { return; }</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>switch (msg.type) {</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>case 'response.audio.delta':</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (msg.delta) {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>const bytes = Uint8Array.from(atob(msg.delta), c =&gt; c.charCodeAt(0));</p>
+<p class="p1"><span class="Apple-converted-space">        </span>const pcm = new Int16Array(bytes.buffer);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>audioQueue.push(pcm);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>if (!isPlaying) drainAudio();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>}</p>
+<p class="p1"><span class="Apple-converted-space">      </span>break;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>case 'response.audio_transcript.delta':</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (msg.delta) appendRobotText(msg.delta);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>break;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>case 'response.audio_transcript.done':</p>
+<p class="p1"><span class="Apple-converted-space">      </span>finalizeRobotText();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>break;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>case 'conversation.item.input_audio_transcription.completed':</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (msg.transcript) addLog(msg.transcript, 'user');</p>
+<p class="p1"><span class="Apple-converted-space">      </span>break;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>case 'response.done':</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const usage = msg.response?.usage;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (usage) updateTokens(usage);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>break;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>case 'input_audio_buffer.speech_started':</p>
+<p class="p1"><span class="Apple-converted-space">      </span>setStatus('listening');</p>
+<p class="p1"><span class="Apple-converted-space">      </span>resetSilenceTimer();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>break;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>case 'input_audio_buffer.speech_stopped':</p>
+<p class="p1"><span class="Apple-converted-space">      </span>setStatus('connected');</p>
+<p class="p1"><span class="Apple-converted-space">      </span>startSilenceTimer();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>break;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>case 'response.audio.done':</p>
+<p class="p1"><span class="Apple-converted-space">      </span>setStatus('connected');</p>
+<p class="p1"><span class="Apple-converted-space">      </span>break;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>case 'error':</p>
+<p class="p1"><span class="Apple-converted-space">      </span>toast('<span class="s2">⚠️</span> ' + (msg.error?.message || 'Errore API'));</p>
+<p class="p1"><span class="Apple-converted-space">      </span>break;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">// PCM16 <span class="s3">→</span> Web Audio playback</p>
+<p class="p1">async function drainAudio() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (!audioCtx || audioQueue.length === 0) { isPlaying = false; return; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>isPlaying = true;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>setStatus('talking');</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>const pcm = audioQueue.shift();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const float = new Float32Array(pcm.length);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>for (let i = 0; i &lt; pcm.length; i++) float[i] = pcm[i] / (pcm[i] &lt; 0 ? 0x8000 : 0x7FFF);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>const buf = audioCtx.createBuffer(1, float.length, 24000);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>buf.copyToChannel(float, 0);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>// REC</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (isRecording) recChunks.push(pcm);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>const src = audioCtx.createBufferSource();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>src.buffer = buf;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>src.connect(audioCtx.destination);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>src.onended = () =&gt; drainAudio();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>src.start();</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>TRANSCRIPT</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">function appendRobotText(delta) {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>currentRobotText += delta;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (!currentRobotMsg) {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>currentRobotMsg = document.createElement('div');</p>
+<p class="p1"><span class="Apple-converted-space">    </span>currentRobotMsg.className = 'msg robot';</p>
+<p class="p1"><span class="Apple-converted-space">    </span>document.getElementById('log').appendChild(currentRobotMsg);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>currentRobotMsg.textContent = currentRobotText;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>scrollLog();</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">function finalizeRobotText() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>currentRobotMsg = null;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>currentRobotText = '';</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">function addLog(text, type) {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const d = document.createElement('div');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>d.className = 'msg ' + type;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>d.textContent = text;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>document.getElementById('log').appendChild(d);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>scrollLog();</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">function scrollLog() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const log = document.getElementById('log');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>log.scrollTop = log.scrollHeight;</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>TOKEN / COST</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">function updateTokens(usage) {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>totalInputTok<span class="Apple-converted-space">  </span>+= usage.input_tokens<span class="Apple-converted-space">  </span>|| 0;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>totalOutputTok += usage.output_tokens || 0;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const cost = totalInputTok * PRICE_IN + totalOutputTok * PRICE_OUT;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>document.getElementById('tokenLabel').textContent =</p>
+<p class="p1"><span class="Apple-converted-space">    </span>`<span class="s2">💰</span> ${totalInputTok + totalOutputTok} tok`;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>document.getElementById('costLabel').textContent =</p>
+<p class="p1"><span class="Apple-converted-space">    </span>`$${cost.toFixed(4)}`;</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>TIMER SILENZIO</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">let timerInterval = null;</p>
+<p class="p2"><br></p>
+<p class="p1">function startSilenceTimer() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>silenceStart = Date.now();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>clearInterval(timerInterval);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>timerInterval = setInterval(() =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const s = Math.floor((Date.now() - silenceStart) / 1000);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const m = Math.floor(s / 60);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>document.getElementById('timerLabel').textContent =</p>
+<p class="p1"><span class="Apple-converted-space">      </span>`<span class="s2">⏱</span> ${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}, 500);</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">function resetSilenceTimer() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>clearInterval(timerInterval);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>silenceStart = null;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>document.getElementById('timerLabel').textContent = '<span class="s2">⏱</span> --:--';</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>GAIN</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">function setGain(v) {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>document.getElementById('gainVal').textContent = parseFloat(v).toFixed(1) + '×';</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (workletNode) workletNode.port.postMessage({ cmd: 'gain', value: parseFloat(v) });</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>MUTE</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">function toggleMute() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>muted = !muted;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const btn = document.getElementById('btnMute');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>btn.textContent = muted ? '<span class="s2">🔇</span>' : '<span class="s2">🎙</span>';</p>
+<p class="p1"><span class="Apple-converted-space">  </span>btn.classList.toggle('muted', muted);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>toast(muted ? '<span class="s2">🔇</span> Microfono silenziato' : '<span class="s2">🎙</span> Microfono attivo');</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>VISUALIZER</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">function startViz() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const W = () =&gt; vizCanvas.offsetWidth;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const H = () =&gt; vizCanvas.offsetHeight;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>function draw() {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>vizFrame = requestAnimationFrame(draw);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>if (!analyser) return;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const data = new Uint8Array(analyser.frequencyBinCount);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>analyser.getByteFrequencyData(data);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>vizCtx.fillStyle = '#0f172a';</p>
+<p class="p1"><span class="Apple-converted-space">    </span>vizCtx.fillRect(0, 0, W(), H());</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>const barW = W() / data.length * 2.5;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>let x = 0;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>for (let i = 0; i &lt; data.length; i++) {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const h = (data[i] / 255) * H();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const g = vizCtx.createLinearGradient(0, H() - h, 0, H());</p>
+<p class="p1"><span class="Apple-converted-space">      </span>g.addColorStop(0, '#10a37f');</p>
+<p class="p1"><span class="Apple-converted-space">      </span>g.addColorStop(1, '#0d7f6322');</p>
+<p class="p1"><span class="Apple-converted-space">      </span>vizCtx.fillStyle = g;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>vizCtx.fillRect(x, H() - h, barW - 1, h);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>x += barW;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>draw();</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>STATUS</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">function setStatus(s) {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const dot <span class="Apple-converted-space">  </span>= document.getElementById('statusDot');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const label = document.getElementById('statusLabel');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>dot.className = 'status-dot';</p>
+<p class="p1"><span class="Apple-converted-space">  </span>switch(s) {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>case 'connected': <span class="Apple-converted-space">  </span>dot.classList.add('connected'); label.textContent = 'Connesso'; break;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>case 'connecting':<span class="Apple-converted-space">  </span>label.textContent = 'Connessione...'; break;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>case 'listening': <span class="Apple-converted-space">  </span>dot.classList.add('talking'); label.textContent = 'In ascolto...'; break;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>case 'talking': <span class="Apple-converted-space">    </span>dot.classList.add('talking'); label.textContent = 'Risponde...'; break;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>case 'error': <span class="Apple-converted-space">      </span>dot.classList.add('error'); label.textContent = 'Errore'; break;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>default:<span class="Apple-converted-space">            </span>label.textContent = 'Disconnesso';</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">function updateConnectBtn() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const btn <span class="Apple-converted-space">  </span>= document.getElementById('btnConnect');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const icon<span class="Apple-converted-space">  </span>= document.getElementById('btnConnectIcon');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const label = document.getElementById('btnConnectLabel');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (connected) {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>btn.classList.add('active');</p>
+<p class="p1"><span class="Apple-converted-space">    </span>icon.textContent<span class="Apple-converted-space">  </span>= '<span class="s2">🔴</span>';</p>
+<p class="p1"><span class="Apple-converted-space">    </span>label.textContent = 'DISCONNETTI';</p>
+<p class="p1"><span class="Apple-converted-space">  </span>} else {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>btn.classList.remove('active');</p>
+<p class="p1"><span class="Apple-converted-space">    </span>icon.textContent<span class="Apple-converted-space">  </span>= '<span class="s2">📡</span>';</p>
+<p class="p1"><span class="Apple-converted-space">    </span>label.textContent = 'CONNETTI';</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>SETTINGS PANEL</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">function toggleSettings() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>settingsOpen = !settingsOpen;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>document.getElementById('settingsPanel').classList.toggle('open', settingsOpen);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>// Aggiorna sessione live se connesso</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (connected &amp;&amp; settingsOpen === false) sendSessionUpdate();</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>SPEED TEST</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">async function speedTest() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>toast('<span class="s2">📶</span> Speed test...');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const t0 = Date.now();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>try {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>await fetch('https://api.openai.com/v1/models', {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>headers: { Authorization: `Bearer ${API_KEY}` }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>});</p>
+<p class="p1"><span class="Apple-converted-space">    </span>toast(`<span class="s2">📶</span> Latenza: ${Date.now() - t0}ms`);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>} catch {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>toast('<span class="s2">❌</span> Speed test fallito');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>REC (WAV download)</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">function toggleRec() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>isRecording = !isRecording;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const btn = document.getElementById('btnRec');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (isRecording) {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>recChunks = [];</p>
+<p class="p1"><span class="Apple-converted-space">    </span>btn.textContent = '<span class="s2">⏹</span> STOP REC';</p>
+<p class="p1"><span class="Apple-converted-space">    </span>btn.style.color = '#ef4444';</p>
+<p class="p1"><span class="Apple-converted-space">    </span>toast('<span class="s2">⏺</span> Registrazione avviata');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>} else {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>btn.textContent = '<span class="s2">⏺</span> REC';</p>
+<p class="p1"><span class="Apple-converted-space">    </span>btn.style.color = '';</p>
+<p class="p1"><span class="Apple-converted-space">    </span>if (recChunks.length &gt; 0) downloadWav();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>toast('<span class="s2">💾</span> WAV salvato');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">function downloadWav() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>// Unisci tutti i chunk PCM16 con 1s di silenzio tra ognuno</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const silence = new Int16Array(recSampleRate); // 1s silenzio</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const parts = [];</p>
+<p class="p1"><span class="Apple-converted-space">  </span>recChunks.forEach((c, i) =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>parts.push(c);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>if (i &lt; recChunks.length - 1) parts.push(silence);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>});</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>const total = parts.reduce((a, c) =&gt; a + c.length, 0);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const pcm <span class="Apple-converted-space">  </span>= new Int16Array(total);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>let off = 0;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>parts.forEach(p =&gt; { pcm.set(p, off); off += p.length; });</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>const wav = encodeWav(pcm, recSampleRate);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const url = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }));</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const a <span class="Apple-converted-space">  </span>= document.createElement('a');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>a.href<span class="Apple-converted-space">    </span>= url;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>a.download = `robot-rec-${Date.now()}.wav`;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>a.click();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>URL.revokeObjectURL(url);</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">function encodeWav(pcm, sr) {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const len<span class="Apple-converted-space">    </span>= pcm.length;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const buf<span class="Apple-converted-space">    </span>= new ArrayBuffer(44 + len * 2);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const view <span class="Apple-converted-space">  </span>= new DataView(buf);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const write<span class="Apple-converted-space">  </span>= (off, str) =&gt; [...str].forEach((c, i) =&gt; view.setUint8(off + i, c.charCodeAt(0)));</p>
+<p class="p1"><span class="Apple-converted-space">  </span>write(0, 'RIFF'); view.setUint32(4, 36 + len * 2, true);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>write(8, 'WAVE'); write(12, 'fmt ');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>view.setUint32(16, 16, true); view.setUint16(20, 1, true);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>view.setUint16(22, 1, true); view.setUint32(24, sr, true);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>view.setUint32(28, sr * 2, true); view.setUint16(32, 2, true);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>view.setUint16(34, 16, true); write(36, 'data');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>view.setUint32(40, len * 2, true);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>for (let i = 0; i &lt; len; i++) view.setInt16(44 + i * 2, pcm[i], true);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>return buf;</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p3"><span class="s1">/* </span>═══════════════════════════════════════════════</p>
+<p class="p1"><span class="Apple-converted-space">   </span>TOAST</p>
+<p class="p3">═══════════════════════════════════════════════<span class="s1"> */</span></p>
+<p class="p1">let toastTimer = null;</p>
+<p class="p1">function toast(msg) {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const el = document.getElementById('toast');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>el.textContent = msg;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>el.classList.add('show');</p>
+<p class="p1"><span class="Apple-converted-space">  </span>clearTimeout(toastTimer);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>toastTimer = setTimeout(() =&gt; el.classList.remove('show'), 2800);</p>
+<p class="p1">}</p>
+<p class="p1">&lt;/script&gt;</p>
+<p class="p1">&lt;/body&gt;</p>
+<p class="p1">&lt;/html&gt;</p>
+</body>
+</html>
