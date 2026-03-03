@@ -285,27 +285,46 @@ function onKeyInput() {
   if (k.length > 10) { localStorage.setItem(LS_KEY, k); setKeyStatus(true); }
 }
 function loadKeysFile(input) {
-  const file = input.files[0]; if (!file) return;
+  const file = input.files[0];
+  if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    const text = e.target.result.replace(/^\uFEFF/, '').replace(/\r/g, '');
+    const bytes = new Uint8Array(e.target.result);
+    let text = '';
+    if (bytes[0] === 0xFF && bytes[1] === 0xFE) {
+      for (let i = 2; i < bytes.length - 1; i += 2)
+        text += String.fromCharCode(bytes[i] | (bytes[i+1] << 8));
+    } else if (bytes[0] === 0xFE && bytes[1] === 0xFF) {
+      for (let i = 2; i < bytes.length - 1; i += 2)
+        text += String.fromCharCode((bytes[i] << 8) | bytes[i+1]);
+    } else {
+      text = new TextDecoder('utf-8').decode(e.target.result);
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    }
+    const lines = text.replace(/\r/g, '').split('\n');
     let found = false;
-    text.split('\n').forEach(line => {
-      line = line.trim();
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
       if (line.startsWith('GEMINI_KEY=')) {
-        const k = line.slice(11).replace(/[\s"'`]/g, '');
+        const k = line.slice(11).replace(/^["'\s]+|["'\s]+$/g, '');
         if (k.length > 10) {
           document.getElementById('keyGemini').value = k;
           localStorage.setItem(LS_KEY, k);
           setKeyStatus(true);
           found = true;
+          toast(`✅ Chiave Gemini caricata (${k.length} chars)`);
+        } else {
+          toast(`⚠️ Chiave trovata ma corta: "${k}" (${k.length} chars)`);
         }
       }
-    });
-    toast(found ? '✅ Chiave Gemini caricata' : '⚠️ GEMINI_KEY= non trovata nel file');
+    }
+    if (!found) {
+      const preview = lines.slice(0,3).join(' | ');
+      toast(`⚠️ GEMINI_KEY= non trovata. File: "${preview.slice(0,60)}"`);
+    }
     input.value = '';
   };
-  reader.readAsText(file);
+  reader.readAsArrayBuffer(file);
 }
 
 /* ── PERSONAGGI (identico a openai.html) ── */
@@ -386,7 +405,9 @@ function importCharFile(input) {
 /* ── AVVIO ── */
 function goMain() {
   const raw = document.getElementById('keyGemini').value;
-  API_KEY = raw.replace(/[^\x20-\x7E]/g, '').trim();
+  // Rimuove solo caratteri di controllo, mantiene tutto il resto
+  API_KEY = raw.replace(/[\x00-\x1F\x7F\u200B-\u200D\uFEFF]/g, '').trim();
+  console.log('[Gemini] Key length:', API_KEY.length, '| First 10:', API_KEY.slice(0,10));
   if (API_KEY.length < 10) { toast('❌ Chiave Gemini troppo corta (' + API_KEY.length + ' chars)'); return; }
   const charName = document.getElementById('selChar').value;
   const char = getChars().find(c => c.name === charName);
