@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Robot AI — OpenAI</title>
+  <title>Robot AI — OpenAI v2</title>
   <style>
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     :root {
@@ -509,32 +509,43 @@ async function connect() {
   } catch(e) { toast('❌ ' + e.message); setStatus('error'); disconnect(); }
 }
 function sendSession() {
-  // Usa le variabili JS — più affidabile che leggere il DOM su mobile
-  const voice       = document.getElementById('cfgVoice').value || activeVoice;
-  const instructions= document.getElementById('cfgSystem').value.trim() || activePrompt;
-  console.log('[Session] Voice:', voice, '| Prompt start:', instructions.slice(0,60));
-  ws.send(JSON.stringify({ type:'session.update', session:{
-    modalities:['audio','text'],
-    voice,
-    instructions,
-    temperature: parseFloat(document.getElementById('cfgTemp').value),
-    turn_detection:{
-      type:'server_vad',
-      threshold: parseFloat(document.getElementById('cfgVadThresh').value),
-      silence_duration_ms: parseInt(document.getElementById('cfgSilenceMs').value),
-      prefix_padding_ms:300, create_response:true,
-      interrupt_response: document.getElementById('cfgBargein').value==='true',
-      eagerness: document.getElementById('cfgEagerness').value
-    },
-    input_audio_format:'pcm16', output_audio_format:'pcm16',
-    input_audio_transcription:{ model:'whisper-1' }
-  }}));
+  const voice        = document.getElementById('cfgVoice').value || activeVoice;
+  const instructions = document.getElementById('cfgSystem').value.trim() || activePrompt;
+  console.log('[Session] Voice:', voice, '| Prompt:', instructions.slice(0, 60));
+
+  // Struttura GA (nuova API OpenAI — voce dentro audio.output.voice)
+  ws.send(JSON.stringify({
+    type: 'session.update',
+    session: {
+      type: 'realtime',
+      instructions,
+      output_modalities: ['audio', 'text'],
+      audio: {
+        input: {
+          format: { type: 'audio/pcm', rate: 24000 },
+          turn_detection: {
+            type: 'server_vad',
+            eagerness: document.getElementById('cfgEagerness').value,
+            interrupt_on_speech_probability: parseFloat(document.getElementById('cfgVadThresh').value),
+            silence_duration_ms: parseInt(document.getElementById('cfgSilenceMs').value),
+            prefix_padding_ms: 300
+          }
+        },
+        output: {
+          format: { type: 'audio/pcm' },
+          voice
+        }
+      },
+      temperature: parseFloat(document.getElementById('cfgTemp').value),
+    }
+  }));
 }
 function onMicChunk(e) {
   if (!ws || ws.readyState !== WebSocket.OPEN || muted) return;
   const pcm = new Int16Array(e.data);
   const b64 = btoa(String.fromCharCode(...new Uint8Array(pcm.buffer)));
-  ws.send(JSON.stringify({ type:'input_audio_buffer.append', audio:b64 }));
+  // GA API: input_audio_buffer.append con audio base64 PCM16
+  ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }));
 }
 function onMsg(e) {
   let msg; try { msg = JSON.parse(e.data); } catch { return; }
