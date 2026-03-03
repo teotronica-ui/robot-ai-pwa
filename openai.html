@@ -5,270 +5,399 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Robot AI — OpenAI v5</title>
   <style>
-    *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
-    :root {
-      --bg:#0f172a; --surface:#1e293b; --card:#263348;
-      --accent:#10a37f; --text:#f1f5f9; --muted:#64748b;
-      --danger:#ef4444; --warn:#f59e0b; --radius:16px;
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#070d18;--surf:#0c1525;--card:#101d2e;--bord:#162538;
+      --green:#00e5a0;--blue:#3b9eff;--red:#ff3d3d;--yellow:#ffb800;
+      --text:#dff0ff;--muted:#3d6080;
+      --mono:'Share Tech Mono',monospace;--sans:'Exo 2',sans-serif;
     }
-    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; display:flex; flex-direction:column; }
+    body{font-family:var(--sans);background:var(--bg);color:var(--text);
+      min-height:100dvh;display:flex;flex-direction:column;align-items:center;
+      padding:10px 10px 60px;gap:9px}
+    body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:999;
+      background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,229,160,.008) 3px,rgba(0,229,160,.008) 4px)}
 
-    /* ── INIT ── */
-    #screenInit { flex:1; display:flex; flex-direction:column; align-items:center; padding:24px 18px 40px; gap:14px; overflow-y:auto; }
-    .logo-big { font-size:3rem; margin-top:6px; }
-    h1 { font-size:1.4rem; font-weight:800; }
-    .card { background:var(--surface); border-radius:var(--radius); padding:18px; width:100%; max-width:440px; }
-    .card-title { font-size:.75rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:13px; }
-    .field { margin-bottom:12px; }
-    .field:last-child { margin-bottom:0; }
-    .field label { display:block; font-size:.7rem; color:var(--muted); margin-bottom:5px; text-transform:uppercase; letter-spacing:.4px; }
-    .field input, .field select, .field textarea { width:100%; background:var(--card); border:1px solid #334155; border-radius:10px; color:var(--text); font-size:.9rem; padding:10px 12px; outline:none; -webkit-appearance:none; }
-    .field input:focus, .field select:focus { border-color:var(--accent); }
-    .field textarea { resize:vertical; min-height:70px; }
-    .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-    .key-status { font-size:.68rem; margin-top:4px; min-height:15px; }
-    .key-status.ok { color:var(--accent); }
-    .key-status.warn { color:var(--warn); }
-    .upload-area { border:2px dashed #334155; border-radius:10px; padding:12px; text-align:center; cursor:pointer; font-size:.78rem; color:var(--muted); transition:border-color .2s; }
-    .upload-area:hover { border-color:var(--accent); color:var(--accent); }
-    .upload-area input[type=file] { display:none; }
-    .char-row { display:flex; gap:8px; }
-    .char-row select { flex:1; }
-    .btn-icon { background:var(--card); border:1px solid #334155; border-radius:8px; color:var(--text); font-size:1rem; padding:8px 10px; cursor:pointer; }
-    .btn-primary { width:100%; max-width:440px; background:linear-gradient(135deg,var(--accent),#0d7f63); color:#fff; border:none; border-radius:14px; font-size:1.1rem; font-weight:800; padding:17px; cursor:pointer; letter-spacing:1px; transition:opacity .15s,transform .1s; }
-    .btn-primary:active { opacity:.85; transform:scale(.98); }
-    .btn-back { background:transparent; border:none; color:var(--muted); font-size:.85rem; cursor:pointer; padding:4px; }
+    /* CARD */
+    .card{background:var(--card);border:1px solid var(--bord);border-radius:14px;
+      padding:14px;width:100%;max-width:500px;position:relative}
+    .card-hd{font-family:var(--mono);font-size:.6rem;color:var(--muted);
+      text-transform:uppercase;letter-spacing:2px;margin-bottom:11px}
 
-    /* ── MODAL EDITOR ── */
-    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:100; align-items:center; justify-content:center; padding:20px; }
-    .modal-overlay.open { display:flex; }
-    .modal { background:var(--surface); border-radius:var(--radius); padding:22px; width:100%; max-width:440px; display:flex; flex-direction:column; gap:12px; max-height:90dvh; overflow-y:auto; }
-    .modal-title { font-size:1rem; font-weight:800; }
-    .modal label { font-size:.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; display:block; margin-bottom:4px; }
-    .modal input, .modal select, .modal textarea { width:100%; background:var(--card); border:1px solid #334155; border-radius:8px; color:var(--text); font-size:.88rem; padding:9px 11px; outline:none; -webkit-appearance:none; }
-    .modal textarea { resize:vertical; min-height:100px; }
-    .modal-row { display:flex; gap:8px; }
-    .btn-save { flex:1; background:linear-gradient(135deg,var(--accent),#0d7f63); color:#fff; border:none; border-radius:10px; font-size:.9rem; font-weight:700; padding:12px; cursor:pointer; }
-    .btn-del { background:#7f1d1d; color:#fca5a5; border:none; border-radius:10px; font-size:.9rem; padding:12px 14px; cursor:pointer; }
-    .btn-cancel { background:var(--card); color:var(--muted); border:1px solid #334155; border-radius:10px; font-size:.9rem; padding:12px 14px; cursor:pointer; }
+    /* ── CONNECT ── */
+    .conn-card{border-color:rgba(0,229,160,.35);background:linear-gradient(160deg,#0c1a2a,#091422)}
+    #btnConn{width:100%;padding:18px;border:none;border-radius:11px;cursor:pointer;
+      font-family:var(--sans);font-size:1.25rem;font-weight:900;letter-spacing:3px;
+      background:linear-gradient(135deg,var(--green),#00c487);color:#001810;
+      box-shadow:0 0 28px rgba(0,229,160,.28);transition:all .2s}
+    #btnConn:active{transform:scale(.97)}
+    #btnConn.off{background:linear-gradient(135deg,var(--red),#cc1a1a);color:#fff;box-shadow:0 0 28px rgba(255,61,61,.3)}
+    .dot-row{display:flex;justify-content:center;gap:20px;margin-top:10px;font-family:var(--mono);font-size:.7rem}
+    .dw{display:flex;align-items:center;gap:6px}
+    .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);transition:all .3s}
+    .dot.on{background:var(--green);box-shadow:0 0 7px var(--green)}
+    .dot.er{background:var(--red);box-shadow:0 0 7px var(--red)}
+    .dot.tk{background:var(--yellow);box-shadow:0 0 7px var(--yellow);animation:bl .5s ease infinite alternate}
+    @keyframes bl{to{opacity:.25}}
+    .state{font-family:var(--mono);font-size:.82rem;color:var(--green);margin-top:7px;letter-spacing:1px;text-align:center}
+    .charinfo{font-size:.65rem;color:var(--muted);margin-top:3px;text-align:center;font-family:var(--mono)}
 
-    /* ── MAIN ── */
-    #screenMain { display:none; flex:1; flex-direction:column; }
-    .topbar { background:var(--surface); padding:12px 15px 10px; display:flex; align-items:center; justify-content:space-between; }
-    .topbar-left { display:flex; align-items:center; gap:8px; }
-    .badge { font-size:.62rem; font-weight:700; padding:3px 8px; border-radius:20px; background:#0d3d2e; color:var(--accent); }
-    .char-badge { font-size:.85rem; font-weight:700; }
-    .status-dot { width:9px; height:9px; border-radius:50%; background:var(--muted); display:inline-block; margin-right:5px; }
-    .status-dot.connected { background:var(--accent); box-shadow:0 0 6px var(--accent); }
-    .status-dot.error { background:var(--danger); }
-    .status-dot.talking { background:var(--warn); animation:pulse .6s ease infinite alternate; }
-    @keyframes pulse { to { opacity:.4; } }
-    .status-label { font-size:.73rem; color:var(--muted); }
-    #vizCanvas { display:block; width:100%; height:60px; background:var(--bg); }
-    #log { flex:1; overflow-y:auto; padding:13px; display:flex; flex-direction:column; gap:9px; font-size:.86rem; }
-    .msg { padding:9px 13px; border-radius:12px; max-width:88%; line-height:1.5; word-break:break-word; }
-    .msg.robot { background:var(--surface); align-self:flex-start; border-bottom-left-radius:4px; }
-    .msg.user { background:#163d2e; align-self:flex-end; border-bottom-right-radius:4px; color:#a7f3d0; }
-    .msg.system { background:transparent; color:var(--muted); font-size:.72rem; align-self:center; font-style:italic; }
-    .controls { background:var(--surface); border-top:1px solid #ffffff08; padding:11px 15px 22px; display:flex; flex-direction:column; gap:10px; }
-    .controls-row { display:flex; gap:8px; align-items:center; }
-    .btn-round { flex:1; height:56px; border-radius:13px; border:none; font-size:.86rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; transition:opacity .15s,transform .1s; }
-    .btn-round:active { opacity:.8; transform:scale(.97); }
-    #btnConnect { background:linear-gradient(135deg,var(--accent),#0d7f63); color:#fff; }
-    #btnConnect.active { background:linear-gradient(135deg,var(--danger),#b91c1c); }
-    #btnMute { background:var(--card); color:var(--text); flex:0 0 56px; }
-    #btnMute.muted { background:#7f1d1d; color:#fca5a5; }
-    .slider-row { display:flex; align-items:center; gap:9px; font-size:.73rem; color:var(--muted); }
-    .slider-row input[type=range] { flex:1; accent-color:var(--accent); height:4px; }
-    .slider-val { min-width:33px; text-align:right; }
-    .info-bar { display:flex; justify-content:space-between; font-size:.68rem; color:var(--muted); }
-    #settingsPanel { background:var(--card); border-radius:var(--radius); padding:13px; display:none; flex-direction:column; gap:9px; }
-    #settingsPanel.open { display:flex; }
-    #settingsPanel label { font-size:.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:2px; display:block; }
-    #settingsPanel select, #settingsPanel input, #settingsPanel textarea { width:100%; background:var(--surface); border:1px solid #334155; border-radius:8px; color:var(--text); font-size:.86rem; padding:7px 9px; -webkit-appearance:none; outline:none; }
-    #settingsPanel textarea { resize:vertical; }
-    .settings-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
-    .btn-sm { background:transparent; border:1px solid #334155; border-radius:9px; color:var(--muted); font-size:.73rem; padding:7px 10px; cursor:pointer; display:flex; align-items:center; gap:5px; }
-    #toast { position:fixed; bottom:90px; left:50%; transform:translateX(-50%); background:#1e293b; border:1px solid #334155; color:var(--text); border-radius:20px; padding:9px 18px; font-size:.78rem; opacity:0; transition:opacity .3s; pointer-events:none; z-index:999; white-space:nowrap; }
-    #toast.show { opacity:1; }
+    /* ── VU METER ── */
+    .vu-top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:7px}
+    .rms-val{font-family:var(--mono);font-size:2rem;font-weight:700;letter-spacing:4px;
+      color:var(--green);transition:color .08s;line-height:1;min-width:90px;text-align:right}
+    .rms-val.y{color:var(--yellow)}.rms-val.r{color:var(--red)}
+    .vu-wrap{position:relative;height:34px;background:#040c15;border-radius:7px;overflow:hidden;border:1px solid var(--bord)}
+    .vu-segs{display:flex;height:100%;gap:2px;padding:4px}
+    .seg{flex:1;border-radius:3px;background:#0a1a28;transition:background .05s}
+    .seg.g{background:var(--green);box-shadow:0 0 5px rgba(0,229,160,.6)}
+    .seg.y{background:var(--yellow);box-shadow:0 0 5px rgba(255,184,0,.6)}
+    .seg.r{background:var(--red);box-shadow:0 0 5px rgba(255,61,61,.6)}
+    .thr{position:absolute;top:0;bottom:0;width:2px;background:var(--red);opacity:.85;pointer-events:none}
+    .thr::before{content:'▼';position:absolute;top:-1px;left:50%;transform:translateX(-50%);font-size:.45rem;color:var(--red)}
+
+    /* SLIDERS */
+    .sg{margin-top:11px}
+    .sh{display:flex;justify-content:space-between;font-size:.68rem;margin-bottom:4px}
+    .sh .l{color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px}
+    .sh .v{color:var(--green);font-family:var(--mono);font-weight:700}
+    input[type=range]{-webkit-appearance:none;width:100%;height:5px;background:var(--bord);border-radius:3px;outline:none}
+    input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;
+      border-radius:50%;background:var(--green);cursor:pointer;box-shadow:0 0 8px rgba(0,229,160,.5)}
+    .sticks{display:flex;justify-content:space-between;font-size:.58rem;color:var(--muted);font-family:var(--mono);margin-top:2px}
+
+    /* TOGGLES */
+    .trow{display:flex;justify-content:space-between;align-items:center;
+      padding:9px 0;border-bottom:1px solid var(--bord)}
+    .trow:last-child{border-bottom:none}
+    .tlbl{font-size:.82rem;font-weight:700}
+    .tsub{font-size:.62rem;color:var(--muted);margin-top:2px}
+    .tsw{position:relative;width:46px;height:24px;flex-shrink:0}
+    .tsw input{opacity:0;width:0;height:0}
+    .ts{position:absolute;inset:0;cursor:pointer;background:var(--bord);border-radius:24px;transition:background .3s}
+    .ts::before{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform .3s}
+    input:checked+.ts{background:var(--green)}
+    input:checked+.ts::before{transform:translateX(22px)}
+    #btnMute{padding:10px 18px;background:var(--surf);border:1px solid var(--bord);
+      border-radius:9px;color:var(--text);font-family:var(--sans);font-size:.82rem;
+      font-weight:700;cursor:pointer;transition:all .2s;white-space:nowrap}
+    #btnMute.on{background:#2a0a0a;border-color:var(--red);color:var(--red)}
+
+    /* SPEED */
+    #btnSpeed{width:100%;padding:12px;background:var(--surf);border:1px solid var(--bord);
+      border-radius:10px;color:var(--text);font-family:var(--sans);font-size:.85rem;font-weight:700;cursor:pointer;transition:all .2s}
+    #btnSpeed:active{background:var(--bord)}
+    .spres{margin-top:8px;padding:10px 14px;border-radius:8px;font-family:var(--mono);
+      font-size:.85rem;display:none;border:1px solid;text-align:center}
+    .sp0{background:#2a0808;border-color:var(--red);color:var(--red)}
+    .sp1{background:#2a1a00;border-color:var(--yellow);color:var(--yellow)}
+    .sp2{background:#1a2400;border-color:#aacc00;color:#aacc00}
+    .sp3,.sp4{background:#002a18;border-color:var(--green);color:var(--green)}
+
+    /* TIMER */
+    .timer{font-family:var(--mono);font-size:2.8rem;font-weight:700;text-align:center;
+      letter-spacing:6px;color:var(--green);transition:color .5s;padding:5px 0;line-height:1}
+    .timer.y{color:var(--yellow)}.timer.r{color:var(--red)}
+    .timersub{text-align:center;font-size:.6rem;color:var(--muted);font-family:var(--mono);margin-top:3px}
+
+    /* COST */
+    .costbox{font-family:var(--mono);font-size:.76rem;background:#040c15;
+      border:1px solid var(--bord);border-radius:8px;padding:11px;line-height:2.1;color:var(--text)}
+    .costtot{font-size:.95rem;font-weight:700;color:var(--yellow);margin-top:3px}
+
+    /* FIELDS */
+    .f{margin-bottom:10px}.f:last-child{margin-bottom:0}
+    .f label{display:block;font-size:.62rem;font-weight:700;color:var(--muted);
+      text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;font-family:var(--mono)}
+    .f select,.f input,.f textarea{width:100%;background:var(--surf);border:1px solid var(--bord);
+      border-radius:8px;color:var(--text);font-size:.87rem;padding:9px 11px;outline:none;
+      -webkit-appearance:none;font-family:var(--sans);transition:border-color .2s}
+    .f select:focus,.f input:focus{border-color:var(--green)}
+    .f textarea{resize:vertical;min-height:70px;font-size:.8rem}
+    .r2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+
+    /* CHAR ROW */
+    .crow{display:flex;gap:7px}
+    .crow select{flex:1}
+    .bico{background:var(--surf);border:1px solid var(--bord);border-radius:8px;
+      color:var(--text);font-size:.95rem;padding:8px 11px;cursor:pointer;flex-shrink:0}
+    .bico:active{background:var(--bord)}
+    .cprev{font-size:.7rem;color:var(--muted);padding:7px 10px;background:var(--surf);
+      border-radius:8px;margin-top:6px;border-left:2px solid var(--green);
+      min-height:34px;display:none;font-family:var(--mono)}
+
+    /* BUTTONS */
+    .brow{display:flex;gap:7px;flex-wrap:wrap}
+    .bs{flex:1;min-width:80px;padding:10px 7px;background:var(--surf);border:1px solid var(--bord);
+      border-radius:8px;color:var(--text);font-family:var(--sans);font-size:.76rem;
+      font-weight:700;cursor:pointer;text-align:center;transition:all .15s}
+    .bs:active{background:var(--bord)}
+    .bs.dn{border-color:var(--red);color:var(--red)}
+    .bs.rec{background:var(--red);color:#fff;border-color:var(--red);animation:bl 1s ease infinite alternate}
+
+    /* UPLOAD */
+    .upl{border:2px dashed var(--bord);border-radius:10px;padding:11px;text-align:center;
+      cursor:pointer;font-size:.76rem;color:var(--muted);transition:border-color .2s}
+    .upl:hover{border-color:var(--green);color:var(--green)}
+    .upl input{display:none}
+
+    /* KEY STATUS */
+    .ks{font-size:.67rem;margin-top:4px;min-height:14px;font-family:var(--mono)}
+    .ks.ok{color:var(--green)}.ks.w{color:var(--yellow)}
+
+    /* MODAL */
+    .mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:100;
+      align-items:center;justify-content:center;padding:18px}
+    .mo.open{display:flex}
+    .md{background:var(--card);border:1px solid var(--bord);border-radius:14px;padding:20px;
+      width:100%;max-width:440px;display:flex;flex-direction:column;gap:11px;
+      max-height:90dvh;overflow-y:auto}
+    .md-title{font-size:.95rem;font-weight:800}
+    .md label{font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;
+      display:block;margin-bottom:4px;font-family:var(--mono)}
+    .md input,.md select,.md textarea{width:100%;background:var(--surf);border:1px solid var(--bord);
+      border-radius:8px;color:var(--text);font-size:.87rem;padding:9px 11px;outline:none;-webkit-appearance:none}
+    .md textarea{resize:vertical;min-height:90px}
+    .md-row{display:flex;gap:8px}
+    .bsave{flex:1;background:linear-gradient(135deg,var(--green),#00c487);color:#001810;
+      border:none;border-radius:9px;font-size:.88rem;font-weight:900;padding:11px;cursor:pointer}
+    .bdel{background:#2a0808;color:var(--red);border:1px solid var(--red);
+      border-radius:9px;font-size:.88rem;padding:11px 13px;cursor:pointer}
+    .bcan{background:var(--surf);color:var(--muted);border:1px solid var(--bord);
+      border-radius:9px;font-size:.88rem;padding:11px 13px;cursor:pointer}
+
+    /* TOAST */
+    #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+      background:var(--card);border:1px solid var(--bord);color:var(--text);
+      border-radius:20px;padding:8px 18px;font-size:.76rem;font-family:var(--mono);
+      opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;white-space:nowrap}
+    #toast.s{opacity:1}
+
+    .back{font-size:.72rem;color:var(--muted);text-decoration:none;
+      display:flex;align-items:center;gap:5px;width:100%;max-width:500px;
+      font-family:var(--mono);padding:2px 0}
+    .back:hover{color:var(--green)}
+    .sep{width:100%;max-width:500px;border:none;border-top:1px solid var(--bord)}
   </style>
 </head>
 <body>
 
-<!-- ══ INIT ══ -->
-<div id="screenInit">
-  <div style="width:100%;max-width:440px;display:flex;align-items:center;gap:10px">
-    <button class="btn-back" onclick="location.href='index.html'">← Launcher</button>
-  </div>
-  <div class="logo-big">⚡</div>
-  <h1>OpenAI Realtime</h1>
+<a class="back" href="index.html">← LAUNCHER</a>
 
-  <!-- CHIAVE -->
-  <div class="card">
-    <div class="card-title">🔑 API Key</div>
-    <div class="field">
-      <label>OpenAI API Key</label>
-      <input type="password" id="keyOpenAI" placeholder="sk-..." autocomplete="off" spellcheck="false" oninput="onKeyInput()">
-      <div class="key-status" id="keyStatus"></div>
-    </div>
-    <div class="upload-area" onclick="document.getElementById('fileKeys').click()">
-      <input type="file" id="fileKeys" accept=".txt" onchange="loadKeysFile(this)">
-      📂 Carica <strong>keys.txt</strong>
-    </div>
-    <div style="font-size:.63rem;color:var(--muted);margin-top:6px">
-      Formato: <code style="color:#a7f3d0">OPENAI_KEY=sk-...</code>
-    </div>
+<!-- ══ CONNETTI ══ -->
+<div class="card conn-card">
+  <button id="btnConn" onclick="toggleConn()">📡  CONNETTI</button>
+  <div class="dot-row">
+    <div class="dw"><div class="dot" id="dNet"></div><span>INTERNET</span></div>
+    <div class="dw"><div class="dot" id="dAI"></div><span>OPENAI</span></div>
+    <div class="dw"><div class="dot" id="dMic"></div><span>MIC</span></div>
   </div>
-
-  <!-- MODELLO -->
-  <div class="card">
-    <div class="card-title">🧠 Modello & Voce</div>
-    <div class="row2">
-      <div class="field">
-        <label>Modello</label>
-        <select id="initModel">
-          <option value="gpt-4o-realtime-preview">gpt-4o-realtime</option>
-          <option value="gpt-4o-mini-realtime-preview">gpt-4o-mini-realtime</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Voce</label>
-        <select id="initVoice">
-          <option value="alloy">Alloy — Neutro</option>
-          <option value="ash">Ash — Maschile</option>
-          <option value="ballad">Ballad — Caldo</option>
-          <option value="coral">Coral — Femminile</option>
-          <option value="echo">Echo — Maschile</option>
-          <option value="sage">Sage — Saggio</option>
-          <option value="shimmer">Shimmer — Femminile dolce</option>
-          <option value="verse">Verse — Espressivo</option>
-          <option value="cedar">Cedar — Nuovo</option>
-          <option value="marin">Marin — Nuovo</option>
-        </select>
-      </div>
-    </div>
-  </div>
-
-  <!-- PERSONAGGI -->
-  <div class="card">
-    <div class="card-title">🎭 Personaggio</div>
-    <div class="field">
-      <div class="char-row">
-        <select id="selChar" onchange="onCharChange()"></select>
-        <button class="btn-icon" onclick="openEditor(null)">➕</button>
-        <button class="btn-icon" onclick="openEditor(document.getElementById('selChar').value)">✏️</button>
-      </div>
-    </div>
-    <div id="charPreview" style="font-size:.74rem;color:var(--muted);padding:8px;background:var(--card);border-radius:8px;min-height:36px;display:none;"></div>
-    <div class="upload-area" style="margin-top:8px" onclick="document.getElementById('fileChar').click()">
-      <input type="file" id="fileChar" accept=".txt" onchange="importCharFile(this)">
-      📂 Importa personaggio da <strong>.txt</strong>
-    </div>
-    <div style="font-size:.63rem;color:var(--muted);margin-top:6px">
-      Formato opzionale: <code style="color:#a7f3d0">NOME=...</code> / <code style="color:#a7f3d0">VOCE=...</code> poi il prompt
-    </div>
-  </div>
-
-  <button class="btn-primary" onclick="goMain()">🚀 AVVIA</button>
+  <div class="state" id="stLbl">● IDLE</div>
+  <div class="charinfo" id="charInfo">— nessun personaggio selezionato —</div>
 </div>
 
-<!-- ══ EDITOR ══ -->
-<div class="modal-overlay" id="modalEditor">
-  <div class="modal">
-    <div class="modal-title" id="modalTitle">✏️ Personaggio</div>
-    <div><label>Nome</label><input type="text" id="edName" placeholder="es. Assistente, Robot..."></div>
-    <div><label>Istruzioni (system prompt)</label><textarea id="edPrompt" rows="5"></textarea></div>
+<!-- ══ VU METER ══ -->
+<div class="card">
+  <div class="vu-top">
+    <div>
+      <div class="card-hd" style="margin:0">🎤 Input Level</div>
+      <div style="font-size:.62rem;color:var(--muted);font-family:var(--mono);margin-top:2px">RMS live · soglia = linea rossa</div>
+    </div>
+    <div class="rms-val" id="rmsVal">0000</div>
+  </div>
+  <div class="vu-wrap">
+    <div class="vu-segs" id="vuSegs"></div>
+    <div class="thr" id="thrLine"></div>
+  </div>
+
+  <!-- Gain -->
+  <div class="sg">
+    <div class="sh"><span class="l">Gain Microfono</span><span class="v" id="vGain">100%</span></div>
+    <input type="range" id="rGain" min="0" max="150" step="5" value="100" oninput="oGain(this.value)">
+    <div class="sticks"><span>0%</span><span>◆ 100%</span><span>150%</span></div>
+  </div>
+
+  <!-- Soglia VAD -->
+  <div class="sg">
+    <div class="sh"><span class="l">Soglia attivazione</span><span class="v" id="vThr">1000</span></div>
+    <input type="range" id="rThr" min="100" max="6000" step="100" value="1000" oninput="oThr(this.value)">
+    <div class="sticks"><span>100 (silenz.)</span><span>3000</span><span>6000 (rumore)</span></div>
+  </div>
+
+  <div style="height:7px"></div>
+  <!-- Mute + Barge-in -->
+  <div class="trow">
+    <div><div class="tlbl">🔇 Mute Microfono</div></div>
+    <button id="btnMute" onclick="toggleMute()">🎙 ATTIVO</button>
+  </div>
+  <div class="trow">
+    <div>
+      <div class="tlbl">🛑 Barge-in</div>
+      <div class="tsub">Puoi interrompere il robot parlando</div>
+    </div>
+    <label class="tsw"><input type="checkbox" id="chkBarge" checked><span class="ts"></span></label>
+  </div>
+</div>
+
+<!-- ══ SPEED TEST ══ -->
+<div class="card">
+  <div class="card-hd">📶 Connessione Internet</div>
+  <button id="btnSpeed" onclick="doSpeed()">⚡  TEST VELOCITÀ</button>
+  <div class="spres" id="spRes"></div>
+</div>
+
+<!-- ══ TIMER SILENZIO ══ -->
+<div class="card">
+  <div class="card-hd">⏱ Silenzio dall'ultima risposta</div>
+  <div class="timer" id="silTimer">00:00</div>
+  <div class="timersub">Verde &lt;2 min · Giallo &lt;5 min · Rosso &gt;5 min</div>
+</div>
+
+<!-- ══ COSTO ══ -->
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <div class="card-hd" style="margin:0">💶 Costo Sessione</div>
+    <button class="bs" style="flex:0;min-width:auto;padding:5px 10px;font-size:.68rem" onclick="resetCost()">🗑 Azzera</button>
+  </div>
+  <div class="costbox" id="costBox"><span style="color:var(--muted)">In attesa dati...</span></div>
+</div>
+
+<!-- ══ PERSONAGGIO ══ -->
+<div class="card">
+  <div class="card-hd">🎭 Personaggio & Voce</div>
+  <div class="f">
+    <label>Personaggio attivo</label>
+    <div class="crow">
+      <select id="selChar" onchange="onCharChg()"></select>
+      <button class="bico" onclick="openEd(null)">➕</button>
+      <button class="bico" onclick="openEd(document.getElementById('selChar').value)">✏️</button>
+    </div>
+    <div class="cprev" id="charPrev"></div>
+  </div>
+  <div class="r2">
+    <div class="f">
+      <label>Voce OpenAI</label>
+      <select id="selVoice">
+        <option value="alloy">Alloy (Neutro)</option>
+        <option value="ash">Ash (Maschile)</option>
+        <option value="ballad">Ballad (Caldo)</option>
+        <option value="coral">Coral (Femminile)</option>
+        <option value="echo">Echo (Maschile)</option>
+        <option value="sage">Sage (Saggio)</option>
+        <option value="shimmer">Shimmer (F. Dolce)</option>
+        <option value="verse">Verse (Espressivo)</option>
+        <option value="cedar">Cedar (Nuovo)</option>
+        <option value="marin">Marin (Nuovo)</option>
+      </select>
+    </div>
+    <div class="f">
+      <label>Modello AI</label>
+      <select id="selModel">
+        <option value="gpt-4o-realtime-preview">gpt-4o-realtime</option>
+        <option value="gpt-4o-mini-realtime-preview">gpt-4o-mini (€)</option>
+      </select>
+    </div>
+  </div>
+  <div class="f">
+    <label>Importa personaggio da .txt</label>
+    <div class="upl" onclick="document.getElementById('fChar').click()">
+      <input type="file" id="fChar" accept=".txt" onchange="importChar(this)">
+      📂 Carica file personaggio &nbsp;·&nbsp; <code>NOME=... VOCE=...</code>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PARAMETRI AI ══ -->
+<div class="card">
+  <div class="card-hd">🧠 Parametri AI</div>
+  <div class="f">
+    <label>Temperatura (Creatività)</label>
+    <select id="selTemp">
+      <option value="0.6">🎯 Preciso (0.6) — Risposte sempre uguali</option>
+      <option value="0.7">📐 Stabile (0.7) — Poco creativo</option>
+      <option value="0.8" selected>⚖️ Bilanciato (0.8) — Default consigliato</option>
+      <option value="1.0">🎨 Creativo (1.0) — Risposte più varie</option>
+      <option value="1.2">🎭 Molto creativo (1.2) — Massima variabilità</option>
+    </select>
+  </div>
+  <div class="f">
+    <label>Modalità VAD (rilevamento turno)</label>
+    <select id="selVad" onchange="updVadUI()">
+      <option value="server_vad">🔇 Server VAD — risponde dopo N ms di silenzio</option>
+      <option value="semantic_vad">🧠 Semantic VAD — capisce quando hai finito</option>
+    </select>
+  </div>
+  <!-- pannello server_vad -->
+  <div id="pSVad">
+    <div class="sg">
+      <div class="sh"><span class="l">Silenzio prima della risposta</span><span class="v" id="vSil">500 ms</span></div>
+      <input type="range" id="rSil" min="100" max="2000" step="100" value="500" oninput="oSil(this.value)">
+      <div class="sticks"><span>100ms (reattivo)</span><span>500ms</span><span>2000ms (lento)</span></div>
+    </div>
+  </div>
+  <!-- pannello semantic_vad -->
+  <div id="pSemVad" style="display:none">
+    <div class="f" style="margin-top:9px">
+      <label>Reattività risposta (Eagerness)</label>
+      <select id="selEag">
+        <option value="low">🐢 Paziente (low) — aspetta fino a 8s</option>
+        <option value="medium" selected>⚖️ Normale (medium) — aspetta fino a 4s</option>
+        <option value="high">🚀 Reattivo (high) — aspetta fino a 2s</option>
+        <option value="auto">🤖 Auto — il modello decide</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- ══ REC ══ -->
+<div class="card">
+  <div class="card-hd">⏺ Registrazione</div>
+  <div class="brow">
+    <button class="bs" id="btnRec" onclick="toggleRec()">⏺ AVVIA REC</button>
+    <button class="bs dn" onclick="cancelRec()">✕ Annulla</button>
+  </div>
+</div>
+
+<!-- ══ API KEY (in fondo) ══ -->
+<div class="card">
+  <div class="card-hd">🔑 API Key OpenAI &nbsp;·&nbsp; <span style="color:var(--muted);font-size:.6rem">si inserisce una volta sola</span></div>
+  <div class="f">
+    <label>Chiave API</label>
+    <input type="password" id="keyIn" placeholder="sk-proj-..." autocomplete="off" spellcheck="false" oninput="onKeyIn()">
+    <div class="ks" id="kStat">⚠️ Nessuna chiave salvata</div>
+  </div>
+  <div class="upl" onclick="document.getElementById('fKeys').click()">
+    <input type="file" id="fKeys" accept=".txt" onchange="loadKeys(this)">
+    📂 Carica <strong>keys.txt</strong> &nbsp;·&nbsp; formato: <code>OPENAI_KEY=sk-...</code>
+  </div>
+</div>
+
+<!-- ══ MODAL EDITOR PERSONAGGIO ══ -->
+<div class="mo" id="moEd">
+  <div class="md">
+    <div class="md-title" id="edTitle">✏️ Personaggio</div>
+    <div><label>Nome</label><input type="text" id="edName" placeholder="es. Guida Fiera, Robot Accoglienza..."></div>
+    <div><label>Istruzioni (system prompt)</label><textarea id="edPrompt" rows="6" placeholder="Sei un robot simpatico che..."></textarea></div>
     <div><label>Voce preferita</label>
       <select id="edVoice">
         <option value="">— usa quella selezionata —</option>
-        <option value="alloy">Alloy — Neutro</option>
-        <option value="ash">Ash — Maschile</option>
-        <option value="ballad">Ballad — Caldo</option>
-        <option value="coral">Coral — Femminile</option>
-        <option value="echo">Echo — Maschile</option>
-        <option value="sage">Sage — Saggio</option>
-        <option value="shimmer">Shimmer — Femminile dolce</option>
-        <option value="verse">Verse — Espressivo</option>
-        <option value="cedar">Cedar — Nuovo</option>
-        <option value="marin">Marin — Nuovo</option>
+        <option value="alloy">Alloy (Neutro)</option>
+        <option value="ash">Ash (Maschile)</option>
+        <option value="ballad">Ballad (Caldo)</option>
+        <option value="coral">Coral (Femminile)</option>
+        <option value="echo">Echo (Maschile)</option>
+        <option value="sage">Sage (Saggio)</option>
+        <option value="shimmer">Shimmer (Femminile Dolce)</option>
+        <option value="verse">Verse (Espressivo)</option>
+        <option value="cedar">Cedar (Nuovo)</option>
+        <option value="marin">Marin (Nuovo)</option>
       </select>
     </div>
-    <div class="modal-row">
-      <button class="btn-save" onclick="saveCharacter()">💾 Salva</button>
-      <button class="btn-del" id="btnDel" style="display:none" onclick="deleteCharacter()">🗑</button>
-      <button class="btn-cancel" onclick="closeEditor()">✕</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══ MAIN ══ -->
-<div id="screenMain">
-  <div class="topbar">
-    <div class="topbar-left">
-      <span class="badge">OPENAI</span>
-      <span class="char-badge" id="charBadge">🤖</span>
-    </div>
-    <div>
-      <span class="status-dot" id="statusDot"></span>
-      <span class="status-label" id="statusLabel">Disconnesso</span>
-    </div>
-  </div>
-  <canvas id="vizCanvas"></canvas>
-  <div id="log"></div>
-  <div class="controls">
-    <div class="info-bar">
-      <span id="timerLabel">⏱ --:--</span>
-      <span id="tokenLabel">💰 -- tok</span>
-      <span id="costLabel">$--.--</span>
-    </div>
-    <div id="settingsPanel">
-      <div class="settings-grid">
-        <div><label>VAD Threshold</label><input type="number" id="cfgVadThresh" value="0.5" step="0.05" min="0" max="1"></div>
-        <div><label>Silenzio (ms)</label><input type="number" id="cfgSilenceMs" value="700" step="50"></div>
-        <div><label>Temperatura</label><input type="number" id="cfgTemp" value="0.8" step="0.05" min="0" max="1.2"></div>
-        <div><label>Eagerness</label>
-          <select id="cfgEagerness">
-            <option value="auto">Auto</option><option value="low">Low</option>
-            <option value="medium">Medium</option><option value="high">High</option>
-          </select>
-        </div>
-        <div><label>Voce</label>
-          <select id="cfgVoice">
-            <option value="alloy">Alloy — Neutro</option>
-            <option value="ash">Ash — Maschile</option>
-            <option value="ballad">Ballad — Caldo</option>
-            <option value="coral">Coral — Femminile</option>
-            <option value="echo">Echo — Maschile</option>
-            <option value="sage">Sage — Saggio</option>
-            <option value="shimmer">Shimmer — Femminile dolce</option>
-            <option value="verse">Verse — Espressivo</option>
-            <option value="cedar">Cedar — Nuovo</option>
-            <option value="marin">Marin — Nuovo</option>
-          </select>
-        </div>
-        <div><label>Barge-in</label>
-          <select id="cfgBargein"><option value="true">Attivo</option><option value="false">Disattivo</option></select>
-        </div>
-      </div>
-      <label>System prompt</label>
-      <textarea id="cfgSystem" rows="3">Sei un assistente vocale simpatico. Rispondi in italiano.</textarea>
-    </div>
-    <div class="controls-row">
-      <button class="btn-round" id="btnConnect" onclick="toggleConnect()">
-        <span id="btnConnectIcon">📡</span><span id="btnConnectLabel">CONNETTI</span>
-      </button>
-      <button class="btn-round" id="btnMute" onclick="toggleMute()">🎙</button>
-    </div>
-    <div class="slider-row">
-      <span>🎙 Gain</span>
-      <input type="range" id="gainSlider" min="0.5" max="5" step="0.1" value="1" oninput="setGain(this.value)">
-      <span class="slider-val" id="gainVal">1.0×</span>
-    </div>
-    <div class="controls-row" style="gap:7px;flex-wrap:wrap">
-      <button class="btn-sm" onclick="toggleSettings()">⚙️ Impostazioni</button>
-      <button class="btn-sm" onclick="speedTest()">📶 Speed</button>
-      <button class="btn-sm" id="btnRec" onclick="toggleRec()">⏺ REC</button>
-      <button class="btn-sm" onclick="goBack()">🔙 Launcher</button>
+    <div class="md-row">
+      <button class="bsave" onclick="saveChar()">💾 Salva</button>
+      <button class="bdel" id="btnDel" style="display:none" onclick="delChar()">🗑</button>
+      <button class="bcan" onclick="closeEd()">✕</button>
     </div>
   </div>
 </div>
@@ -276,452 +405,411 @@
 <div id="toast"></div>
 
 <script>
-/* ── STORAGE KEYS ── */
-const LS_KEY   = 'robot_key_openai';
-const LS_CHARS = 'robot_characters';
-const LS_LAST  = 'robot_last_char';
+// ═══════════════ CONFIG ═══════════════
+const LS_KEY='robot_key_openai', LS_CHARS='robot_characters', LS_LAST='robot_last_char';
+const PRICES={
+  'gpt-4o-realtime-preview':      {ai:32,  ao:64,  ti:3,   to:12,  c:.4},
+  'gpt-4o-mini-realtime-preview': {ai:10,  ao:20,  ti:1.1, to:4.4, c:.3}
+};
+const EUR=0.92, N_SEGS=36;
 
-/* ── STATO ── */
-let API_KEY = '';
-let activePrompt = 'Sei un assistente vocale simpatico. Rispondi in italiano.';
-let activeVoice  = 'alloy';
-let ws = null, audioCtx = null, workletNode = null, micStream = null;
-let muted = false, connected = false, settingsOpen = false;
-let totalIn = 0, totalOut = 0;
-const P_IN = 5/1e6, P_OUT = 20/1e6;
-let silenceStart = null, timerInterval = null;
-let recChunks = [], isRecording = false;
-const REC_SR = 24000;
-const vizCanvas = document.getElementById('vizCanvas');
-const vizCtx = vizCanvas.getContext('2d');
-let analyser = null, vizFrame = null;
-let robotMsg = null, robotText = '';
-let audioQueue = [], isPlaying = false;
-let editingChar = null;
+// ═══════════════ STATE ═══════════════
+let API_KEY='', activePrompt='Sei un assistente vocale. Rispondi sempre in italiano.', activeVoice='alloy';
+let ws=null, audioCtx=null, workletNode=null, micStream=null;
+let muted=false, connected=false, isRec=false, recChunks=[];
+let audioQ=[], playing=false, analyser=null, rafId=null;
+let silStart=null, silTimer=null;
+let tok={ai:0,ao:0,ti:0,to:0,c:0};
+let editingChar=null;
 
-/* ── CHIAVE ── */
-function loadSavedKey() {
-  const k = localStorage.getItem(LS_KEY);
-  if (k) { document.getElementById('keyOpenAI').value = k; setKeyStatus(true); }
-  else setKeyStatus(false);
+// ═══════════════ INIT ═══════════════
+function init(){
+  buildVU();
+  loadKey();
+  renderChars();
+  updVadUI();
+  setInterval(tickTimer,500);
+  netCheck(); setInterval(netCheck,14000);
 }
-function setKeyStatus(ok) {
-  const el = document.getElementById('keyStatus');
-  el.className = 'key-status ' + (ok ? 'ok' : 'warn');
-  el.textContent = ok ? '✅ Chiave salvata' : '⚠️ Nessuna chiave';
+
+// ═══════════════ VU METER ═══════════════
+let vuEl=null;
+function buildVU(){
+  vuEl=document.getElementById('vuSegs');
+  for(let i=0;i<N_SEGS;i++){const d=document.createElement('div');d.className='seg';vuEl.appendChild(d);}
 }
-function onKeyInput() {
-  // Salva subito in localStorage, rimuovendo caratteri invisibili
-  const raw = document.getElementById('keyOpenAI').value;
-  const k = raw.replace(/[\u200B-\u200D\uFEFF\r\n]/g, '').trim();
-  if (k.length > 10) {
-    localStorage.setItem(LS_KEY, k);
-    setKeyStatus(true);
+function drawVU(rms){
+  const MAX=6000, pct=Math.min(1,rms/MAX), lit=Math.round(pct*N_SEGS);
+  const thr=parseInt(document.getElementById('rThr').value);
+  document.getElementById('thrLine').style.left=(thr/MAX*100)+'%';
+  const s=vuEl.children;
+  for(let i=0;i<N_SEGS;i++){
+    const p=(i+1)/N_SEGS;
+    s[i].className='seg '+(i<lit?(p<.6?'g':p<.85?'y':'r'):'');
   }
+  const el=document.getElementById('rmsVal');
+  el.textContent=String(Math.round(rms)).padStart(4,'0');
+  el.className='rms-val'+(pct>.85?' r':pct>.6?' y':'');
 }
-function loadKeysFile(input) {
-  const file = input.files[0];
-  if (!file) return;
-  // Legge come ArrayBuffer per gestire qualsiasi codifica
-  const reader = new FileReader();
-  reader.onload = e => {
-    const bytes = new Uint8Array(e.target.result);
-    let text = '';
 
-    // Rileva UTF-16 LE (BOM FF FE)
-    if (bytes[0] === 0xFF && bytes[1] === 0xFE) {
-      for (let i = 2; i < bytes.length - 1; i += 2)
-        text += String.fromCharCode(bytes[i] | (bytes[i+1] << 8));
-    }
-    // Rileva UTF-16 BE (BOM FE FF)
-    else if (bytes[0] === 0xFE && bytes[1] === 0xFF) {
-      for (let i = 2; i < bytes.length - 1; i += 2)
-        text += String.fromCharCode((bytes[i] << 8) | bytes[i+1]);
-    }
-    // UTF-8 / ASCII (con o senza BOM EF BB BF)
-    else {
-      text = new TextDecoder('utf-8').decode(e.target.result);
-      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // rimuovi BOM utf-8
-    }
-
-    // Normalizza a righe
-    const lines = text.replace(/\r/g, '').split('\n');
-    let found = false;
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (line.startsWith('OPENAI_KEY=')) {
-        // Rimuove solo virgolette e spazi, NON altri caratteri
-        const k = line.slice(11).replace(/^["'\s]+|["'\s]+$/g, '');
-        if (k.length > 10) {
-          document.getElementById('keyOpenAI').value = k;
-          localStorage.setItem(LS_KEY, k);
-          setKeyStatus(true);
-          found = true;
-          toast(`✅ Chiave caricata (${k.length} chars)`);
-        } else {
-          toast(`⚠️ Chiave trovata ma troppo corta: "${k}" (${k.length} chars)`);
-        }
+// ═══════════════ KEY ═══════════════
+function loadKey(){
+  const k=localStorage.getItem(LS_KEY);
+  if(k){document.getElementById('keyIn').value=k; setKS(true,k.length);}
+  else setKS(false,0);
+}
+function setKS(ok,len){
+  const e=document.getElementById('kStat');
+  e.className='ks '+(ok?'ok':'w');
+  e.textContent=ok?`✅ Chiave salvata (${len} chars)`:'⚠️ Inserisci la chiave o carica keys.txt';
+}
+function onKeyIn(){
+  const k=document.getElementById('keyIn').value.replace(/[\u200B-\u200D\uFEFF\r\n]/g,'').trim();
+  if(k.length>10){localStorage.setItem(LS_KEY,k);setKS(true,k.length);}
+}
+function loadKeys(inp){
+  const file=inp.files[0]; if(!file)return;
+  const r=new FileReader();
+  r.onload=e=>{
+    const b=new Uint8Array(e.target.result); let t='';
+    if(b[0]===0xFF&&b[1]===0xFE){for(let i=2;i<b.length-1;i+=2)t+=String.fromCharCode(b[i]|(b[i+1]<<8));}
+    else if(b[0]===0xFE&&b[1]===0xFF){for(let i=2;i<b.length-1;i+=2)t+=String.fromCharCode((b[i]<<8)|b[i+1]);}
+    else{t=new TextDecoder().decode(e.target.result);if(t.charCodeAt(0)===0xFEFF)t=t.slice(1);}
+    let ok=false;
+    t.replace(/\r/g,'').split('\n').forEach(ln=>{
+      ln=ln.trim();
+      if(ln.startsWith('OPENAI_KEY=')){
+        const k=ln.slice(11).replace(/^["'\s]+|["'\s]+$/g,'');
+        if(k.length>10){document.getElementById('keyIn').value=k;localStorage.setItem(LS_KEY,k);setKS(true,k.length);ok=true;toast(`✅ Chiave caricata (${k.length} chars)`);}
       }
-    }
-    if (!found) {
-      // Mostra le prime righe del file per debug
-      const preview = lines.slice(0,3).join(' | ');
-      toast(`⚠️ OPENAI_KEY= non trovata. File: "${preview.slice(0,60)}"`);
-    }
-    input.value = '';
-  };
-  reader.readAsArrayBuffer(file);
-}
-
-/* ── PERSONAGGI ── */
-function getChars() { try { return JSON.parse(localStorage.getItem(LS_CHARS)) || []; } catch { return []; } }
-function saveChars(a) { localStorage.setItem(LS_CHARS, JSON.stringify(a)); }
-function renderCharSelect() {
-  const sel = document.getElementById('selChar');
-  const chars = getChars();
-  const last = localStorage.getItem(LS_LAST);
-  sel.innerHTML = '';
-  if (!chars.length) {
-    sel.innerHTML = '<option value="">— nessun personaggio —</option>';
-  } else {
-    chars.forEach(c => {
-      const o = document.createElement('option');
-      o.value = c.name; o.textContent = c.name;
-      sel.appendChild(o);
     });
-    if (chars.find(c => c.name === last)) sel.value = last;
-  }
-  onCharChange();
-}
-function onCharChange() {
-  const name = document.getElementById('selChar').value;
-  const char = getChars().find(c => c.name === name);
-  const prev = document.getElementById('charPreview');
-  if (char) {
-    prev.style.display = '';
-    prev.textContent = char.prompt.slice(0, 120) + (char.prompt.length > 120 ? '…' : '');
-    if (char.voice) {
-      const vs = document.getElementById('initVoice');
-      for (const o of vs.options) if (o.value === char.voice) vs.value = char.voice;
-    }
-    localStorage.setItem(LS_LAST, name);
-  } else { prev.style.display = 'none'; }
-}
-function openEditor(name) {
-  editingChar = name || null;
-  const char = name ? getChars().find(c => c.name === name) : null;
-  document.getElementById('modalTitle').textContent = char ? `✏️ ${name}` : '✏️ Nuovo Personaggio';
-  document.getElementById('edName').value   = char?.name   || '';
-  document.getElementById('edPrompt').value = char?.prompt || '';
-  document.getElementById('edVoice').value  = char?.voice  || '';
-  document.getElementById('btnDel').style.display = char ? '' : 'none';
-  document.getElementById('modalEditor').classList.add('open');
-}
-function closeEditor() { document.getElementById('modalEditor').classList.remove('open'); editingChar = null; }
-function saveCharacter() {
-  const name = document.getElementById('edName').value.trim();
-  const prompt = document.getElementById('edPrompt').value.trim();
-  const voice = document.getElementById('edVoice').value;
-  if (!name || !prompt) { toast('⚠️ Nome e istruzioni obbligatori'); return; }
-  let chars = getChars();
-  if (editingChar && editingChar !== name) chars = chars.filter(c => c.name !== editingChar);
-  const idx = chars.findIndex(c => c.name === name);
-  if (idx >= 0) chars[idx] = { name, prompt, voice };
-  else chars.push({ name, prompt, voice });
-  saveChars(chars);
-  localStorage.setItem(LS_LAST, name);
-  renderCharSelect();
-  document.getElementById('selChar').value = name;
-  onCharChange(); closeEditor();
-  toast(`✅ "${name}" salvato`);
-}
-function deleteCharacter() {
-  if (!editingChar) return;
-  saveChars(getChars().filter(c => c.name !== editingChar));
-  renderCharSelect(); closeEditor();
-  toast('🗑 Personaggio eliminato');
-}
-function importCharFile(input) {
-  const file = input.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const lines = e.target.result.replace(/\r/g,'').split('\n');
-    let name = file.name.replace('.txt',''), voice = '', start = 0;
-    if (lines[0]?.startsWith('NOME=')) { name = lines[0].slice(5).trim(); start++; }
-    if (lines[start]?.startsWith('VOCE=')) { voice = lines[start].slice(5).trim(); start++; }
-    const prompt = lines.slice(start).join('\n').trim();
-    document.getElementById('edName').value = name;
-    document.getElementById('edPrompt').value = prompt;
-    document.getElementById('edVoice').value = voice;
-    document.getElementById('btnDel').style.display = 'none';
-    document.getElementById('modalTitle').textContent = '✏️ Importa personaggio';
-    editingChar = null;
-    document.getElementById('modalEditor').classList.add('open');
-    input.value = ''; toast('📂 File caricato — controlla e salva');
+    if(!ok)toast('⚠️ OPENAI_KEY= non trovata nel file');
+    inp.value='';
   };
-  reader.readAsText(file);
+  r.readAsArrayBuffer(file);
 }
 
-/* ── AVVIO ── */
-function goMain() {
-  const raw = document.getElementById('keyOpenAI').value;
-  // Rimuove solo i caratteri veramente invisibili (non stampabili ASCII)
-  // ma mantiene tutti i caratteri ASCII stampabili inclusi - _ .
-  API_KEY = raw.replace(/[\x00-\x1F\x7F\u200B-\u200D\uFEFF]/g, '').trim();
-  console.log('[OpenAI] Key length:', API_KEY.length, '| First 10:', API_KEY.slice(0,10));
-  if (API_KEY.length < 20) {
-    toast(`❌ Chiave troppo corta: ${API_KEY.length} chars. Ricarica il file keys.txt`);
-    return;
-  }
-  const charName = document.getElementById('selChar').value;
-  const char = getChars().find(c => c.name === charName);
-  if (char) {
-    activePrompt = char.prompt;
-    activeVoice  = char.voice || document.getElementById('initVoice').value;
-    console.log('[Char] Applying:', char.name, '| Voice:', activeVoice, '| Prompt:', activePrompt.slice(0,60));
-  } else {
-    activePrompt = 'Sei un assistente vocale simpatico. Rispondi in italiano.';
-    activeVoice  = document.getElementById('initVoice').value;
-  }
-  // Aggiorna anche i campi visibili nel pannello settings
-  document.getElementById('cfgSystem').value = activePrompt;
-  document.getElementById('cfgVoice').value  = activeVoice;
-  document.getElementById('charBadge').textContent = char ? `🎭 ${char.name}` : '🤖 Robot AI';
-  document.getElementById('screenInit').style.display = 'none';
-  document.getElementById('screenMain').style.display = 'flex';
-  resizeViz(); window.addEventListener('resize', resizeViz);
+// ═══════════════ PERSONAGGI ═══════════════
+function getChars(){try{return JSON.parse(localStorage.getItem(LS_CHARS))||[];}catch{return[];}}
+function saveCharsLS(a){localStorage.setItem(LS_CHARS,JSON.stringify(a));}
+function renderChars(){
+  const sel=document.getElementById('selChar'),chars=getChars(),last=localStorage.getItem(LS_LAST);
+  sel.innerHTML='';
+  if(!chars.length){sel.innerHTML='<option value="">— nessun personaggio —</option>';}
+  else{chars.forEach(c=>{const o=new Option(c.name,c.name);sel.appendChild(o);});if(chars.find(c=>c.name===last))sel.value=last;}
+  onCharChg();
 }
-function goBack() {
-  disconnect();
-  document.getElementById('screenMain').style.display = 'none';
-  document.getElementById('screenInit').style.display = 'flex';
+function onCharChg(){
+  const name=document.getElementById('selChar').value, char=getChars().find(c=>c.name===name);
+  const prev=document.getElementById('charPrev');
+  if(char){
+    prev.style.display=''; prev.textContent=char.prompt.slice(0,150)+(char.prompt.length>150?'…':'');
+    if(char.voice)document.getElementById('selVoice').value=char.voice;
+    localStorage.setItem(LS_LAST,name);
+    activePrompt=char.prompt; activeVoice=char.voice||document.getElementById('selVoice').value;
+    document.getElementById('charInfo').textContent=`🎭 ${char.name}  ·  🔊 ${activeVoice}`;
+  }else{
+    prev.style.display='none';
+    activePrompt='Sei un assistente vocale. Rispondi sempre in italiano.';
+    activeVoice=document.getElementById('selVoice').value;
+    document.getElementById('charInfo').textContent='— nessun personaggio —';
+  }
+}
+function openEd(name){
+  editingChar=name||null;
+  const char=name?getChars().find(c=>c.name===name):null;
+  document.getElementById('edTitle').textContent=char?`✏️ ${name}`:'✏️ Nuovo Personaggio';
+  document.getElementById('edName').value=char?.name||'';
+  document.getElementById('edPrompt').value=char?.prompt||'';
+  document.getElementById('edVoice').value=char?.voice||'';
+  document.getElementById('btnDel').style.display=char?'':'none';
+  document.getElementById('moEd').classList.add('open');
+}
+function closeEd(){document.getElementById('moEd').classList.remove('open');editingChar=null;}
+function saveChar(){
+  const name=document.getElementById('edName').value.trim();
+  const prompt=document.getElementById('edPrompt').value.trim();
+  const voice=document.getElementById('edVoice').value;
+  if(!name||!prompt){toast('⚠️ Nome e istruzioni obbligatori');return;}
+  let chars=getChars();
+  if(editingChar&&editingChar!==name)chars=chars.filter(c=>c.name!==editingChar);
+  const idx=chars.findIndex(c=>c.name===name);
+  if(idx>=0)chars[idx]={name,prompt,voice};else chars.push({name,prompt,voice});
+  saveCharsLS(chars);localStorage.setItem(LS_LAST,name);
+  renderChars();document.getElementById('selChar').value=name;
+  onCharChg();closeEd();toast(`✅ "${name}" salvato`);
+}
+function delChar(){
+  if(!editingChar)return;
+  saveCharsLS(getChars().filter(c=>c.name!==editingChar));
+  renderChars();closeEd();toast('🗑 Eliminato');
+}
+function importChar(inp){
+  const file=inp.files[0];if(!file)return;
+  const r=new FileReader();
+  r.onload=e=>{
+    const lines=e.target.result.replace(/\r/g,'').split('\n');
+    let name=file.name.replace('.txt',''),voice='',start=0;
+    if(lines[0]?.startsWith('NOME=')){name=lines[0].slice(5).trim();start++;}
+    if(lines[start]?.startsWith('VOCE=')){voice=lines[start].slice(5).trim();start++;}
+    const prompt=lines.slice(start).join('\n').trim();
+    document.getElementById('edName').value=name;
+    document.getElementById('edPrompt').value=prompt;
+    document.getElementById('edVoice').value=voice;
+    document.getElementById('btnDel').style.display='none';
+    document.getElementById('edTitle').textContent='✏️ Importa personaggio';
+    editingChar=null;document.getElementById('moEd').classList.add('open');
+    inp.value='';toast('📂 File caricato — controlla e salva');
+  };r.readAsText(file);
 }
 
-/* ── CONNESSIONE ── */
-async function toggleConnect() { if (connected) disconnect(); else await connect(); }
-async function connect() {
-  setStatus('connecting'); addLog('Connessione a OpenAI Realtime...', 'system');
-  try {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, sampleRate:24000 } });
-    audioCtx = new AudioContext({ sampleRate:24000 });
-    analyser = audioCtx.createAnalyser(); analyser.fftSize = 256;
+// ═══════════════ SLIDERS ═══════════════
+function oGain(v){document.getElementById('vGain').textContent=v+'%';}
+function oThr(v){document.getElementById('vThr').textContent=v;}
+function oSil(v){document.getElementById('vSil').textContent=v+' ms';}
+function updVadUI(){
+  const m=document.getElementById('selVad').value;
+  document.getElementById('pSVad').style.display=m==='server_vad'?'':'none';
+  document.getElementById('pSemVad').style.display=m==='semantic_vad'?'':'none';
+}
+
+// ═══════════════ CONNESSIONE ═══════════════
+async function toggleConn(){if(connected)disc();else await conn();}
+
+async function conn(){
+  const raw=document.getElementById('keyIn').value;
+  API_KEY=raw.replace(/[\x00-\x1F\x7F\u200B-\u200D\uFEFF]/g,'').trim();
+  if(API_KEY.length<20){toast(`❌ Chiave troppo corta (${API_KEY.length} chars)`);return;}
+  // Aggiorna voce/prompt dall'UI
+  onCharChg(); activeVoice=document.getElementById('selVoice').value||activeVoice;
+  setSt('connecting');
+  try{
+    micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,sampleRate:24000}});
+    audioCtx=new AudioContext({sampleRate:24000});
+    analyser=audioCtx.createAnalyser(); analyser.fftSize=256;
     audioCtx.createMediaStreamSource(micStream).connect(analyser);
     await audioCtx.audioWorklet.addModule('audio-processor.js');
-    workletNode = new AudioWorkletNode(audioCtx, 'pcm16-processor');
-    workletNode.port.onmessage = onMicChunk;
+    workletNode=new AudioWorkletNode(audioCtx,'pcm16-processor');
+    workletNode.port.onmessage=onChunk;
     analyser.connect(workletNode);
-
-    const model = document.getElementById('initModel').value;
-    ws = new WebSocket(
-      `wss://api.openai.com/v1/realtime?model=${model}`,
-      ['realtime', `openai-insecure-api-key.${API_KEY}`, 'openai-beta.realtime-v1']
-    );
-    ws.binaryType = 'arraybuffer';
-    ws.onopen = () => {
-      console.log('[OpenAI] WS opened — aspetto session.created...');
-      setStatus('connecting');
-      // NON mandiamo session.update qui — aspettiamo session.created dal server
-    };
-    ws.onmessage = onMsg;
-    ws.onerror = (e) => { console.error('WS error', e); toast('❌ Errore WebSocket'); disconnect(); };
-    ws.onclose = (e) => { console.log('WS close', e.code, e.reason); if (connected) { addLog(`🔌 Chiuso (${e.code})`, 'system'); disconnect(); } };
-  } catch(e) { toast('❌ ' + e.message); setStatus('error'); disconnect(); }
+    dot('dMic','on'); startViz();
+    const model=document.getElementById('selModel').value;
+    ws=new WebSocket(`wss://api.openai.com/v1/realtime?model=${model}`,
+      ['realtime',`openai-insecure-api-key.${API_KEY}`,'openai-beta.realtime-v1']);
+    ws.binaryType='arraybuffer';
+    ws.onopen=()=>console.log('[WS] open');
+    ws.onmessage=onMsg;
+    ws.onerror=e=>{console.error('[WS]',e);toast('❌ Errore WebSocket');disc();};
+    ws.onclose=e=>{console.log('[WS]',e.code,e.reason);if(connected)disc();else{setSt('idle');toast(`❌ Connessione fallita (${e.code})`);}};
+  }catch(e){toast('❌ '+e.message);setSt('idle');disc();}
 }
-function sendSession() {
-  const voice        = document.getElementById('cfgVoice').value || activeVoice;
-  const instructions = document.getElementById('cfgSystem').value.trim() || activePrompt;
-  console.log('[Session] Voice:', voice, '| Prompt:', instructions.slice(0, 80));
 
-  // Struttura IDENTICA a quella funzionante su Raspberry (robot_GPT.py)
-  ws.send(JSON.stringify({
-    type: 'session.update',
-    session: {
-      modalities: ['text', 'audio'],
-      instructions,
-      voice,
-      input_audio_format: 'pcm16',
-      output_audio_format: 'pcm16',
-      input_audio_transcription: { model: 'whisper-1' },
-      turn_detection: {
-        type: 'server_vad',
-        threshold: parseFloat(document.getElementById('cfgVadThresh').value),
-        silence_duration_ms: parseInt(document.getElementById('cfgSilenceMs').value),
-        prefix_padding_ms: 300,
-        create_response: true
-      },
-      temperature: parseFloat(document.getElementById('cfgTemp').value),
-      max_response_output_tokens: 4096
-    }
-  }));
+function sendSess(){
+  const voice=document.getElementById('selVoice').value||activeVoice;
+  const instr=activePrompt;
+  const temp=parseFloat(document.getElementById('selTemp').value);
+  const vadMode=document.getElementById('selVad').value;
+  const silMs=parseInt(document.getElementById('rSil').value);
+  const eagerness=document.getElementById('selEag').value;
+  const bargein=document.getElementById('chkBarge').checked;
+  console.log('[Session] voice:',voice,'prompt:',instr.slice(0,70));
+  const td=vadMode==='server_vad'
+    ?{type:'server_vad',threshold:0.5,silence_duration_ms:silMs,prefix_padding_ms:300,create_response:true,interrupt_response:bargein}
+    :{type:'semantic_vad',eagerness,create_response:true,interrupt_response:bargein};
+  ws.send(JSON.stringify({type:'session.update',session:{
+    modalities:['text','audio'],instructions:instr,voice,
+    input_audio_format:'pcm16',output_audio_format:'pcm16',
+    input_audio_transcription:{model:'whisper-1'},
+    turn_detection:td,temperature:temp,max_response_output_tokens:4096
+  }}));
 }
-function onMicChunk(e) {
-  if (!ws || ws.readyState !== WebSocket.OPEN || muted) return;
-  const pcm = new Int16Array(e.data);
-  const b64 = btoa(String.fromCharCode(...new Uint8Array(pcm.buffer)));
-  // GA API: input_audio_buffer.append con audio base64 PCM16
-  ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }));
+
+function onChunk(e){
+  if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
+  let pcm=new Int16Array(e.data);
+  const g=parseInt(document.getElementById('rGain').value)/100;
+  if(g!==1){const o=new Int16Array(pcm.length);for(let i=0;i<pcm.length;i++)o[i]=Math.max(-32768,Math.min(32767,pcm[i]*g));pcm=o;}
+  ws.send(JSON.stringify({type:'input_audio_buffer.append',audio:btoa(String.fromCharCode(...new Uint8Array(pcm.buffer)))}));
 }
-function onMsg(e) {
-  let msg; try { msg = JSON.parse(e.data); } catch { return; }
 
-  // Log visibile nell'app per debug
-  const t = msg.type || '?';
-  if (!['response.audio.delta','input_audio_buffer.append'].includes(t)) {
-    console.log('[OpenAI RX]', t, JSON.stringify(msg).slice(0,200));
-  }
-
-  switch(msg.type) {
-    case 'session.created':
-      // Il server ha creato la sessione — ORA mandiamo la configurazione
-      addLog(`🔗 Sessione creata — invio configurazione (voce: ${activeVoice})...`, 'system');
-      sendSession();
-      break;
-
+function onMsg(e){
+  let m;try{m=JSON.parse(e.data);}catch{return;}
+  const t=m.type||'';
+  if(t!=='response.audio.delta')console.log('[RX]',t,JSON.stringify(m).slice(0,100));
+  switch(t){
+    case 'session.created': sendSess(); break;
     case 'session.updated':
-      // Configurazione accettata — ora siamo davvero pronti
-      const v = msg.session?.voice || '?';
-      const instr = (msg.session?.instructions || '').slice(0, 60);
-      addLog(`✅ Connesso! Voce: ${v} | Prompt: ${instr}...`, 'system');
-      setStatus('connected'); connected = true;
-      updateConnectBtn(); startViz();
+      connected=true; updBtn(); setSt('listening'); dot('dAI','on');
+      toast(`✅ Connesso · voce: ${m.session?.voice||activeVoice}`);
       break;
-
     case 'response.audio.delta':
-      if (msg.delta) { const b=Uint8Array.from(atob(msg.delta),c=>c.charCodeAt(0)); audioQueue.push(new Int16Array(b.buffer)); if(!isPlaying) drainAudio(); } break;
-    case 'response.audio_transcript.delta': if(msg.delta) appendRobotText(msg.delta); break;
-    case 'response.audio_transcript.done': finalizeRobotText(); break;
-    case 'conversation.item.input_audio_transcription.completed': if(msg.transcript) addLog(msg.transcript,'user'); break;
-    case 'response.done': if(msg.response?.usage) updateTokens(msg.response.usage); break;
-    case 'input_audio_buffer.speech_started': setStatus('listening'); resetTimer(); break;
-    case 'input_audio_buffer.speech_stopped': setStatus('connected'); startTimer(); break;
-    case 'response.audio.done': setStatus('connected'); break;
-    case 'error':
-      addLog(`❌ Errore: ${msg.error?.message || JSON.stringify(msg.error)}`, 'system');
-      toast('⚠️ '+(msg.error?.message||'Errore API'));
+      if(m.delta){const b=Uint8Array.from(atob(m.delta),c=>c.charCodeAt(0));audioQ.push(new Int16Array(b.buffer));if(!playing)drain();}
       break;
+    case 'response.done':
+      if(m.response?.usage)addTok(m.response.usage);
+      silStart=Date.now(); setSt('listening'); break;
+    case 'input_audio_buffer.speech_started':
+      setSt('talking'); dot('dMic','tk'); silStart=null; break;
+    case 'input_audio_buffer.speech_stopped':
+      setSt('listening'); dot('dMic','on'); break;
+    case 'response.audio.done':
+      setSt('listening'); if(!silStart)silStart=Date.now(); break;
+    case 'error':
+      toast('⚠️ '+(m.error?.message||'Errore API')); console.error(m.error); break;
   }
 }
-function disconnect() {
-  connected = false;
+
+function disc(){
+  connected=false;
   if(ws){try{ws.close();}catch(e){}ws=null;}
   if(workletNode){workletNode.port.postMessage({cmd:'stop'});workletNode=null;}
   if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null;}
   if(audioCtx){audioCtx.close();audioCtx=null;}
-  if(vizFrame){cancelAnimationFrame(vizFrame);vizFrame=null;}
-  analyser=null; audioQueue=[]; isPlaying=false;
-  setStatus('disconnected'); updateConnectBtn();
+  if(rafId){cancelAnimationFrame(rafId);rafId=null;}
+  analyser=null; audioQ=[]; playing=false; silStart=null;
+  dot('dAI',null); dot('dMic',null);
+  setSt('idle'); updBtn(); drawVU(0);
 }
 
-/* ── AUDIO OUT ── */
-async function drainAudio() {
-  if(!audioCtx||!audioQueue.length){isPlaying=false;return;}
-  isPlaying=true; setStatus('talking');
-  const pcm=audioQueue.shift();
-  const f=new Float32Array(pcm.length);
-  for(let i=0;i<pcm.length;i++) f[i]=pcm[i]/(pcm[i]<0?0x8000:0x7FFF);
+// ═══════════════ AUDIO OUT ═══════════════
+async function drain(){
+  if(!audioCtx||!audioQ.length){playing=false;return;}
+  playing=true;
+  const pcm=audioQ.shift(), f=new Float32Array(pcm.length);
+  for(let i=0;i<pcm.length;i++)f[i]=pcm[i]/(pcm[i]<0?0x8000:0x7FFF);
   const buf=audioCtx.createBuffer(1,f.length,24000); buf.copyToChannel(f,0);
-  if(isRecording) recChunks.push(pcm);
+  if(isRec)recChunks.push(pcm);
   const src=audioCtx.createBufferSource(); src.buffer=buf; src.connect(audioCtx.destination);
-  src.onended=()=>drainAudio(); src.start();
+  src.onended=()=>drain(); src.start();
 }
 
-/* ── TRANSCRIPT ── */
-function appendRobotText(d) {
-  robotText+=d;
-  if(!robotMsg){robotMsg=document.createElement('div');robotMsg.className='msg robot';document.getElementById('log').appendChild(robotMsg);}
-  robotMsg.textContent=robotText; scrollLog();
-}
-function finalizeRobotText(){robotMsg=null;robotText='';}
-function addLog(t,type){const d=document.createElement('div');d.className='msg '+type;d.textContent=t;document.getElementById('log').appendChild(d);scrollLog();}
-function scrollLog(){const l=document.getElementById('log');l.scrollTop=l.scrollHeight;}
-
-/* ── TOKEN ── */
-function updateTokens(u){
-  totalIn+=u.input_tokens||0; totalOut+=u.output_tokens||0;
-  const cost=totalIn*P_IN+totalOut*P_OUT;
-  document.getElementById('tokenLabel').textContent=`💰 ${totalIn+totalOut} tok`;
-  document.getElementById('costLabel').textContent=`$${cost.toFixed(4)}`;
-}
-
-/* ── TIMER ── */
-function startTimer(){
-  silenceStart=Date.now(); clearInterval(timerInterval);
-  timerInterval=setInterval(()=>{
-    const s=Math.floor((Date.now()-silenceStart)/1000),m=Math.floor(s/60);
-    document.getElementById('timerLabel').textContent=`⏱ ${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
-  },500);
-}
-function resetTimer(){clearInterval(timerInterval);silenceStart=null;document.getElementById('timerLabel').textContent='⏱ --:--';}
-
-/* ── GAIN / MUTE ── */
-function setGain(v){document.getElementById('gainVal').textContent=parseFloat(v).toFixed(1)+'×';if(workletNode)workletNode.port.postMessage({cmd:'gain',value:parseFloat(v)});}
-function toggleMute(){muted=!muted;const b=document.getElementById('btnMute');b.textContent=muted?'🔇':'🎙';b.classList.toggle('muted',muted);toast(muted?'🔇 Muto':'🎙 Attivo');}
-
-/* ── VISUALIZER ── */
-function resizeViz(){vizCanvas.width=vizCanvas.offsetWidth*devicePixelRatio;vizCanvas.height=vizCanvas.offsetHeight*devicePixelRatio;vizCtx.scale(devicePixelRatio,devicePixelRatio);}
+// ═══════════════ VISUALIZER → VU ═══════════════
 function startViz(){
-  const W=()=>vizCanvas.offsetWidth,H=()=>vizCanvas.offsetHeight;
-  function draw(){vizFrame=requestAnimationFrame(draw);if(!analyser)return;
-    const d=new Uint8Array(analyser.frequencyBinCount);analyser.getByteFrequencyData(d);
-    vizCtx.fillStyle='#0f172a';vizCtx.fillRect(0,0,W(),H());
-    const bw=W()/d.length*2.5;let x=0;
-    for(let i=0;i<d.length;i++){const h=(d[i]/255)*H();const g=vizCtx.createLinearGradient(0,H()-h,0,H());g.addColorStop(0,'#10a37f');g.addColorStop(1,'#10a37f22');vizCtx.fillStyle=g;vizCtx.fillRect(x,H()-h,bw-1,h);x+=bw;}
-  }draw();
+  if(!analyser)return;
+  function tick(){
+    rafId=requestAnimationFrame(tick); if(!analyser)return;
+    const d=new Uint8Array(analyser.frequencyBinCount); analyser.getByteTimeDomainData(d);
+    let s=0; for(let i=0;i<d.length;i++){const v=(d[i]-128)/128;s+=v*v;}
+    drawVU(Math.sqrt(s/d.length)*32768);
+  }tick();
 }
 
-/* ── STATUS ── */
-function setStatus(s){
-  const dot=document.getElementById('statusDot'),label=document.getElementById('statusLabel');
-  dot.className='status-dot';
-  const map={connected:['connected','Connesso'],connecting:[null,'Connessione...'],listening:['talking','In ascolto...'],talking:['talking','Risponde...'],error:['error','Errore'],disconnected:[null,'Disconnesso']};
-  const [cls,txt]=map[s]||[null,s];
-  if(cls)dot.classList.add(cls);label.textContent=txt;
+// ═══════════════ STATUS ═══════════════
+function setSt(s){
+  const m={idle:'● IDLE',connecting:'◌ CONNESSIONE...',listening:'◉ IN ASCOLTO',talking:'▶ PARLA',error:'✕ ERRORE'};
+  document.getElementById('stLbl').textContent=m[s]||s.toUpperCase();
 }
-function updateConnectBtn(){
-  const b=document.getElementById('btnConnect');
-  if(connected){b.classList.add('active');document.getElementById('btnConnectIcon').textContent='🔴';document.getElementById('btnConnectLabel').textContent='DISCONNETTI';}
-  else{b.classList.remove('active');document.getElementById('btnConnectIcon').textContent='📡';document.getElementById('btnConnectLabel').textContent='CONNETTI';}
+function dot(id,st){
+  const d=document.getElementById(id); if(!d)return;
+  d.className='dot'+(st==='on'?' on':st==='er'?' er':st==='tk'?' tk':'');
 }
-
-/* ── SETTINGS ── */
-function toggleSettings(){settingsOpen=!settingsOpen;document.getElementById('settingsPanel').classList.toggle('open',settingsOpen);if(connected&&!settingsOpen)sendSession();}
-
-/* ── SPEED TEST ── */
-async function speedTest(){
-  toast('📶 Test...');const t0=Date.now();
-  try{await fetch('https://api.openai.com/v1/models',{headers:{Authorization:`Bearer ${API_KEY}`}});toast(`📶 ${Date.now()-t0}ms`);}
-  catch{toast('❌ Speed test fallito');}
+function updBtn(){
+  const b=document.getElementById('btnConn');
+  if(connected){b.classList.add('off');b.textContent='🔴  DISCONNETTI';}
+  else{b.classList.remove('off');b.textContent='📡  CONNETTI';}
 }
 
-/* ── REC ── */
+// ═══════════════ MUTE ═══════════════
+function toggleMute(){
+  muted=!muted;
+  const b=document.getElementById('btnMute');
+  b.textContent=muted?'🔇 MUTO':'🎙 ATTIVO';
+  b.classList.toggle('on',muted);
+  toast(muted?'🔇 Microfono silenziato':'🎙 Microfono attivo');
+}
+
+// ═══════════════ SPEED TEST ═══════════════
+async function doSpeed(){
+  const btn=document.getElementById('btnSpeed'), res=document.getElementById('spRes');
+  btn.textContent='⌛ Test in corso...'; btn.disabled=true; res.style.display='none';
+  try{
+    const t0=Date.now();
+    await fetch('https://speed.cloudflare.com/__down?measId=0&bytes=1000000',{cache:'no-store'});
+    const dt=(Date.now()-t0)/1000, mbps=(8/dt).toFixed(2);
+    const levels=[
+      [1,  0,'⚠️ INSUFFICIENTE','sp0'],
+      [3,  1,'🟡 SUFFICIENTE',  'sp1'],
+      [10, 2,'🟢 DISCRETO',     'sp2'],
+      [30, 3,'✅ BUONO',         'sp3'],
+      [Infinity,4,'🚀 OTTIMO',  'sp4'],
+    ];
+    const [,,label,cls]=levels.find(([lim])=>mbps<lim);
+    res.className='spres '+cls;
+    res.textContent=`${label}  ·  ${mbps} Mbps  ·  ${Math.round(dt*1000)} ms`;
+    res.style.display='block';
+  }catch(err){
+    res.className='spres sp0'; res.textContent='❌ '+err.message; res.style.display='block';
+  }
+  btn.textContent='⚡  TEST VELOCITÀ'; btn.disabled=false;
+}
+
+// ═══════════════ TIMER SILENZIO ═══════════════
+function tickTimer(){
+  const el=document.getElementById('silTimer');
+  if(!silStart||!connected){el.textContent='00:00';el.className='timer';return;}
+  const s=Math.floor((Date.now()-silStart)/1000);
+  el.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+  el.className='timer'+(s>=300?' r':s>=120?' y':'');
+}
+
+// ═══════════════ COSTO ═══════════════
+function addTok(u){
+  const ai=u.input_token_details||{}, ao=u.output_token_details||{};
+  tok.ai+=(ai.audio_tokens||0); tok.ao+=(ao.audio_tokens||0);
+  tok.ti+=Math.max(0,(u.input_tokens||0)-(ai.audio_tokens||0));
+  tok.to+=Math.max(0,(u.output_tokens||0)-(ao.audio_tokens||0));
+  tok.c+=(ai.cached_tokens||0);
+  renderCost();
+}
+function renderCost(){
+  const P=PRICES[document.getElementById('selModel').value]||PRICES['gpt-4o-realtime-preview'];
+  const aI=(tok.ai/1e6)*P.ai*EUR, aO=(tok.ao/1e6)*P.ao*EUR;
+  const tI=(tok.ti/1e6)*P.ti*EUR, tO=(tok.to/1e6)*P.to*EUR, ca=(tok.c/1e6)*P.c*EUR;
+  const tot=aI+aO+tI+tO-ca, fmt=v=>v<.0001?'<€0.0001':'€'+v.toFixed(4);
+  document.getElementById('costBox').innerHTML=
+    `🎤 Audio IN:  ${tok.ai.toLocaleString()} tok → ${fmt(aI)}<br>`+
+    `🔊 Audio OUT: ${tok.ao.toLocaleString()} tok → ${fmt(aO)}<br>`+
+    `📝 Testo IN:  ${tok.ti.toLocaleString()} tok → ${fmt(tI)}<br>`+
+    `📄 Testo OUT: ${tok.to.toLocaleString()} tok → ${fmt(tO)}<br>`+
+    `💾 Cache sco: ${tok.c.toLocaleString()} tok → -${fmt(ca)}<br>`+
+    `<div class="costtot">💶 TOTALE: ${fmt(tot)}</div>`;
+}
+function resetCost(){tok={ai:0,ao:0,ti:0,to:0,c:0};document.getElementById('costBox').innerHTML='<span style="color:var(--muted)">Azzerato.</span>';}
+
+// ═══════════════ REC ═══════════════
 function toggleRec(){
-  isRecording=!isRecording;const b=document.getElementById('btnRec');
-  if(isRecording){recChunks=[];b.textContent='⏹ STOP REC';b.style.color='#ef4444';toast('⏺ REC avviata');}
-  else{b.textContent='⏺ REC';b.style.color='';if(recChunks.length)downloadWav();else toast('⚠️ Nessun audio');}
+  isRec=!isRec; const b=document.getElementById('btnRec');
+  if(isRec){recChunks=[];b.textContent='⏹ STOP REC';b.classList.add('rec');toast('⏺ REC avviata');}
+  else{b.textContent='⏺ AVVIA REC';b.classList.remove('rec');if(recChunks.length)saveWav();else toast('⚠️ Nessun audio registrato');}
 }
-function downloadWav(){
-  const sil=new Int16Array(REC_SR),parts=[];
+function cancelRec(){isRec=false;recChunks=[];const b=document.getElementById('btnRec');b.textContent='⏺ AVVIA REC';b.classList.remove('rec');toast('REC annullata');}
+function saveWav(){
+  const SR=24000, sil=new Int16Array(SR), parts=[];
   recChunks.forEach((c,i)=>{parts.push(c);if(i<recChunks.length-1)parts.push(sil);});
-  const tot=parts.reduce((a,c)=>a+c.length,0),pcm=new Int16Array(tot);let off=0;
+  const tot=parts.reduce((a,c)=>a+c.length,0), pcm=new Int16Array(tot); let off=0;
   parts.forEach(p=>{pcm.set(p,off);off+=p.length;});
-  const wav=encodeWav(pcm,REC_SR),url=URL.createObjectURL(new Blob([wav],{type:'audio/wav'}));
-  const a=document.createElement('a');a.href=url;a.download=`rec-${Date.now()}.wav`;a.click();URL.revokeObjectURL(url);toast('💾 WAV salvato');
-}
-function encodeWav(p,sr){
-  const b=new ArrayBuffer(44+p.length*2),v=new DataView(b);
+  const b=new ArrayBuffer(44+pcm.length*2), v=new DataView(b);
   const w=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
-  w(0,'RIFF');v.setUint32(4,36+p.length*2,true);w(8,'WAVE');w(12,'fmt ');
-  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);
-  v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');
-  v.setUint32(40,p.length*2,true);for(let i=0;i<p.length;i++)v.setInt16(44+i*2,p[i],true);return b;
+  w(0,'RIFF');v.setUint32(4,36+pcm.length*2,true);w(8,'WAVE');w(12,'fmt ');
+  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,SR,true);
+  v.setUint32(28,SR*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');
+  v.setUint32(40,pcm.length*2,true);for(let i=0;i<pcm.length;i++)v.setInt16(44+i*2,pcm[i],true);
+  const url=URL.createObjectURL(new Blob([b],{type:'audio/wav'}));
+  const a=document.createElement('a');a.href=url;a.download=`robot-${Date.now()}.wav`;a.click();URL.revokeObjectURL(url);
+  toast('💾 WAV salvato');
 }
 
-/* ── TOAST ── */
-let toastT=null;
-function toast(m){const e=document.getElementById('toast');e.textContent=m;e.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>e.classList.remove('show'),2800);}
+// ═══════════════ INTERNET ═══════════════
+async function netCheck(){
+  try{await fetch('https://www.gstatic.com/generate_204',{mode:'no-cors',cache:'no-store'});dot('dNet','on');}
+  catch{dot('dNet','er');}
+}
 
-/* ── INIT ── */
-loadSavedKey(); renderCharSelect();
+// ═══════════════ TOAST ═══════════════
+let _tt=null;
+function toast(m){const e=document.getElementById('toast');e.textContent=m;e.classList.add('s');clearTimeout(_tt);_tt=setTimeout(()=>e.classList.remove('s'),3000);}
+
+init();
 </script>
 </body>
 </html>
