@@ -225,8 +225,9 @@
         <div class="field">
           <label>Modello</label>
           <select id="initModelGemini">
+            <option value="gemini-2.5-flash-native-audio-latest">Gemini 2.5 Flash Native Audio (latest)</option>
+            <option value="gemini-2.5-flash-native-audio-preview-12-2025">Gemini 2.5 Flash Native Audio (preview)</option>
             <option value="gemini-2.0-flash-live-001">Gemini 2.0 Flash Live</option>
-            <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Exp</option>
           </select>
         </div>
         <div class="field">
@@ -444,10 +445,11 @@ function loadKeysFile(input) {
     const lines = e.target.result.split('\n');
     let found = 0;
     lines.forEach(line => {
-      line = line.trim();
+      // Rimuove BOM, CR, spazi e caratteri invisibili
+      line = line.replace(/^\uFEFF/, '').replace(/\r/g, '').trim();
       if (line.startsWith('OPENAI_KEY=')) {
-        const k = line.slice(11).trim();
-        if (k) {
+        const k = line.slice(11).replace(/[\s"'`]/g, '');
+        if (k.length > 10) {
           document.getElementById('keyOpenAI').value = k;
           localStorage.setItem(LS_KEY_OPENAI, k);
           setKeyStatus('openai', true);
@@ -455,8 +457,8 @@ function loadKeysFile(input) {
         }
       }
       if (line.startsWith('GEMINI_KEY=')) {
-        const k = line.slice(11).trim();
-        if (k) {
+        const k = line.slice(11).replace(/[\s"'`]/g, '');
+        if (k.length > 10) {
           document.getElementById('keyGemini').value = k;
           localStorage.setItem(LS_KEY_GEMINI, k);
           setKeyStatus('gemini', true);
@@ -464,7 +466,7 @@ function loadKeysFile(input) {
         }
       }
     });
-    toast(found > 0 ? `✅ ${found} chiave${found>1?'s':''} caricata/e da keys.txt` : '⚠️ Nessuna chiave trovata nel file');
+    toast(found > 0 ? `✅ ${found} chiave${found>1?'s':''} caricata da keys.txt` : '⚠️ Nessuna chiave trovata — controlla il formato');
     input.value = '';
   };
   reader.readAsText(file);
@@ -633,11 +635,12 @@ function importCharFile(input) {
 ═══════════════════════════════════════════ */
 function goMain() {
   if (currentProvider === 'openai') {
-    API_KEY = document.getElementById('keyOpenAI').value.trim();
-    if (!API_KEY.startsWith('sk-')) { toast('❌ API key OpenAI non valida (sk-...)'); return; }
+    // Strip spazi, virgolette e caratteri invisibili che possono arrivare dal copia-incolla o dal file
+    API_KEY = document.getElementById('keyOpenAI').value.replace(/[\s"'`\r\n]/g, '');
+    if (API_KEY.length < 20) { toast('❌ Chiave OpenAI troppo corta — controlla keys.txt'); return; }
   } else {
-    API_KEY = document.getElementById('keyGemini').value.trim();
-    if (API_KEY.length < 10) { toast('❌ API key Gemini non valida'); return; }
+    API_KEY = document.getElementById('keyGemini').value.replace(/[\s"'`\r\n]/g, '');
+    if (API_KEY.length < 10) { toast('❌ Chiave Gemini non valida — controlla keys.txt'); return; }
   }
 
   // Applica personaggio selezionato al system prompt
@@ -777,46 +780,82 @@ async function connectGemini() {
   const model = document.getElementById('initModelGemini').value;
   const voice = document.getElementById('cfgVoice').value || document.getElementById('initVoiceGemini').value;
   const system = document.getElementById('cfgSystem').value.trim();
-  const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${API_KEY}`;
+
+  // URL corretto: v1beta + alt=sse rimosso, solo ?key=
+  const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${API_KEY}`;
   ws = new WebSocket(url);
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => {
-    ws.send(JSON.stringify({
+    // Setup con struttura corretta (camelCase come da doc ufficiale)
+    const setupMsg = {
       setup: {
         model: `models/${model}`,
-        generation_config: {
-          response_modalities: ['AUDIO'],
-          speech_config: { voice_config: { prebuilt_voice_config: { voice_name: voice } } }
-        },
-        system_instruction: system ? { parts:[{text:system}] } : undefined
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voice }
+            }
+          }
+        }
       }
-    }));
+    };
+    if (system) setupMsg.setup.systemInstruction = { parts: [{ text: system }] };
+    ws.send(JSON.stringify(setupMsg));
   };
   ws.onmessage = onWsMessageGemini;
-  ws.onerror = () => { toast('❌ Errore WebSocket Gemini'); disconnect(); };
-  ws.onclose = () => { if(connected) { addLog('🔌 Connessione chiusa','system'); disconnect(); } };
+  ws.onerror = (e) => { toast('❌ Errore WebSocket Gemini'); console.error('Gemini WS error', e); disconnect(); };
+  ws.onclose = (e) => {
+    console.log('Gemini WS close', e.code, e.reason);
+    if(connected) { addLog(`🔌 Connessione chiusa (${e.code})`, 'system'); disconnect(); }
+  };
 }
 
 function onWsMessageGemini(e) {
-  let msg; try { if(e.data instanceof ArrayBuffer) return; msg=JSON.parse(e.data); } catch { return; }
+  let msg;
+  try {
+    if (e.data instanceof ArrayBuffer) return;
+    msg = JSON.parse(e.data);
+  } catch { return; }
+
+  // Log per debug — visibile in Chrome DevTools console
+  console.debug('[Gemini RX]', JSON.stringify(msg).slice(0, 200));
+
+  // Setup completato
   if (msg.setupComplete !== undefined) {
     setStatus('connected-gemini'); connected=true; updateConnectBtn();
     addLog('✅ Gemini connesso! Parla pure...','system'); startViz();
     startGeminiAudioStream(); return;
   }
-  const parts = msg.serverContent?.modelTurn?.parts;
-  if (parts) {
-    parts.forEach(part => {
-      if (part.inlineData?.mimeType?.startsWith('audio/')) {
-        const bytes = Uint8Array.from(atob(part.inlineData.data), c=>c.charCodeAt(0));
-        audioQueue.push(new Int16Array(bytes.buffer));
-        if (!isPlaying) drainAudio();
-      }
-      if (part.text) appendRobotText(part.text);
-    });
+
+  // Risposta dal modello
+  const serverContent = msg.serverContent;
+  if (serverContent) {
+    const parts = serverContent.modelTurn?.parts;
+    if (parts) {
+      parts.forEach(part => {
+        // Audio in base64 — mimeType es. "audio/pcm;rate=24000"
+        if (part.inlineData?.data) {
+          const bytes = Uint8Array.from(atob(part.inlineData.data), c=>c.charCodeAt(0));
+          audioQueue.push(new Int16Array(bytes.buffer));
+          if (!isPlaying) drainAudio();
+        }
+        if (part.text) appendRobotText(part.text);
+      });
+    }
+    if (serverContent.turnComplete) {
+      finalizeRobotText();
+      setStatus('connected-gemini');
+      startSilenceTimer();
+    }
+    if (serverContent.interrupted) {
+      setStatus('connected-gemini');
+    }
   }
-  if (msg.serverContent?.turnComplete) { finalizeRobotText(); setStatus('connected-gemini'); startSilenceTimer(); }
-  if (msg.error) toast('⚠️ Gemini: '+(msg.error.message||'Errore'));
+
+  // Speech detection
+  if (msg.toolCall) { /* ignora per ora */ }
+  if (msg.error) toast('⚠️ Gemini: '+(msg.error.message||JSON.stringify(msg.error)));
 }
 
 function startGeminiAudioStream() {
@@ -828,7 +867,12 @@ function startGeminiAudioStream() {
     geminiPcmBuffer.forEach(c=>{merged.set(c,off);off+=c.length;});
     geminiPcmBuffer=[];
     const b64 = btoa(String.fromCharCode(...new Uint8Array(merged.buffer)));
-    ws.send(JSON.stringify({ realtime_input:{ media_chunks:[{mime_type:'audio/pcm;rate=16000',data:b64}] } }));
+    // Struttura corretta da doc ufficiale: realtimeInput.audio (non media_chunks)
+    ws.send(JSON.stringify({
+      realtimeInput: {
+        audio: { data: b64, mimeType: 'audio/pcm;rate=24000' }
+      }
+    }));
   }, 100);
 }
 
