@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Robot AI — OpenAI</title>
+  <style>
+    *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+    :root {
+      --bg:#0f172a; --surface:#1e293b; --card:#263348;
+      --accent:#10a37f; --text:#f1f5f9; --muted:#64748b;
+      --danger:#ef4444; --warn:#f59e0b; --radius:16px;
+    }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; display:flex; flex-direction:column; }
+
+    /* ── INIT ── */
+    #screenInit { flex:1; display:flex; flex-direction:column; align-items:center; padding:24px 18px 40px; gap:14px; overflow-y:auto; }
+    .logo-big { font-size:3rem; margin-top:6px; }
+    h1 { font-size:1.4rem; font-weight:800; }
+    .card { background:var(--surface); border-radius:var(--radius); padding:18px; width:100%; max-width:440px; }
+    .card-title { font-size:.75rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:13px; }
+    .field { margin-bottom:12px; }
+    .field:last-child { margin-bottom:0; }
+    .field label { display:block; font-size:.7rem; color:var(--muted); margin-bottom:5px; text-transform:uppercase; letter-spacing:.4px; }
+    .field input, .field select, .field textarea { width:100%; background:var(--card); border:1px solid #334155; border-radius:10px; color:var(--text); font-size:.9rem; padding:10px 12px; outline:none; -webkit-appearance:none; }
+    .field input:focus, .field select:focus { border-color:var(--accent); }
+    .field textarea { resize:vertical; min-height:70px; }
+    .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .key-status { font-size:.68rem; margin-top:4px; min-height:15px; }
+    .key-status.ok { color:var(--accent); }
+    .key-status.warn { color:var(--warn); }
+    .upload-area { border:2px dashed #334155; border-radius:10px; padding:12px; text-align:center; cursor:pointer; font-size:.78rem; color:var(--muted); transition:border-color .2s; }
+    .upload-area:hover { border-color:var(--accent); color:var(--accent); }
+    .upload-area input[type=file] { display:none; }
+    .char-row { display:flex; gap:8px; }
+    .char-row select { flex:1; }
+    .btn-icon { background:var(--card); border:1px solid #334155; border-radius:8px; color:var(--text); font-size:1rem; padding:8px 10px; cursor:pointer; }
+    .btn-primary { width:100%; max-width:440px; background:linear-gradient(135deg,var(--accent),#0d7f63); color:#fff; border:none; border-radius:14px; font-size:1.1rem; font-weight:800; padding:17px; cursor:pointer; letter-spacing:1px; transition:opacity .15s,transform .1s; }
+    .btn-primary:active { opacity:.85; transform:scale(.98); }
+    .btn-back { background:transparent; border:none; color:var(--muted); font-size:.85rem; cursor:pointer; padding:4px; }
+
+    /* ── MODAL EDITOR ── */
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:100; align-items:center; justify-content:center; padding:20px; }
+    .modal-overlay.open { display:flex; }
+    .modal { background:var(--surface); border-radius:var(--radius); padding:22px; width:100%; max-width:440px; display:flex; flex-direction:column; gap:12px; max-height:90dvh; overflow-y:auto; }
+    .modal-title { font-size:1rem; font-weight:800; }
+    .modal label { font-size:.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; display:block; margin-bottom:4px; }
+    .modal input, .modal select, .modal textarea { width:100%; background:var(--card); border:1px solid #334155; border-radius:8px; color:var(--text); font-size:.88rem; padding:9px 11px; outline:none; -webkit-appearance:none; }
+    .modal textarea { resize:vertical; min-height:100px; }
+    .modal-row { display:flex; gap:8px; }
+    .btn-save { flex:1; background:linear-gradient(135deg,var(--accent),#0d7f63); color:#fff; border:none; border-radius:10px; font-size:.9rem; font-weight:700; padding:12px; cursor:pointer; }
+    .btn-del { background:#7f1d1d; color:#fca5a5; border:none; border-radius:10px; font-size:.9rem; padding:12px 14px; cursor:pointer; }
+    .btn-cancel { background:var(--card); color:var(--muted); border:1px solid #334155; border-radius:10px; font-size:.9rem; padding:12px 14px; cursor:pointer; }
+
+    /* ── MAIN ── */
+    #screenMain { display:none; flex:1; flex-direction:column; }
+    .topbar { background:var(--surface); padding:12px 15px 10px; display:flex; align-items:center; justify-content:space-between; }
+    .topbar-left { display:flex; align-items:center; gap:8px; }
+    .badge { font-size:.62rem; font-weight:700; padding:3px 8px; border-radius:20px; background:#0d3d2e; color:var(--accent); }
+    .char-badge { font-size:.85rem; font-weight:700; }
+    .status-dot { width:9px; height:9px; border-radius:50%; background:var(--muted); display:inline-block; margin-right:5px; }
+    .status-dot.connected { background:var(--accent); box-shadow:0 0 6px var(--accent); }
+    .status-dot.error { background:var(--danger); }
+    .status-dot.talking { background:var(--warn); animation:pulse .6s ease infinite alternate; }
+    @keyframes pulse { to { opacity:.4; } }
+    .status-label { font-size:.73rem; color:var(--muted); }
+    #vizCanvas { display:block; width:100%; height:60px; background:var(--bg); }
+    #log { flex:1; overflow-y:auto; padding:13px; display:flex; flex-direction:column; gap:9px; font-size:.86rem; }
+    .msg { padding:9px 13px; border-radius:12px; max-width:88%; line-height:1.5; word-break:break-word; }
+    .msg.robot { background:var(--surface); align-self:flex-start; border-bottom-left-radius:4px; }
+    .msg.user { background:#163d2e; align-self:flex-end; border-bottom-right-radius:4px; color:#a7f3d0; }
+    .msg.system { background:transparent; color:var(--muted); font-size:.72rem; align-self:center; font-style:italic; }
+    .controls { background:var(--surface); border-top:1px solid #ffffff08; padding:11px 15px 22px; display:flex; flex-direction:column; gap:10px; }
+    .controls-row { display:flex; gap:8px; align-items:center; }
+    .btn-round { flex:1; height:56px; border-radius:13px; border:none; font-size:.86rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; transition:opacity .15s,transform .1s; }
+    .btn-round:active { opacity:.8; transform:scale(.97); }
+    #btnConnect { background:linear-gradient(135deg,var(--accent),#0d7f63); color:#fff; }
+    #btnConnect.active { background:linear-gradient(135deg,var(--danger),#b91c1c); }
+    #btnMute { background:var(--card); color:var(--text); flex:0 0 56px; }
+    #btnMute.muted { background:#7f1d1d; color:#fca5a5; }
+    .slider-row { display:flex; align-items:center; gap:9px; font-size:.73rem; color:var(--muted); }
+    .slider-row input[type=range] { flex:1; accent-color:var(--accent); height:4px; }
+    .slider-val { min-width:33px; text-align:right; }
+    .info-bar { display:flex; justify-content:space-between; font-size:.68rem; color:var(--muted); }
+    #settingsPanel { background:var(--card); border-radius:var(--radius); padding:13px; display:none; flex-direction:column; gap:9px; }
+    #settingsPanel.open { display:flex; }
+    #settingsPanel label { font-size:.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:2px; display:block; }
+    #settingsPanel select, #settingsPanel input, #settingsPanel textarea { width:100%; background:var(--surface); border:1px solid #334155; border-radius:8px; color:var(--text); font-size:.86rem; padding:7px 9px; -webkit-appearance:none; outline:none; }
+    #settingsPanel textarea { resize:vertical; }
+    .settings-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+    .btn-sm { background:transparent; border:1px solid #334155; border-radius:9px; color:var(--muted); font-size:.73rem; padding:7px 10px; cursor:pointer; display:flex; align-items:center; gap:5px; }
+    #toast { position:fixed; bottom:90px; left:50%; transform:translateX(-50%); background:#1e293b; border:1px solid #334155; color:var(--text); border-radius:20px; padding:9px 18px; font-size:.78rem; opacity:0; transition:opacity .3s; pointer-events:none; z-index:999; white-space:nowrap; }
+    #toast.show { opacity:1; }
+  </style>
+</head>
+<body>
+
+<!-- ══ INIT ══ -->
+<div id="screenInit">
+  <div style="width:100%;max-width:440px;display:flex;align-items:center;gap:10px">
+    <button class="btn-back" onclick="location.href='index.html'">← Launcher</button>
+  </div>
+  <div class="logo-big">⚡</div>
+  <h1>OpenAI Realtime</h1>
+
+  <!-- CHIAVE -->
+  <div class="card">
+    <div class="card-title">🔑 API Key</div>
+    <div class="field">
+      <label>OpenAI API Key</label>
+      <input type="password" id="keyOpenAI" placeholder="sk-..." autocomplete="off" spellcheck="false" oninput="onKeyInput()">
+      <div class="key-status" id="keyStatus"></div>
+    </div>
+    <div class="upload-area" onclick="document.getElementById('fileKeys').click()">
+      <input type="file" id="fileKeys" accept=".txt" onchange="loadKeysFile(this)">
+      📂 Carica <strong>keys.txt</strong>
+    </div>
+    <div style="font-size:.63rem;color:var(--muted);margin-top:6px">
+      Formato: <code style="color:#a7f3d0">OPENAI_KEY=sk-...</code>
+    </div>
+  </div>
+
+  <!-- MODELLO -->
+  <div class="card">
+    <div class="card-title">🧠 Modello & Voce</div>
+    <div class="row2">
+      <div class="field">
+        <label>Modello</label>
+        <select id="initModel">
+          <option value="gpt-4o-realtime-preview">gpt-4o-realtime</option>
+          <option value="gpt-4o-mini-realtime-preview">gpt-4o-mini-realtime</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Voce</label>
+        <select id="initVoice">
+          <option value="alloy">Alloy</option>
+          <option value="echo">Echo</option>
+          <option value="shimmer">Shimmer</option>
+          <option value="verse">Verse</option>
+          <option value="coral">Coral</option>
+          <option value="ash">Ash</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- PERSONAGGI -->
+  <div class="card">
+    <div class="card-title">🎭 Personaggio</div>
+    <div class="field">
+      <div class="char-row">
+        <select id="selChar" onchange="onCharChange()"></select>
+        <button class="btn-icon" onclick="openEditor(null)">➕</button>
+        <button class="btn-icon" onclick="openEditor(document.getElementById('selChar').value)">✏️</button>
+      </div>
+    </div>
+    <div id="charPreview" style="font-size:.74rem;color:var(--muted);padding:8px;background:var(--card);border-radius:8px;min-height:36px;display:none;"></div>
+    <div class="upload-area" style="margin-top:8px" onclick="document.getElementById('fileChar').click()">
+      <input type="file" id="fileChar" accept=".txt" onchange="importCharFile(this)">
+      📂 Importa personaggio da <strong>.txt</strong>
+    </div>
+    <div style="font-size:.63rem;color:var(--muted);margin-top:6px">
+      Formato opzionale: <code style="color:#a7f3d0">NOME=...</code> / <code style="color:#a7f3d0">VOCE=...</code> poi il prompt
+    </div>
+  </div>
+
+  <button class="btn-primary" onclick="goMain()">🚀 AVVIA</button>
+</div>
+
+<!-- ══ EDITOR ══ -->
+<div class="modal-overlay" id="modalEditor">
+  <div class="modal">
+    <div class="modal-title" id="modalTitle">✏️ Personaggio</div>
+    <div><label>Nome</label><input type="text" id="edName" placeholder="es. Assistente, Robot..."></div>
+    <div><label>Istruzioni (system prompt)</label><textarea id="edPrompt" rows="5"></textarea></div>
+    <div><label>Voce preferita</label>
+      <select id="edVoice">
+        <option value="">— usa quella selezionata —</option>
+        <option value="alloy">Alloy</option><option value="echo">Echo</option>
+        <option value="shimmer">Shimmer</option><option value="verse">Verse</option>
+        <option value="coral">Coral</option><option value="ash">Ash</option>
+      </select>
+    </div>
+    <div class="modal-row">
+      <button class="btn-save" onclick="saveCharacter()">💾 Salva</button>
+      <button class="btn-del" id="btnDel" style="display:none" onclick="deleteCharacter()">🗑</button>
+      <button class="btn-cancel" onclick="closeEditor()">✕</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MAIN ══ -->
+<div id="screenMain">
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="badge">OPENAI</span>
+      <span class="char-badge" id="charBadge">🤖</span>
+    </div>
+    <div>
+      <span class="status-dot" id="statusDot"></span>
+      <span class="status-label" id="statusLabel">Disconnesso</span>
+    </div>
+  </div>
+  <canvas id="vizCanvas"></canvas>
+  <div id="log"></div>
+  <div class="controls">
+    <div class="info-bar">
+      <span id="timerLabel">⏱ --:--</span>
+      <span id="tokenLabel">💰 -- tok</span>
+      <span id="costLabel">$--.--</span>
+    </div>
+    <div id="settingsPanel">
+      <div class="settings-grid">
+        <div><label>VAD Threshold</label><input type="number" id="cfgVadThresh" value="0.5" step="0.05" min="0" max="1"></div>
+        <div><label>Silenzio (ms)</label><input type="number" id="cfgSilenceMs" value="700" step="50"></div>
+        <div><label>Temperatura</label><input type="number" id="cfgTemp" value="0.8" step="0.05" min="0" max="1.2"></div>
+        <div><label>Eagerness</label>
+          <select id="cfgEagerness">
+            <option value="auto">Auto</option><option value="low">Low</option>
+            <option value="medium">Medium</option><option value="high">High</option>
+          </select>
+        </div>
+        <div><label>Voce</label>
+          <select id="cfgVoice">
+            <option value="alloy">Alloy</option><option value="echo">Echo</option>
+            <option value="shimmer">Shimmer</option><option value="verse">Verse</option>
+            <option value="coral">Coral</option><option value="ash">Ash</option>
+          </select>
+        </div>
+        <div><label>Barge-in</label>
+          <select id="cfgBargein"><option value="true">Attivo</option><option value="false">Disattivo</option></select>
+        </div>
+      </div>
+      <label>System prompt</label>
+      <textarea id="cfgSystem" rows="3">Sei un assistente vocale simpatico. Rispondi in italiano.</textarea>
+    </div>
+    <div class="controls-row">
+      <button class="btn-round" id="btnConnect" onclick="toggleConnect()">
+        <span id="btnConnectIcon">📡</span><span id="btnConnectLabel">CONNETTI</span>
+      </button>
+      <button class="btn-round" id="btnMute" onclick="toggleMute()">🎙</button>
+    </div>
+    <div class="slider-row">
+      <span>🎙 Gain</span>
+      <input type="range" id="gainSlider" min="0.5" max="5" step="0.1" value="1" oninput="setGain(this.value)">
+      <span class="slider-val" id="gainVal">1.0×</span>
+    </div>
+    <div class="controls-row" style="gap:7px;flex-wrap:wrap">
+      <button class="btn-sm" onclick="toggleSettings()">⚙️ Impostazioni</button>
+      <button class="btn-sm" onclick="speedTest()">📶 Speed</button>
+      <button class="btn-sm" id="btnRec" onclick="toggleRec()">⏺ REC</button>
+      <button class="btn-sm" onclick="goBack()">🔙 Launcher</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ── STORAGE KEYS ── */
+const LS_KEY   = 'robot_key_openai';
+const LS_CHARS = 'robot_characters';
+const LS_LAST  = 'robot_last_char';
+
+/* ── STATO ── */
+let API_KEY = '';
+let ws = null, audioCtx = null, workletNode = null, micStream = null;
+let muted = false, connected = false, settingsOpen = false;
+let totalIn = 0, totalOut = 0;
+const P_IN = 5/1e6, P_OUT = 20/1e6;
+let silenceStart = null, timerInterval = null;
+let recChunks = [], isRecording = false;
+const REC_SR = 24000;
+const vizCanvas = document.getElementById('vizCanvas');
+const vizCtx = vizCanvas.getContext('2d');
+let analyser = null, vizFrame = null;
+let robotMsg = null, robotText = '';
+let audioQueue = [], isPlaying = false;
+let editingChar = null;
+
+/* ── CHIAVE ── */
+function loadSavedKey() {
+  const k = localStorage.getItem(LS_KEY);
+  if (k) { document.getElementById('keyOpenAI').value = k; setKeyStatus(true); }
+  else setKeyStatus(false);
+}
+function setKeyStatus(ok) {
+  const el = document.getElementById('keyStatus');
+  el.className = 'key-status ' + (ok ? 'ok' : 'warn');
+  el.textContent = ok ? '✅ Chiave salvata' : '⚠️ Nessuna chiave';
+}
+function onKeyInput() {
+  // Salva subito in localStorage, rimuovendo caratteri invisibili
+  const raw = document.getElementById('keyOpenAI').value;
+  const k = raw.replace(/[\u200B-\u200D\uFEFF\r\n]/g, '').trim();
+  if (k.length > 10) {
+    localStorage.setItem(LS_KEY, k);
+    setKeyStatus(true);
+  }
+}
+function loadKeysFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    // Rimuove BOM e CR
+    const text = e.target.result.replace(/^\uFEFF/, '').replace(/\r/g, '');
+    let found = false;
+    text.split('\n').forEach(line => {
+      line = line.trim();
+      if (line.startsWith('OPENAI_KEY=')) {
+        const k = line.slice(11).replace(/[\s"'`]/g, '');
+        if (k.length > 10) {
+          document.getElementById('keyOpenAI').value = k;
+          localStorage.setItem(LS_KEY, k);
+          setKeyStatus(true);
+          found = true;
+        }
+      }
+    });
+    toast(found ? '✅ Chiave OpenAI caricata' : '⚠️ OPENAI_KEY= non trovata nel file');
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+/* ── PERSONAGGI ── */
+function getChars() { try { return JSON.parse(localStorage.getItem(LS_CHARS)) || []; } catch { return []; } }
+function saveChars(a) { localStorage.setItem(LS_CHARS, JSON.stringify(a)); }
+function renderCharSelect() {
+  const sel = document.getElementById('selChar');
+  const chars = getChars();
+  const last = localStorage.getItem(LS_LAST);
+  sel.innerHTML = '';
+  if (!chars.length) {
+    sel.innerHTML = '<option value="">— nessun personaggio —</option>';
+  } else {
+    chars.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.name; o.textContent = c.name;
+      sel.appendChild(o);
+    });
+    if (chars.find(c => c.name === last)) sel.value = last;
+  }
+  onCharChange();
+}
+function onCharChange() {
+  const name = document.getElementById('selChar').value;
+  const char = getChars().find(c => c.name === name);
+  const prev = document.getElementById('charPreview');
+  if (char) {
+    prev.style.display = '';
+    prev.textContent = char.prompt.slice(0, 120) + (char.prompt.length > 120 ? '…' : '');
+    if (char.voice) {
+      const vs = document.getElementById('initVoice');
+      for (const o of vs.options) if (o.value === char.voice) vs.value = char.voice;
+    }
+    localStorage.setItem(LS_LAST, name);
+  } else { prev.style.display = 'none'; }
+}
+function openEditor(name) {
+  editingChar = name || null;
+  const char = name ? getChars().find(c => c.name === name) : null;
+  document.getElementById('modalTitle').textContent = char ? `✏️ ${name}` : '✏️ Nuovo Personaggio';
+  document.getElementById('edName').value   = char?.name   || '';
+  document.getElementById('edPrompt').value = char?.prompt || '';
+  document.getElementById('edVoice').value  = char?.voice  || '';
+  document.getElementById('btnDel').style.display = char ? '' : 'none';
+  document.getElementById('modalEditor').classList.add('open');
+}
+function closeEditor() { document.getElementById('modalEditor').classList.remove('open'); editingChar = null; }
+function saveCharacter() {
+  const name = document.getElementById('edName').value.trim();
+  const prompt = document.getElementById('edPrompt').value.trim();
+  const voice = document.getElementById('edVoice').value;
+  if (!name || !prompt) { toast('⚠️ Nome e istruzioni obbligatori'); return; }
+  let chars = getChars();
+  if (editingChar && editingChar !== name) chars = chars.filter(c => c.name !== editingChar);
+  const idx = chars.findIndex(c => c.name === name);
+  if (idx >= 0) chars[idx] = { name, prompt, voice };
+  else chars.push({ name, prompt, voice });
+  saveChars(chars);
+  localStorage.setItem(LS_LAST, name);
+  renderCharSelect();
+  document.getElementById('selChar').value = name;
+  onCharChange(); closeEditor();
+  toast(`✅ "${name}" salvato`);
+}
+function deleteCharacter() {
+  if (!editingChar) return;
+  saveChars(getChars().filter(c => c.name !== editingChar));
+  renderCharSelect(); closeEditor();
+  toast('🗑 Personaggio eliminato');
+}
+function importCharFile(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const lines = e.target.result.replace(/\r/g,'').split('\n');
+    let name = file.name.replace('.txt',''), voice = '', start = 0;
+    if (lines[0]?.startsWith('NOME=')) { name = lines[0].slice(5).trim(); start++; }
+    if (lines[start]?.startsWith('VOCE=')) { voice = lines[start].slice(5).trim(); start++; }
+    const prompt = lines.slice(start).join('\n').trim();
+    document.getElementById('edName').value = name;
+    document.getElementById('edPrompt').value = prompt;
+    document.getElementById('edVoice').value = voice;
+    document.getElementById('btnDel').style.display = 'none';
+    document.getElementById('modalTitle').textContent = '✏️ Importa personaggio';
+    editingChar = null;
+    document.getElementById('modalEditor').classList.add('open');
+    input.value = ''; toast('📂 File caricato — controlla e salva');
+  };
+  reader.readAsText(file);
+}
+
+/* ── AVVIO ── */
+function goMain() {
+  // Leggi la chiave rimuovendo TUTTI i caratteri non stampabili
+  const raw = document.getElementById('keyOpenAI').value;
+  API_KEY = raw.replace(/[^\x20-\x7E]/g, '').trim();
+  if (API_KEY.length < 20) {
+    toast('❌ Chiave troppo corta (' + API_KEY.length + ' chars) — controlla keys.txt');
+    console.log('KEY RAW:', JSON.stringify(raw));
+    return;
+  }
+  const charName = document.getElementById('selChar').value;
+  const char = getChars().find(c => c.name === charName);
+  if (char) {
+    document.getElementById('cfgSystem').value = char.prompt;
+    if (char.voice) document.getElementById('cfgVoice').value = char.voice;
+  }
+  document.getElementById('charBadge').textContent = char ? `🎭 ${char.name}` : '🤖 Robot AI';
+  document.getElementById('screenInit').style.display = 'none';
+  document.getElementById('screenMain').style.display = 'flex';
+  resizeViz(); window.addEventListener('resize', resizeViz);
+}
+function goBack() {
+  disconnect();
+  document.getElementById('screenMain').style.display = 'none';
+  document.getElementById('screenInit').style.display = 'flex';
+}
+
+/* ── CONNESSIONE ── */
+async function toggleConnect() { if (connected) disconnect(); else await connect(); }
+async function connect() {
+  setStatus('connecting'); addLog('Connessione a OpenAI Realtime...', 'system');
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, sampleRate:24000 } });
+    audioCtx = new AudioContext({ sampleRate:24000 });
+    analyser = audioCtx.createAnalyser(); analyser.fftSize = 256;
+    audioCtx.createMediaStreamSource(micStream).connect(analyser);
+    await audioCtx.audioWorklet.addModule('audio-processor.js');
+    workletNode = new AudioWorkletNode(audioCtx, 'pcm16-processor');
+    workletNode.port.onmessage = onMicChunk;
+    analyser.connect(workletNode);
+
+    const model = document.getElementById('initModel').value;
+    ws = new WebSocket(
+      `wss://api.openai.com/v1/realtime?model=${model}`,
+      ['realtime', `openai-insecure-api-key.${API_KEY}`, 'openai-beta.realtime-v1']
+    );
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => {
+      sendSession(); setStatus('connected'); connected = true;
+      updateConnectBtn(); addLog('✅ Connesso! Parla pure...', 'system'); startViz();
+    };
+    ws.onmessage = onMsg;
+    ws.onerror = (e) => { console.error('WS error', e); toast('❌ Errore WebSocket'); disconnect(); };
+    ws.onclose = (e) => { console.log('WS close', e.code, e.reason); if (connected) { addLog(`🔌 Chiuso (${e.code})`, 'system'); disconnect(); } };
+  } catch(e) { toast('❌ ' + e.message); setStatus('error'); disconnect(); }
+}
+function sendSession() {
+  ws.send(JSON.stringify({ type:'session.update', session:{
+    modalities:['audio','text'],
+    voice: document.getElementById('cfgVoice').value,
+    instructions: document.getElementById('cfgSystem').value.trim(),
+    temperature: parseFloat(document.getElementById('cfgTemp').value),
+    turn_detection:{
+      type:'server_vad',
+      threshold: parseFloat(document.getElementById('cfgVadThresh').value),
+      silence_duration_ms: parseInt(document.getElementById('cfgSilenceMs').value),
+      prefix_padding_ms:300, create_response:true,
+      interrupt_response: document.getElementById('cfgBargein').value==='true',
+      eagerness: document.getElementById('cfgEagerness').value
+    },
+    input_audio_format:'pcm16', output_audio_format:'pcm16',
+    input_audio_transcription:{ model:'whisper-1' }
+  }}));
+}
+function onMicChunk(e) {
+  if (!ws || ws.readyState !== WebSocket.OPEN || muted) return;
+  const pcm = new Int16Array(e.data);
+  const b64 = btoa(String.fromCharCode(...new Uint8Array(pcm.buffer)));
+  ws.send(JSON.stringify({ type:'input_audio_buffer.append', audio:b64 }));
+}
+function onMsg(e) {
+  let msg; try { msg = JSON.parse(e.data); } catch { return; }
+  switch(msg.type) {
+    case 'response.audio.delta':
+      if (msg.delta) { const b=Uint8Array.from(atob(msg.delta),c=>c.charCodeAt(0)); audioQueue.push(new Int16Array(b.buffer)); if(!isPlaying) drainAudio(); } break;
+    case 'response.audio_transcript.delta': if(msg.delta) appendRobotText(msg.delta); break;
+    case 'response.audio_transcript.done': finalizeRobotText(); break;
+    case 'conversation.item.input_audio_transcription.completed': if(msg.transcript) addLog(msg.transcript,'user'); break;
+    case 'response.done': if(msg.response?.usage) updateTokens(msg.response.usage); break;
+    case 'input_audio_buffer.speech_started': setStatus('listening'); resetTimer(); break;
+    case 'input_audio_buffer.speech_stopped': setStatus('connected'); startTimer(); break;
+    case 'response.audio.done': setStatus('connected'); break;
+    case 'error': toast('⚠️ '+(msg.error?.message||'Errore API')); console.error('API error', msg.error); break;
+  }
+}
+function disconnect() {
+  connected = false;
+  if(ws){try{ws.close();}catch(e){}ws=null;}
+  if(workletNode){workletNode.port.postMessage({cmd:'stop'});workletNode=null;}
+  if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null;}
+  if(audioCtx){audioCtx.close();audioCtx=null;}
+  if(vizFrame){cancelAnimationFrame(vizFrame);vizFrame=null;}
+  analyser=null; audioQueue=[]; isPlaying=false;
+  setStatus('disconnected'); updateConnectBtn();
+}
+
+/* ── AUDIO OUT ── */
+async function drainAudio() {
+  if(!audioCtx||!audioQueue.length){isPlaying=false;return;}
+  isPlaying=true; setStatus('talking');
+  const pcm=audioQueue.shift();
+  const f=new Float32Array(pcm.length);
+  for(let i=0;i<pcm.length;i++) f[i]=pcm[i]/(pcm[i]<0?0x8000:0x7FFF);
+  const buf=audioCtx.createBuffer(1,f.length,24000); buf.copyToChannel(f,0);
+  if(isRecording) recChunks.push(pcm);
+  const src=audioCtx.createBufferSource(); src.buffer=buf; src.connect(audioCtx.destination);
+  src.onended=()=>drainAudio(); src.start();
+}
+
+/* ── TRANSCRIPT ── */
+function appendRobotText(d) {
+  robotText+=d;
+  if(!robotMsg){robotMsg=document.createElement('div');robotMsg.className='msg robot';document.getElementById('log').appendChild(robotMsg);}
+  robotMsg.textContent=robotText; scrollLog();
+}
+function finalizeRobotText(){robotMsg=null;robotText='';}
+function addLog(t,type){const d=document.createElement('div');d.className='msg '+type;d.textContent=t;document.getElementById('log').appendChild(d);scrollLog();}
+function scrollLog(){const l=document.getElementById('log');l.scrollTop=l.scrollHeight;}
+
+/* ── TOKEN ── */
+function updateTokens(u){
+  totalIn+=u.input_tokens||0; totalOut+=u.output_tokens||0;
+  const cost=totalIn*P_IN+totalOut*P_OUT;
+  document.getElementById('tokenLabel').textContent=`💰 ${totalIn+totalOut} tok`;
+  document.getElementById('costLabel').textContent=`$${cost.toFixed(4)}`;
+}
+
+/* ── TIMER ── */
+function startTimer(){
+  silenceStart=Date.now(); clearInterval(timerInterval);
+  timerInterval=setInterval(()=>{
+    const s=Math.floor((Date.now()-silenceStart)/1000),m=Math.floor(s/60);
+    document.getElementById('timerLabel').textContent=`⏱ ${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  },500);
+}
+function resetTimer(){clearInterval(timerInterval);silenceStart=null;document.getElementById('timerLabel').textContent='⏱ --:--';}
+
+/* ── GAIN / MUTE ── */
+function setGain(v){document.getElementById('gainVal').textContent=parseFloat(v).toFixed(1)+'×';if(workletNode)workletNode.port.postMessage({cmd:'gain',value:parseFloat(v)});}
+function toggleMute(){muted=!muted;const b=document.getElementById('btnMute');b.textContent=muted?'🔇':'🎙';b.classList.toggle('muted',muted);toast(muted?'🔇 Muto':'🎙 Attivo');}
+
+/* ── VISUALIZER ── */
+function resizeViz(){vizCanvas.width=vizCanvas.offsetWidth*devicePixelRatio;vizCanvas.height=vizCanvas.offsetHeight*devicePixelRatio;vizCtx.scale(devicePixelRatio,devicePixelRatio);}
+function startViz(){
+  const W=()=>vizCanvas.offsetWidth,H=()=>vizCanvas.offsetHeight;
+  function draw(){vizFrame=requestAnimationFrame(draw);if(!analyser)return;
+    const d=new Uint8Array(analyser.frequencyBinCount);analyser.getByteFrequencyData(d);
+    vizCtx.fillStyle='#0f172a';vizCtx.fillRect(0,0,W(),H());
+    const bw=W()/d.length*2.5;let x=0;
+    for(let i=0;i<d.length;i++){const h=(d[i]/255)*H();const g=vizCtx.createLinearGradient(0,H()-h,0,H());g.addColorStop(0,'#10a37f');g.addColorStop(1,'#10a37f22');vizCtx.fillStyle=g;vizCtx.fillRect(x,H()-h,bw-1,h);x+=bw;}
+  }draw();
+}
+
+/* ── STATUS ── */
+function setStatus(s){
+  const dot=document.getElementById('statusDot'),label=document.getElementById('statusLabel');
+  dot.className='status-dot';
+  const map={connected:['connected','Connesso'],connecting:[null,'Connessione...'],listening:['talking','In ascolto...'],talking:['talking','Risponde...'],error:['error','Errore'],disconnected:[null,'Disconnesso']};
+  const [cls,txt]=map[s]||[null,s];
+  if(cls)dot.classList.add(cls);label.textContent=txt;
+}
+function updateConnectBtn(){
+  const b=document.getElementById('btnConnect');
+  if(connected){b.classList.add('active');document.getElementById('btnConnectIcon').textContent='🔴';document.getElementById('btnConnectLabel').textContent='DISCONNETTI';}
+  else{b.classList.remove('active');document.getElementById('btnConnectIcon').textContent='📡';document.getElementById('btnConnectLabel').textContent='CONNETTI';}
+}
+
+/* ── SETTINGS ── */
+function toggleSettings(){settingsOpen=!settingsOpen;document.getElementById('settingsPanel').classList.toggle('open',settingsOpen);if(connected&&!settingsOpen)sendSession();}
+
+/* ── SPEED TEST ── */
+async function speedTest(){
+  toast('📶 Test...');const t0=Date.now();
+  try{await fetch('https://api.openai.com/v1/models',{headers:{Authorization:`Bearer ${API_KEY}`}});toast(`📶 ${Date.now()-t0}ms`);}
+  catch{toast('❌ Speed test fallito');}
+}
+
+/* ── REC ── */
+function toggleRec(){
+  isRecording=!isRecording;const b=document.getElementById('btnRec');
+  if(isRecording){recChunks=[];b.textContent='⏹ STOP REC';b.style.color='#ef4444';toast('⏺ REC avviata');}
+  else{b.textContent='⏺ REC';b.style.color='';if(recChunks.length)downloadWav();else toast('⚠️ Nessun audio');}
+}
+function downloadWav(){
+  const sil=new Int16Array(REC_SR),parts=[];
+  recChunks.forEach((c,i)=>{parts.push(c);if(i<recChunks.length-1)parts.push(sil);});
+  const tot=parts.reduce((a,c)=>a+c.length,0),pcm=new Int16Array(tot);let off=0;
+  parts.forEach(p=>{pcm.set(p,off);off+=p.length;});
+  const wav=encodeWav(pcm,REC_SR),url=URL.createObjectURL(new Blob([wav],{type:'audio/wav'}));
+  const a=document.createElement('a');a.href=url;a.download=`rec-${Date.now()}.wav`;a.click();URL.revokeObjectURL(url);toast('💾 WAV salvato');
+}
+function encodeWav(p,sr){
+  const b=new ArrayBuffer(44+p.length*2),v=new DataView(b);
+  const w=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
+  w(0,'RIFF');v.setUint32(4,36+p.length*2,true);w(8,'WAVE');w(12,'fmt ');
+  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);
+  v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');
+  v.setUint32(40,p.length*2,true);for(let i=0;i<p.length;i++)v.setInt16(44+i*2,p[i],true);return b;
+}
+
+/* ── TOAST ── */
+let toastT=null;
+function toast(m){const e=document.getElementById('toast');e.textContent=m;e.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>e.classList.remove('show'),2800);}
+
+/* ── INIT ── */
+loadSavedKey(); renderCharSelect();
+</script>
+</body>
+</html>
