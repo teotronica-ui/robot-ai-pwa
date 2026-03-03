@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Robot AI — OpenAI v3</title>
+  <title>Robot AI — OpenAI v4</title>
   <style>
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     :root {
@@ -518,8 +518,9 @@ async function connect() {
     );
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
-      sendSession(); setStatus('connected'); connected = true;
-      updateConnectBtn(); addLog('✅ Connesso! Parla pure...', 'system'); startViz();
+      console.log('[OpenAI] WS opened — aspetto session.created...');
+      setStatus('connecting');
+      // NON mandiamo session.update qui — aspettiamo session.created dal server
     };
     ws.onmessage = onMsg;
     ws.onerror = (e) => { console.error('WS error', e); toast('❌ Errore WebSocket'); disconnect(); };
@@ -563,7 +564,29 @@ function onMicChunk(e) {
 }
 function onMsg(e) {
   let msg; try { msg = JSON.parse(e.data); } catch { return; }
+
+  // Log visibile nell'app per debug
+  const t = msg.type || '?';
+  if (!['response.audio.delta','input_audio_buffer.append'].includes(t)) {
+    console.log('[OpenAI RX]', t, JSON.stringify(msg).slice(0,200));
+  }
+
   switch(msg.type) {
+    case 'session.created':
+      // Il server ha creato la sessione — ORA mandiamo la configurazione
+      addLog(`🔗 Sessione creata — invio configurazione (voce: ${activeVoice})...`, 'system');
+      sendSession();
+      break;
+
+    case 'session.updated':
+      // Configurazione accettata — ora siamo davvero pronti
+      const v = msg.session?.voice || '?';
+      const instr = (msg.session?.instructions || '').slice(0, 60);
+      addLog(`✅ Connesso! Voce: ${v} | Prompt: ${instr}...`, 'system');
+      setStatus('connected'); connected = true;
+      updateConnectBtn(); startViz();
+      break;
+
     case 'response.audio.delta':
       if (msg.delta) { const b=Uint8Array.from(atob(msg.delta),c=>c.charCodeAt(0)); audioQueue.push(new Int16Array(b.buffer)); if(!isPlaying) drainAudio(); } break;
     case 'response.audio_transcript.delta': if(msg.delta) appendRobotText(msg.delta); break;
@@ -573,7 +596,10 @@ function onMsg(e) {
     case 'input_audio_buffer.speech_started': setStatus('listening'); resetTimer(); break;
     case 'input_audio_buffer.speech_stopped': setStatus('connected'); startTimer(); break;
     case 'response.audio.done': setStatus('connected'); break;
-    case 'error': toast('⚠️ '+(msg.error?.message||'Errore API')); console.error('API error', msg.error); break;
+    case 'error':
+      addLog(`❌ Errore: ${msg.error?.message || JSON.stringify(msg.error)}`, 'system');
+      toast('⚠️ '+(msg.error?.message||'Errore API'));
+      break;
   }
 }
 function disconnect() {
