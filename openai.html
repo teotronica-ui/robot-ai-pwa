@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Robot AI — OpenAI v4</title>
+  <title>Robot AI — OpenAI v5</title>
   <style>
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     :root {
@@ -547,8 +547,7 @@ function sendSession() {
         threshold: parseFloat(document.getElementById('cfgVadThresh').value),
         silence_duration_ms: parseInt(document.getElementById('cfgSilenceMs').value),
         prefix_padding_ms: 300,
-        create_response: true,
-        eagerness: document.getElementById('cfgEagerness').value
+        create_response: true
       },
       temperature: parseFloat(document.getElementById('cfgTemp').value),
       max_response_output_tokens: 4096
