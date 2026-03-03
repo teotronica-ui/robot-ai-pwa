@@ -265,6 +265,8 @@ const LS_LAST  = 'robot_last_char';
 
 /* ── STATO ── */
 let API_KEY = '';
+let activePrompt = 'Sei un assistente vocale simpatico. Rispondi in italiano.';
+let activeVoice  = 'alloy';
 let ws = null, audioCtx = null, workletNode = null, micStream = null;
 let muted = false, connected = false, settingsOpen = false;
 let totalIn = 0, totalOut = 0;
@@ -456,9 +458,16 @@ function goMain() {
   const charName = document.getElementById('selChar').value;
   const char = getChars().find(c => c.name === charName);
   if (char) {
-    document.getElementById('cfgSystem').value = char.prompt;
-    if (char.voice) document.getElementById('cfgVoice').value = char.voice;
+    activePrompt = char.prompt;
+    activeVoice  = char.voice || document.getElementById('initVoice').value;
+    console.log('[Char] Applying:', char.name, '| Voice:', activeVoice, '| Prompt:', activePrompt.slice(0,60));
+  } else {
+    activePrompt = 'Sei un assistente vocale simpatico. Rispondi in italiano.';
+    activeVoice  = document.getElementById('initVoice').value;
   }
+  // Aggiorna anche i campi visibili nel pannello settings
+  document.getElementById('cfgSystem').value = activePrompt;
+  document.getElementById('cfgVoice').value  = activeVoice;
   document.getElementById('charBadge').textContent = char ? `🎭 ${char.name}` : '🤖 Robot AI';
   document.getElementById('screenInit').style.display = 'none';
   document.getElementById('screenMain').style.display = 'flex';
@@ -500,10 +509,14 @@ async function connect() {
   } catch(e) { toast('❌ ' + e.message); setStatus('error'); disconnect(); }
 }
 function sendSession() {
+  // Usa le variabili JS — più affidabile che leggere il DOM su mobile
+  const voice       = document.getElementById('cfgVoice').value || activeVoice;
+  const instructions= document.getElementById('cfgSystem').value.trim() || activePrompt;
+  console.log('[Session] Voice:', voice, '| Prompt start:', instructions.slice(0,60));
   ws.send(JSON.stringify({ type:'session.update', session:{
     modalities:['audio','text'],
-    voice: document.getElementById('cfgVoice').value,
-    instructions: document.getElementById('cfgSystem').value.trim(),
+    voice,
+    instructions,
     temperature: parseFloat(document.getElementById('cfgTemp').value),
     turn_detection:{
       type:'server_vad',
