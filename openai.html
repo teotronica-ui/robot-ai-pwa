@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Robot AI — OpenAI v2</title>
+  <title>Robot AI — OpenAI v3</title>
   <style>
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     :root {
@@ -134,12 +134,16 @@
       <div class="field">
         <label>Voce</label>
         <select id="initVoice">
-          <option value="alloy">Alloy</option>
-          <option value="echo">Echo</option>
-          <option value="shimmer">Shimmer</option>
-          <option value="verse">Verse</option>
-          <option value="coral">Coral</option>
-          <option value="ash">Ash</option>
+          <option value="alloy">Alloy — Neutro</option>
+          <option value="ash">Ash — Maschile</option>
+          <option value="ballad">Ballad — Caldo</option>
+          <option value="coral">Coral — Femminile</option>
+          <option value="echo">Echo — Maschile</option>
+          <option value="sage">Sage — Saggio</option>
+          <option value="shimmer">Shimmer — Femminile dolce</option>
+          <option value="verse">Verse — Espressivo</option>
+          <option value="cedar">Cedar — Nuovo</option>
+          <option value="marin">Marin — Nuovo</option>
         </select>
       </div>
     </div>
@@ -177,9 +181,16 @@
     <div><label>Voce preferita</label>
       <select id="edVoice">
         <option value="">— usa quella selezionata —</option>
-        <option value="alloy">Alloy</option><option value="echo">Echo</option>
-        <option value="shimmer">Shimmer</option><option value="verse">Verse</option>
-        <option value="coral">Coral</option><option value="ash">Ash</option>
+        <option value="alloy">Alloy — Neutro</option>
+        <option value="ash">Ash — Maschile</option>
+        <option value="ballad">Ballad — Caldo</option>
+        <option value="coral">Coral — Femminile</option>
+        <option value="echo">Echo — Maschile</option>
+        <option value="sage">Sage — Saggio</option>
+        <option value="shimmer">Shimmer — Femminile dolce</option>
+        <option value="verse">Verse — Espressivo</option>
+        <option value="cedar">Cedar — Nuovo</option>
+        <option value="marin">Marin — Nuovo</option>
       </select>
     </div>
     <div class="modal-row">
@@ -223,9 +234,16 @@
         </div>
         <div><label>Voce</label>
           <select id="cfgVoice">
-            <option value="alloy">Alloy</option><option value="echo">Echo</option>
-            <option value="shimmer">Shimmer</option><option value="verse">Verse</option>
-            <option value="coral">Coral</option><option value="ash">Ash</option>
+            <option value="alloy">Alloy — Neutro</option>
+            <option value="ash">Ash — Maschile</option>
+            <option value="ballad">Ballad — Caldo</option>
+            <option value="coral">Coral — Femminile</option>
+            <option value="echo">Echo — Maschile</option>
+            <option value="sage">Sage — Saggio</option>
+            <option value="shimmer">Shimmer — Femminile dolce</option>
+            <option value="verse">Verse — Espressivo</option>
+            <option value="cedar">Cedar — Nuovo</option>
+            <option value="marin">Marin — Nuovo</option>
           </select>
         </div>
         <div><label>Barge-in</label>
@@ -511,32 +529,28 @@ async function connect() {
 function sendSession() {
   const voice        = document.getElementById('cfgVoice').value || activeVoice;
   const instructions = document.getElementById('cfgSystem').value.trim() || activePrompt;
-  console.log('[Session] Voice:', voice, '| Prompt:', instructions.slice(0, 60));
+  console.log('[Session] Voice:', voice, '| Prompt:', instructions.slice(0, 80));
 
-  // Struttura GA (nuova API OpenAI — voce dentro audio.output.voice)
+  // Struttura IDENTICA a quella funzionante su Raspberry (robot_GPT.py)
   ws.send(JSON.stringify({
     type: 'session.update',
     session: {
-      type: 'realtime',
+      modalities: ['text', 'audio'],
       instructions,
-      output_modalities: ['audio', 'text'],
-      audio: {
-        input: {
-          format: { type: 'audio/pcm', rate: 24000 },
-          turn_detection: {
-            type: 'server_vad',
-            eagerness: document.getElementById('cfgEagerness').value,
-            interrupt_on_speech_probability: parseFloat(document.getElementById('cfgVadThresh').value),
-            silence_duration_ms: parseInt(document.getElementById('cfgSilenceMs').value),
-            prefix_padding_ms: 300
-          }
-        },
-        output: {
-          format: { type: 'audio/pcm' },
-          voice
-        }
+      voice,
+      input_audio_format: 'pcm16',
+      output_audio_format: 'pcm16',
+      input_audio_transcription: { model: 'whisper-1' },
+      turn_detection: {
+        type: 'server_vad',
+        threshold: parseFloat(document.getElementById('cfgVadThresh').value),
+        silence_duration_ms: parseInt(document.getElementById('cfgSilenceMs').value),
+        prefix_padding_ms: 300,
+        create_response: true,
+        eagerness: document.getElementById('cfgEagerness').value
       },
       temperature: parseFloat(document.getElementById('cfgTemp').value),
+      max_response_output_tokens: 4096
     }
   }));
 }
