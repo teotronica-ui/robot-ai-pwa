@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Robot AI — OpenAI v6</title>
+  <title>Robot AI — OpenAI v6.1</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -433,7 +433,28 @@ let editingChar=null,camStream=null,camActive=false;
 let knowledge={title:'',text:''};
 let robotMsgEl=null,robotTxt='';
 
-function init(){buildVU();loadKey();renderChars();loadKnowLS();updVadUI();setInterval(tickTimer,500);netCheck();setInterval(netCheck,14000);enumCams();}
+/* ══ VU MONITOR SEMPRE ATTIVO (indipendente dalla connessione) ══ */
+let sharedMicStream=null, vuCtx=null, vuAnalyser=null, vuRaf=null;
+async function startVuMonitor(){
+  try{
+    sharedMicStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    vuCtx=new AudioContext();
+    vuAnalyser=vuCtx.createAnalyser();
+    vuAnalyser.fftSize=512;
+    vuAnalyser.smoothingTimeConstant=0.3;
+    vuCtx.createMediaStreamSource(sharedMicStream).connect(vuAnalyser);
+    dot('dMic','on');
+    function tick(){
+      vuRaf=requestAnimationFrame(tick);
+      const d=new Uint8Array(vuAnalyser.frequencyBinCount);
+      vuAnalyser.getByteTimeDomainData(d);
+      let s=0;for(let i=0;i<d.length;i++){const v=(d[i]-128)/128;s+=v*v;}
+      drawVU(Math.sqrt(s/d.length)*32768);
+    }tick();
+  }catch(e){console.warn('[VuMonitor]',e.message);dot('dMic','er');}
+}
+
+function init(){buildVU();loadKey();renderChars();loadKnowLS();updVadUI();setInterval(tickTimer,500);netCheck();setInterval(netCheck,14000);enumCams();startVuMonitor();}
 
 /* VU */
 let vuEl=null;
@@ -649,13 +670,24 @@ async function conn(){
   setSt('connecting');
   try{
     const echoCancel=document.getElementById('chkEcho').checked;
-    micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:echoCancel,noiseSuppression:true,sampleRate:24000}});
-    audioCtx=new AudioContext({sampleRate:24000});
-    analyser=audioCtx.createAnalyser();analyser.fftSize=256;
-    audioCtx.createMediaStreamSource(micStream).connect(analyser);
+    // Riusa lo stream mic già aperto per il VU — nessun nuovo getUserMedia su iOS
+    if(echoCancel){
+      try{micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}});}
+      catch(e){micStream=sharedMicStream;}
+    }else{
+      micStream=sharedMicStream;
+    }
+    // Riusa AudioContext e analyser già esistenti del VU monitor
+    audioCtx=vuCtx;
+    analyser=vuAnalyser;
+    analyser.smoothingTimeConstant=0.15;
+    // Se stream diverso (anti-eco), ricollegalo all'analyser
+    if(micStream!==sharedMicStream){
+      audioCtx.createMediaStreamSource(micStream).connect(analyser);
+    }
     await audioCtx.audioWorklet.addModule('audio-processor.js');
     workletNode=new AudioWorkletNode(audioCtx,'pcm16-processor');workletNode.port.onmessage=onChunk;
-    analyser.connect(workletNode);dot('dMic','on');startViz();
+    analyser.connect(workletNode);startViz();
     const model=document.getElementById('selModel').value;
     ws=new WebSocket(`wss://api.openai.com/v1/realtime?model=${model}`,['realtime',`openai-insecure-api-key.${API_KEY}`,'openai-beta.realtime-v1']);
     ws.binaryType='arraybuffer';ws.onopen=()=>console.log('[WS] open');ws.onmessage=onMsg;
@@ -683,11 +715,27 @@ function sendSess(){
   }}));
 }
 function onChunk(e){
-  if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;  // MUTE: blocca solo il mic
+  if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
   let pcm=new Int16Array(e.data);
   const g=parseInt(document.getElementById('rGain').value)/100;
   if(g!==1){const o=new Int16Array(pcm.length);for(let i=0;i<pcm.length;i++)o[i]=Math.max(-32768,Math.min(32767,pcm[i]*g));pcm=o;}
+  // Ricampiona a 24kHz se il contesto audio ha un sample rate diverso (es. cuffie su iOS)
+  const ctxSR=audioCtx?audioCtx.sampleRate:24000;
+  if(ctxSR!==24000){pcm=resample(pcm,ctxSR,24000);}
   ws.send(JSON.stringify({type:'input_audio_buffer.append',audio:btoa(String.fromCharCode(...new Uint8Array(pcm.buffer)))}));
+}
+/* Ricampionamento lineare PCM16 */
+function resample(pcm,fromSR,toSR){
+  const ratio=fromSR/toSR;
+  const outLen=Math.round(pcm.length/ratio);
+  const out=new Int16Array(outLen);
+  for(let i=0;i<outLen;i++){
+    const pos=i*ratio;
+    const i0=Math.floor(pos),i1=Math.min(i0+1,pcm.length-1);
+    const frac=pos-i0;
+    out[i]=Math.round(pcm[i0]*(1-frac)+pcm[i1]*frac);
+  }
+  return out;
 }
 function onMsg(e){
   let m;try{m=JSON.parse(e.data);}catch{return;}
@@ -715,11 +763,16 @@ function disc(){
   connected=false;
   if(ws){try{ws.close();}catch(e){}ws=null;}
   if(workletNode){workletNode.port.postMessage({cmd:'stop'});workletNode=null;}
-  if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null;}
+  // micStream gestito separatamente sotto
   if(audioCtx){audioCtx.close();audioCtx=null;}
   if(rafId){cancelAnimationFrame(rafId);rafId=null;}
-  analyser=null;audioQ=[];playing=false;silStart=null;
-  dot('dAI',null);dot('dMic',null);setSt('idle');updBtn();drawVU(0);
+  // NON chiudere sharedMicStream e vuCtx — il VU deve restare attivo
+  if(micStream && micStream!==sharedMicStream){micStream.getTracks().forEach(t=>t.stop());}
+  micStream=null;
+  // Ripristina analyser al VU monitor
+  analyser=vuAnalyser;
+  audioQ=[];playing=false;silStart=null;
+  dot('dAI',null);setSt('idle');updBtn();
 }
 async function drain(){
   if(!audioCtx||!audioQ.length){playing=false;return;}
@@ -731,14 +784,7 @@ async function drain(){
   const src=audioCtx.createBufferSource();src.buffer=buf;src.connect(audioCtx.destination);
   src.onended=()=>drain();src.start();
 }
-function startViz(){
-  if(!analyser)return;
-  function tick(){rafId=requestAnimationFrame(tick);if(!analyser)return;
-    const d=new Uint8Array(analyser.frequencyBinCount);analyser.getByteTimeDomainData(d);
-    let s=0;for(let i=0;i<d.length;i++){const v=(d[i]-128)/128;s+=v*v;}
-    drawVU(Math.sqrt(s/d.length)*32768);
-  }tick();
-}
+function startViz(){/* VU gestito da startVuMonitor — sempre attivo */}
 function setSt(s){const m={idle:'● IDLE',connecting:'◌ CONNESSIONE...',listening:'◉ IN ASCOLTO',talking:'▶ PARLA',error:'✕ ERRORE'};document.getElementById('stLbl').textContent=m[s]||s.toUpperCase();}
 function dot(id,st){const d=document.getElementById(id);if(!d)return;d.className='dot'+(st==='on'?' on':st==='er'?' er':st==='tk'?' tk':'');}
 function updBtn(){const b=document.getElementById('btnConn');if(connected){b.classList.add('off');b.textContent='🔴  DISCONNETTI';}else{b.classList.remove('off');b.textContent='📡  CONNETTI';}}
