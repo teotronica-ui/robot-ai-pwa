@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Robot AI — OpenAI v6.5</title>
+  <title>Robot AI — OpenAI v6.7</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -196,6 +196,7 @@
     <select id="selMic" style="flex:1;background:var(--surf);border:1px solid var(--bord);border-radius:8px;color:var(--text);padding:7px 10px;font-size:.73rem;outline:none;-webkit-appearance:none;font-family:var(--mono)">
       <option value="">🎤 Auto</option>
     </select>
+    <button onclick="unlockAndStartMic()" style="background:var(--surf);border:1px solid var(--bord);border-radius:8px;color:var(--green);padding:7px 11px;font-size:.8rem;cursor:pointer;white-space:nowrap;font-weight:700">▶ MIC</button>
     <button onclick="switchMic()" style="background:var(--surf);border:1px solid var(--bord);border-radius:8px;color:var(--text);padding:7px 11px;font-size:.8rem;cursor:pointer;white-space:nowrap">🔄</button>
   </div>
   <div class="vu-wrap">
@@ -442,16 +443,34 @@ let robotMsgEl=null,robotTxt='';
 /* ══ VU MONITOR SEMPRE ATTIVO (indipendente dalla connessione) ══ */
 let sharedMicStream=null, vuCtx=null, vuAnalyser=null, vuRaf=null;
 // ═══ MIC MANAGEMENT ═══
+// REGOLA FONDAMENTALE iOS/Safari:
+// - MAX UN getUserMedia attivo alla volta (il secondo muta il primo silenziosamente)
+// - AudioContext DEVE essere creato/resumato dentro un handler touch/click
+// - AudioContext.close() obbligatorio prima di ogni restart (libera la risorsa hardware)
+// - enumerateDevices() mostra label solo DOPO che l'utente ha già dato permesso
+
 let availableMics=[], currentMicId=null;
+let vuCtxUnlocked=false;
+
+// Chiamato dal click su "Attiva Mic" o su "Connetti" — garantisce user gesture
+async function unlockAndStartMic(){
+  // Se già attivo e funzionante, non fare nulla
+  if(sharedMicStream && sharedMicStream.getAudioTracks()[0]?.readyState==='live'){
+    dbg('🎤 Mic già attivo: "'+( sharedMicStream.getAudioTracks()[0]?.label||'?')+'"');
+    return;
+  }
+  await startVuMonitor();
+}
 
 async function listMics(){
-  const devs=await navigator.mediaDevices.enumerateDevices();
-  availableMics=devs.filter(d=>d.kind==='audioinput');
-  // Log dettagliato in console E nel dbg box
-  const lines=availableMics.map((m,i)=>`  [${i}] "${m.label||'(no label)'}" id:${m.deviceId.slice(0,12)}`);
-  console.log('[MIC LIST]\n'+lines.join('\n'));
-  dbg('📋 Mic trovati: '+availableMics.length+(availableMics.length?(' → '+availableMics.map(m=>'"'+(m.label||m.deviceId.slice(0,8))+'..."').join(', ')):''));
-  renderMicSelect();
+  try{
+    const devs=await navigator.mediaDevices.enumerateDevices();
+    availableMics=devs.filter(d=>d.kind==='audioinput');
+    const lines=availableMics.map((m,i)=>'['+i+'] "'+(m.label||'(no label)')+'" id:'+m.deviceId.slice(0,10));
+    console.log('[MIC LIST]\n'+lines.join('\n'));
+    dbg('📋 Mic disponibili ('+availableMics.length+'): '+availableMics.map(m=>'"'+(m.label||m.deviceId.slice(0,8)+'...')+'"').join(' | '));
+    renderMicSelect();
+  }catch(e){dbg('⚠️ enumerateDevices: '+e.message);}
   return availableMics;
 }
 
@@ -461,349 +480,142 @@ function renderMicSelect(){
   const prev=sel.value;
   sel.innerHTML='<option value="">🎤 Auto (sistema)</option>';
   availableMics.forEach(m=>{
-    const lbl=m.label||m.deviceId.slice(0,14);
-    sel.appendChild(new Option(lbl, m.deviceId));
+    const lbl=m.label||('Device '+m.deviceId.slice(0,8));
+    sel.appendChild(new Option(lbl,m.deviceId));
   });
   if(prev && [...sel.options].find(o=>o.value===prev)) sel.value=prev;
 }
 
 async function startVuMonitor(forceDeviceId){
-  // Stop eventuale stream precedente
+  dbg('🔄 Avvio mic monitor...');
+
+  // ── STEP 1: Chiudi completamente tutto il precedente ──
+  // Su Safari, close() DEVE essere chiamato per liberare la risorsa hardware
   if(sharedMicStream){
     sharedMicStream.getTracks().forEach(t=>t.stop());
     sharedMicStream=null;
+    dbg('  → stream precedente fermato');
   }
   if(vuRaf){cancelAnimationFrame(vuRaf);vuRaf=null;}
-  // NON chiudiamo vuCtx — è costoso riaprirlo su iOS
+  if(vuCtx && vuCtx.state!=='closed'){
+    try{await vuCtx.close();}catch(e){}
+    vuCtx=null; vuAnalyser=null;
+    dbg('  → AudioContext chiuso');
+    // Piccola pausa per dare tempo a iOS di rilasciare la risorsa audio
+    await new Promise(r=>setTimeout(r,300));
+  }
 
+  // ── STEP 2: UN SOLO getUserMedia ──
+  // Non chiamarlo mai due volte: il secondo muta il primo su iOS
   try{
-    // Prima ottieni permesso generico per avere i label
-    dbg('🎤 Richiedo permesso microfono...');
-    let devId=forceDeviceId||document.getElementById('selMic')?.value||'';
-    
-    // Primo getUserMedia senza vincoli per sbloccare i permessi e ottenere i label
-    const perm=await navigator.mediaDevices.getUserMedia({audio:true});
-    perm.getTracks().forEach(t=>t.stop()); // subito stop, era solo per il permesso
-    
-    // Ora enumera con label visibili
-    await listMics();
-    
-    // Se non forzato, scegli il migliore
+    let devId=forceDeviceId || document.getElementById('selMic')?.value || '';
+
+    // Se non forzato, enumera prima (senza permesso i label sono vuoti, ma i deviceId ci sono)
     if(!devId){
-      // Preferisci mic esterno: cerca "headset", "wired", "external", evita "built-in"
-      const ext=availableMics.find(m=>
+      const devs=await navigator.mediaDevices.enumerateDevices();
+      const mics=devs.filter(d=>d.kind==='audioinput');
+      // Preferisci qualsiasi mic che NON sia built-in/default/receiver
+      const ext=mics.find(m=>
         m.deviceId && m.deviceId!=='default' && m.deviceId!=='communications' &&
         !/built.?in|built_in|interno|internal|receiver/i.test(m.label)
       );
-      if(ext && availableMics.length>1){
-        devId=ext.deviceId;
-        dbg(`🔌 Scelto mic esterno: "${ext.label}"`);
-      }
+      if(ext && mics.length>1){devId=ext.deviceId;}
+      console.log('[MIC] Pre-enum: '+mics.length+' devices, scelto: '+(devId||'default'));
     }
-    
-    // Apri il mic definitivo
-    const constraint = devId
-      ? {audio:{deviceId:{exact:devId}, echoCancellation:false, noiseSuppression:false, autoGainControl:false}}
-      : {audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}};
-    
-    dbg('🎤 Apertura: '+(devId?devId.slice(0,12)+'...' :'(default)'));
+
+    const constraint=devId
+      ?{audio:{deviceId:{exact:devId},echoCancellation:false,noiseSuppression:false,autoGainControl:false}}
+      :{audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}};
+
+    dbg('🎤 getUserMedia '+(devId?'deviceId:'+devId.slice(0,10)+'...':'(default)')+'...');
     sharedMicStream=await navigator.mediaDevices.getUserMedia(constraint);
-    
+
     const track=sharedMicStream.getAudioTracks()[0];
     const settings=track?.getSettings()||{};
     currentMicId=settings.deviceId||devId||'';
     const label=track?.label||'sconosciuto';
-    
-    dbg(`✅ MIC ATTIVO: "${label}" | SR:${settings.sampleRate||'?'}Hz`);
-    console.log('[MIC ATTIVO]', label, settings);
-    
-    // Aggiorna selettore
+    dbg('✅ MIC ATTIVO: "'+label+'" | SR:'+( settings.sampleRate||'?')+'Hz | state:'+track?.readyState);
+    console.log('[MIC ATTIVO]',label,settings);
+
+    // Ora che abbiamo il permesso, enumera con label visibili
+    await listMics();
+    // Aggiorna selettore al mic attuale
     const sel=document.getElementById('selMic');
     if(sel && currentMicId){
       const match=[...sel.options].find(o=>o.value===currentMicId);
       if(match) sel.value=currentMicId;
     }
-    
-    // Riavvio automatico se il track finisce (splitter rimosso)
+
+    // Track ended = mic fisicamente rimosso
     track.addEventListener('ended',()=>{
-      dbg('⚠️ Track ended — mic rimosso o cambiato');
+      dbg('⚠️ Mic track ended — dispositivo rimosso');
       dot('dMic',null);
-      setTimeout(()=>startVuMonitor(),1200);
+      // Non riavviare automaticamente — aspetta che l'utente prema il pulsante
+      // (il riavvio automatico su iOS spesso fallisce senza user gesture)
+      setTimeout(()=>{
+        if(!sharedMicStream || sharedMicStream.getAudioTracks()[0]?.readyState!=='live'){
+          dbg('🔄 Tentativo riavvio automatico...');
+          startVuMonitor().catch(e=>dbg('❌ Riavvio fallito: '+e.message));
+        }
+      },1500);
     });
-    
-    // Crea/riusa AudioContext
-    if(!vuCtx||vuCtx.state==='closed') vuCtx=new AudioContext();
-    if(vuCtx.state==='suspended') await vuCtx.resume();
-    dbg(`🔊 AudioContext: ${vuCtx.sampleRate}Hz, state:${vuCtx.state}`);
-    
+
+    // ── STEP 3: AudioContext — CREATO DOPO getUserMedia, mai prima ──
+    // Su iOS deve essere creato/resumato dentro una user gesture
+    // Il flow: click → conn()/switchMic() → startVuMonitor() → qui siamo dentro la gesture chain
+    vuCtx=new (window.AudioContext||window.webkitAudioContext)();
+    dbg('🔊 AudioContext creato: '+vuCtx.sampleRate+'Hz, state:'+vuCtx.state);
+
+    // Unlock iOS AudioContext (richiede user gesture — siamo nella catena del click)
+    if(vuCtx.state==='suspended'){
+      try{await vuCtx.resume();dbg('  → AudioContext resumato: '+vuCtx.state);}
+      catch(e){dbg('  ⚠️ resume() fallito: '+e.message);}
+    }
+    // Fallback: sblocca su prossimo touch
+    if(vuCtx.state!=='running'){
+      const unlock=async()=>{
+        await vuCtx.resume();
+        dbg('  → AudioContext sbloccato da touch: '+vuCtx.state);
+        document.body.removeEventListener('touchstart',unlock);
+        document.body.removeEventListener('mousedown',unlock);
+      };
+      document.body.addEventListener('touchstart',unlock,{once:true});
+      document.body.addEventListener('mousedown',unlock,{once:true});
+      dbg('  ⏳ AudioContext suspended — tocca lo schermo per sbloccare');
+    }
+
     vuAnalyser=vuCtx.createAnalyser();
     vuAnalyser.fftSize=512;
     vuAnalyser.smoothingTimeConstant=0.3;
     vuCtx.createMediaStreamSource(sharedMicStream).connect(vuAnalyser);
     dot('dMic','on');
-    function tick(){
+
+    // Loop VU
+    (function tick(){
       vuRaf=requestAnimationFrame(tick);
-      // Usiamo frequencyData: molto più visibile e reattivo del timeDomain
+      if(!vuAnalyser||!vuCtx||vuCtx.state!=='running')return;
       const d=new Uint8Array(vuAnalyser.frequencyBinCount);
       vuAnalyser.getByteFrequencyData(d);
-      // Media delle frequenze vocali (banda 200-3000Hz)
       const binHz=vuCtx.sampleRate/vuAnalyser.fftSize;
-      const lo=Math.floor(80/binHz), hi=Math.floor(8000/binHz);
+      const lo=Math.floor(80/binHz), hi=Math.min(Math.floor(8000/binHz),d.length-1);
       let sum=0,cnt=0;
-      for(let i=lo;i<=Math.min(hi,d.length-1);i++){sum+=d[i];cnt++;}
-      const avg=cnt>0?sum/cnt:0; // 0-255
-      drawVU(avg); // drawVU ora lavora in scala 0-255
-    }tick();
-  }catch(e){dbg('❌ Mic errore: '+e.message);console.warn('[VuMonitor]',e.message);dot('dMic','er');}
-}
+      for(let i=lo;i<=hi;i++){sum+=d[i];cnt++;}
+      drawVU(cnt>0?sum/cnt:0);
+    })();
 
-function init(){
-  buildVU();loadKey();renderChars();loadKnowLS();updVadUI();
-  setInterval(tickTimer,500);netCheck();setInterval(netCheck,14000);enumCams();
-  startVuMonitor();
-  // Rileva cambio dispositivo audio (splitter, cuffie, ecc.)
-  navigator.mediaDevices.addEventListener('devicechange',onDeviceChange);
-  // Polling ogni 4s: aggiorna lista mic nel selettore (iOS non sempre emette devicechange)
-  setInterval(async()=>{
-    const prev=availableMics.length;
-    const devs=await navigator.mediaDevices.enumerateDevices();
-    const mics=devs.filter(d=>d.kind==='audioinput');
-    if(mics.length!==prev){
-      dbg(`🔌 Dispositivi audio cambiati: ${prev}→${mics.length} mic`);
-      availableMics=mics;
-      renderMicSelect();
-    }
-  },4000);
-}
-let deviceChangeT=null;
-async function onDeviceChange(){
-  clearTimeout(deviceChangeT);
-  deviceChangeT=setTimeout(async()=>{
-    dbg('🔌 Cambio dispositivo audio rilevato — reinizializzo mic...');
-    dot('dMic',null);
-    // Ferma stream precedente
-    if(sharedMicStream){sharedMicStream.getTracks().forEach(t=>t.stop());sharedMicStream=null;}
-    if(vuCtx&&vuCtx.state!=='closed'){vuCtx.close();vuCtx=null;vuAnalyser=null;}
-    if(vuRaf){cancelAnimationFrame(vuRaf);vuRaf=null;}
-    await enumCams();
-    await startVuMonitor();
-    if(connected){
-      dbg('⚠️ Riconnettiti per usare il nuovo dispositivo');
-      toast('🎤 Nuovo mic rilevato — riconnetti per usarlo');
-    }
-  },800); // debounce 800ms
-}
-
-/* VU */
-let vuEl=null;
-function buildVU(){vuEl=document.getElementById('vuSegs');for(let i=0;i<N_SEGS;i++){const d=document.createElement('div');d.className='seg';vuEl.appendChild(d);}}
-function drawVU(level){
-  // level in scala 0-255 (da frequencyData) oppure 0-32768 (da onChunk RMS)
-  // normalizziamo tutto a 0-255
-  const lvl255 = level>255 ? Math.min(255, level/128) : level;
-  const pct=Math.min(1,lvl255/255), lit=Math.round(pct*N_SEGS);
-  // Soglia: slider 100-6000 → convertiamo in 0-255
-  const thrRaw=parseInt(document.getElementById('rThr').value);
-  const thrPct=Math.min(1,thrRaw/6000);
-  document.getElementById('thrLine').style.left=(thrPct*100)+'%';
-  const s=vuEl.children;
-  for(let i=0;i<N_SEGS;i++){const p=(i+1)/N_SEGS;s[i].className='seg '+(i<lit?(p<.6?'g':p<.85?'y':'r'):'');}
-  const el=document.getElementById('rmsVal');
-  el.textContent=String(Math.round(lvl255)).padStart(3,'0')+'%'.slice(0,Math.round(pct*3));
-  el.textContent=String(Math.round(pct*100)).padStart(3,' ')+'%';
-  el.className='rms-val'+(pct>.85?' r':pct>.6?' y':'');
-}
-
-/* CHAT */
-function addMsg(txt,type){
-  const box=document.getElementById('chatBox');
-  const d=document.createElement('div');d.className='msg '+type;d.textContent=txt;
-  box.appendChild(d);box.scrollTop=box.scrollHeight;
-}
-function appendRobotTxt(delta){
-  robotTxt+=delta;
-  if(!robotMsgEl){robotMsgEl=document.createElement('div');robotMsgEl.className='msg robot';document.getElementById('chatBox').appendChild(robotMsgEl);}
-  robotMsgEl.textContent=robotTxt;
-  document.getElementById('chatBox').scrollTop=document.getElementById('chatBox').scrollHeight;
-}
-function finalizeRobot(){robotMsgEl=null;robotTxt='';}
-
-/* KEY */
-function loadKey(){const k=localStorage.getItem(LS_KEY);if(k){document.getElementById('keyIn').value=k;setKS(true,k.length);}else setKS(false,0);}
-function setKS(ok,len){const e=document.getElementById('kStat');e.className='ks '+(ok?'ok':'w');e.textContent=ok?`✅ Chiave salvata (${len} chars)`:'⚠️ Inserisci la chiave o carica keys.txt';}
-function onKeyIn(){const k=document.getElementById('keyIn').value.replace(/[\u200B-\u200D\uFEFF\r\n]/g,'').trim();if(k.length>10){localStorage.setItem(LS_KEY,k);setKS(true,k.length);}}
-function loadKeys(inp){
-  const file=inp.files[0];if(!file)return;
-  const r=new FileReader();r.onload=e=>{
-    const b=new Uint8Array(e.target.result);let t='';
-    if(b[0]===0xFF&&b[1]===0xFE){for(let i=2;i<b.length-1;i+=2)t+=String.fromCharCode(b[i]|(b[i+1]<<8));}
-    else if(b[0]===0xFE&&b[1]===0xFF){for(let i=2;i<b.length-1;i+=2)t+=String.fromCharCode((b[i]<<8)|b[i+1]);}
-    else{t=new TextDecoder().decode(e.target.result);if(t.charCodeAt(0)===0xFEFF)t=t.slice(1);}
-    let ok=false;
-    t.replace(/\r/g,'').split('\n').forEach(ln=>{ln=ln.trim();if(ln.startsWith('OPENAI_KEY=')){const k=ln.slice(11).replace(/^["'\s]+|["'\s]+$/g,'');if(k.length>10){document.getElementById('keyIn').value=k;localStorage.setItem(LS_KEY,k);setKS(true,k.length);ok=true;toast(`✅ Chiave caricata (${k.length} chars)`);}}});
-    if(!ok)toast('⚠️ OPENAI_KEY= non trovata');inp.value='';
-  };r.readAsArrayBuffer(file);
-}
-
-/* PERSONAGGI */
-function getChars(){try{return JSON.parse(localStorage.getItem(LS_CHARS))||[];}catch{return[];}}
-function saveCharsLS(a){localStorage.setItem(LS_CHARS,JSON.stringify(a));}
-function renderChars(){
-  const sel=document.getElementById('selChar'),chars=getChars(),last=localStorage.getItem(LS_LAST);
-  sel.innerHTML='';
-  if(!chars.length){sel.innerHTML='<option value="">— nessun personaggio —</option>';}
-  else{chars.forEach(c=>{sel.appendChild(new Option(c.name,c.name));});if(chars.find(c=>c.name===last))sel.value=last;}
-  onCharChg();
-}
-function onCharChg(){
-  const name=document.getElementById('selChar').value,char=getChars().find(c=>c.name===name),prev=document.getElementById('charPrev');
-  if(char){
-    prev.style.display='';prev.textContent=char.prompt.slice(0,150)+(char.prompt.length>150?'…':'');
-    if(char.voice)document.getElementById('selVoice').value=char.voice;
-    localStorage.setItem(LS_LAST,name);
-    activePrompt=char.prompt;activeVoice=char.voice||document.getElementById('selVoice').value;
-    document.getElementById('charInfo').textContent=`🎭 ${char.name}  ·  🔊 ${activeVoice}`;
-  }else{
-    prev.style.display='none';activePrompt='Sei un assistente vocale. Rispondi sempre in italiano.';
-    activeVoice=document.getElementById('selVoice').value;
-    document.getElementById('charInfo').textContent='— nessun personaggio —';
+  }catch(e){
+    dbg('❌ startVuMonitor errore: '+e.name+': '+e.message);
+    console.error('[MIC ERROR]',e);
+    dot('dMic','er');
   }
 }
-function openCharEd(name){
-  editingChar=name||null;
-  const char=name?getChars().find(c=>c.name===name):null;
-  document.getElementById('charEdTitle').textContent=char?`✏️ Modifica: ${name}`:'✏️ Nuovo Personaggio';
-  document.getElementById('edName').value=char?.name||'';
-  document.getElementById('edPrompt').value=char?.prompt||'';
-  document.getElementById('edVoice').value=char?.voice||'';
-  document.getElementById('btnCharDel').style.display=char?'':'none';
-  document.getElementById('charEd').classList.add('open');
-  setTimeout(()=>document.getElementById('edName').focus(),50);
-}
-function closeCharEd(){document.getElementById('charEd').classList.remove('open');editingChar=null;}
-function saveChar(){
-  const name=document.getElementById('edName').value.trim(),prompt=document.getElementById('edPrompt').value.trim(),voice=document.getElementById('edVoice').value;
-  if(!name||!prompt){toast('⚠️ Nome e istruzioni obbligatori');return;}
-  let chars=getChars();
-  if(editingChar&&editingChar!==name)chars=chars.filter(c=>c.name!==editingChar);
-  const idx=chars.findIndex(c=>c.name===name);
-  if(idx>=0)chars[idx]={name,prompt,voice};else chars.push({name,prompt,voice});
-  saveCharsLS(chars);localStorage.setItem(LS_LAST,name);
-  renderChars();document.getElementById('selChar').value=name;onCharChg();closeCharEd();
-  toast(`✅ "${name}" salvato`);
-  if(connected){sendSess();addMsg(`🔄 Personaggio aggiornato: ${name}`,'sys');}
-}
-function delChar(){
-  if(!editingChar)return;
-  saveCharsLS(getChars().filter(c=>c.name!==editingChar));
-  renderChars();closeCharEd();toast('🗑 Personaggio eliminato');
-}
-function importChar(inp){
-  const file=inp.files[0];if(!file)return;
-  const r=new FileReader();r.onload=e=>{
-    const lines=e.target.result.replace(/\r/g,'').split('\n');
-    let name=file.name.replace('.txt',''),voice='',start=0;
-    if(lines[0]?.startsWith('NOME=')){name=lines[0].slice(5).trim();start++;}
-    if(lines[start]?.startsWith('VOCE=')){voice=lines[start].slice(5).trim();start++;}
-    const prompt=lines.slice(start).join('\n').trim();
-    document.getElementById('edName').value=name;document.getElementById('edPrompt').value=prompt;document.getElementById('edVoice').value=voice;
-    document.getElementById('btnCharDel').style.display='none';document.getElementById('charEdTitle').textContent='✏️ Importa';
-    editingChar=null;document.getElementById('charEd').classList.add('open');inp.value='';toast('📂 Caricato — controlla e salva');
-  };r.readAsText(file);
-}
 
-/* CONOSCENZA */
-function loadKnowLS(){const s=localStorage.getItem(LS_KNOW);if(s)try{knowledge=JSON.parse(s);}catch{}renderKnowView();}
-function renderKnowView(){
-  const v=document.getElementById('knowView');
-  if(knowledge.text){v.style.color='var(--text)';v.textContent=(knowledge.title?knowledge.title+'\n\n':'')+knowledge.text;}
-  else{v.style.color='var(--muted)';v.textContent='Nessuna conoscenza caricata.';}
+async function switchMic(){
+  const devId=document.getElementById('selMic')?.value||'';
+  dbg('🔄 Cambio mic manuale → '+(devId?devId.slice(0,12)+'...':'auto'));
+  await startVuMonitor(devId||undefined);
+  if(connected){toast('🎤 Riconnetti per applicare il nuovo mic');dbg('⚠️ Riconnetti per usare il nuovo mic nella sessione');}
 }
-function toggleKnowEd(){
-  const ed=document.getElementById('knowEd');
-  if(ed.classList.contains('open')){closeKnowEd();}
-  else{document.getElementById('knowTitle').value=knowledge.title||'';document.getElementById('knowText').value=knowledge.text||'';ed.classList.add('open');document.getElementById('btnKnowEd').textContent='✕ Chiudi';setTimeout(()=>document.getElementById('knowText').focus(),50);}
-}
-function closeKnowEd(){document.getElementById('knowEd').classList.remove('open');document.getElementById('btnKnowEd').textContent='✏️ Modifica';}
-function saveKnow(){
-  knowledge={title:document.getElementById('knowTitle').value.trim(),text:document.getElementById('knowText').value.trim()};
-  localStorage.setItem(LS_KNOW,JSON.stringify(knowledge));renderKnowView();closeKnowEd();toast('✅ Conoscenza salvata');
-  if(connected){sendSess();addMsg('🔄 Conoscenza aggiornata','sys');}
-}
-function clearKnow(){knowledge={title:'',text:''};localStorage.removeItem(LS_KNOW);renderKnowView();closeKnowEd();toast('🗑 Conoscenza rimossa');if(connected)sendSess();}
-function loadKnowFile(inp){
-  const file=inp.files[0];if(!file)return;
-  const r=new FileReader();r.onload=e=>{
-    document.getElementById('knowTitle').value=file.name.replace('.txt','');
-    document.getElementById('knowText').value=e.target.result.replace(/\r/g,'').trim();
-    document.getElementById('knowEd').classList.add('open');document.getElementById('btnKnowEd').textContent='✕ Chiudi';
-    inp.value='';toast('📂 Caricato — premi Salva');
-  };r.readAsText(file);
-}
-function buildSystemPrompt(){
-  const base=activePrompt;
-  if(!knowledge.text)return base;
-  return base+'\n\n---\nINFORMAZIONI EVENTO'+(knowledge.title?' ('+knowledge.title+')':''+':\n')+knowledge.text;
-}
-
-/* CAMERA */
-async function enumCams(){
-  try{
-    const devs=await navigator.mediaDevices.enumerateDevices();
-    const cams=devs.filter(d=>d.kind==='videoinput');
-    const sel=document.getElementById('selCam');sel.innerHTML='';
-    if(!cams.length){sel.innerHTML='<option value="">Nessuna cam trovata</option>';return;}
-    cams.forEach((c,i)=>sel.appendChild(new Option(c.label||`Cam ${i+1}`,c.deviceId)));
-  }catch(e){}
-}
-async function toggleCam(){
-  if(camActive){stopCam();return;}
-  try{
-    const devId=document.getElementById('selCam').value;
-    camStream=await navigator.mediaDevices.getUserMedia({video:devId?{deviceId:{exact:devId}}:true});
-    const v=document.getElementById('camVideo');v.srcObject=camStream;
-    v.style.display='block';document.getElementById('camPh').style.display='none';
-    camActive=true;document.getElementById('btnCamOn').textContent='⏹ Spegni cam';
-    document.getElementById('btnSnap').disabled=false;dot('dCam','on');
-    await enumCams(); // richiede permessi, ora vede le label
-  }catch(e){toast('❌ Cam: '+e.message);}
-}
-function stopCam(){
-  if(camStream)camStream.getTracks().forEach(t=>t.stop());
-  camStream=null;camActive=false;
-  document.getElementById('camVideo').style.display='none';document.getElementById('camPh').style.display='flex';
-  document.getElementById('btnCamOn').textContent='📷 Attiva cam';document.getElementById('btnSnap').disabled=true;dot('dCam',null);
-}
-async function switchCam(){
-  if(!camActive)return;
-  stopCam();await toggleCam();
-}
-function doSnap(){
-  if(!camActive){toast('❌ Attiva prima la telecamera');return;}
-  if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connettiti prima ad OpenAI');return;}
-  const video=document.getElementById('camVideo'),canvas=document.getElementById('camCanvas');
-  canvas.width=video.videoWidth;canvas.height=video.videoHeight;
-  canvas.getContext('2d').drawImage(video,0,0);
-  const b64=canvas.toDataURL('image/jpeg',.85).split(',')[1];
-  // flash
-  const fl=document.getElementById('snapFlash');fl.classList.add('go');setTimeout(()=>fl.classList.remove('go'),200);
-  // invia
-  ws.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'user',content:[
-    {type:'input_image',image:b64},
-    {type:'input_text',text:'Descrivi cosa vedi in questa foto e rispondi in italiano.'}
-  ]}}));
-  ws.send(JSON.stringify({type:'response.create'}));
-  document.getElementById('snapSt').textContent=`📸 Inviata — ${new Date().toLocaleTimeString()}`;
-  addMsg('📸 [foto inviata al modello]','sys');
-  toast('📸 Foto inviata!');
-}
-
-/* SLIDERS */
-function oGain(v){document.getElementById('vGain').textContent=v+'%';}
-function oThr(v){document.getElementById('vThr').textContent=v;}
-function oSil(v){document.getElementById('vSil').textContent=v+' ms';}
-function updVadUI(){const m=document.getElementById('selVad').value;document.getElementById('pSVad').style.display=m==='server_vad'?'':'none';document.getElementById('pSemVad').style.display=m==='semantic_vad'?'':'none';}
-
 /* CONNESSIONE */
 async function toggleConn(){if(connected)disc();else await conn();}
 async function conn(){
@@ -813,25 +625,31 @@ async function conn(){
   onCharChg();activeVoice=document.getElementById('selVoice').value||activeVoice;
   setSt('connecting');
   try{
+    // Assicura mic attivo — siamo in user gesture (click Connetti)
+    if(!sharedMicStream||sharedMicStream.getAudioTracks()[0]?.readyState!=='live'){
+      dbg('🎤 Mic non attivo, avvio...');
+      await startVuMonitor();
+    }
+    // Anti-eco: se richiesto apri stream separato con echoCancellation
     const echoCancel=document.getElementById('chkEcho').checked;
-    // Riusa lo stream mic già aperto per il VU — nessun nuovo getUserMedia su iOS
-    if(echoCancel){
-      try{micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}});}
-      catch(e){micStream=sharedMicStream;}
+    if(echoCancel && sharedMicStream){
+      try{
+        dbg('🔊 Anti-eco: nuovo stream con echoCancellation...');
+        micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
+      }catch(e){dbg('⚠️ Anti-eco fallito, uso stream base');micStream=sharedMicStream;}
     }else{
       micStream=sharedMicStream;
     }
-    // Riusa AudioContext e analyser già esistenti del VU monitor
+    // Riusa AudioContext e analyser del VU (già sbloccati da user gesture)
     audioCtx=vuCtx;
     analyser=vuAnalyser;
-    analyser.smoothingTimeConstant=0.15;
-    // Se stream diverso (anti-eco), ricollegalo all'analyser
-    if(micStream!==sharedMicStream){
+    if(analyser) analyser.smoothingTimeConstant=0.15;
+    if(echoCancel && micStream!==sharedMicStream && audioCtx){
       audioCtx.createMediaStreamSource(micStream).connect(analyser);
     }
     await audioCtx.audioWorklet.addModule('audio-processor.js');
     workletNode=new AudioWorkletNode(audioCtx,'pcm16-processor');workletNode.port.onmessage=onChunk;
-    analyser.connect(workletNode);startViz();
+    if(analyser) analyser.connect(workletNode);startViz();
     const model=document.getElementById('selModel').value;
     ws=new WebSocket(`wss://api.openai.com/v1/realtime?model=${model}`,['realtime',`openai-insecure-api-key.${API_KEY}`,'openai-beta.realtime-v1']);
     ws.binaryType='arraybuffer';
@@ -1057,6 +875,22 @@ function dbg(msg){
 }
 let _tt=null;
 function toast(m){const e=document.getElementById('toast');e.textContent=m;e.classList.add('s');clearTimeout(_tt);_tt=setTimeout(()=>e.classList.remove('s'),3000);}
+
+function init(){
+  buildVU();loadKey();renderChars();loadKnowLS();updVadUI();
+  setInterval(tickTimer,500);netCheck();setInterval(netCheck,14000);enumCams();
+  // NON avviare mic qui: iOS richiede user gesture
+  // Viene avviato al click su "▶ MIC" o "Connetti"
+  navigator.mediaDevices.addEventListener('devicechange',onDeviceChange);
+  setInterval(async()=>{
+    const devs=await navigator.mediaDevices.enumerateDevices();
+    const mics=devs.filter(d=>d.kind==='audioinput');
+    if(mics.length!==availableMics.length){
+      dbg('🔌 Dispositivi cambiati: '+availableMics.length+' → '+mics.length+' mic');
+      availableMics=mics;renderMicSelect();
+    }
+  },4000);
+}
 
 init();
 </script>
