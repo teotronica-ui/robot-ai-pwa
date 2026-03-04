@@ -359,6 +359,7 @@ const EUR=0.92, N_SEGS=36;
 
 // ═══ STATE ═══
 let API_KEY='', activePrompt='Sei un assistente vocale. Rispondi sempre in italiano.', activeVoice='alloy';
+let localVadLevel=0; // livello VU corrente per VAD locale
 let ws=null, audioCtx=null, workletNode=null, micStream=null;
 let muted=false, connected=false, isRec=false, recChunks=[];
 let audioQ=[], playing=false, analyser=null, rafId=null, silStart=null;
@@ -434,8 +435,11 @@ function buildVU(){
   for(let i=0;i<N_SEGS;i++){const d=document.createElement('div');d.className='seg';vuEl.appendChild(d);}
 }
 function drawVU(level){
+  localVadLevel=level; // salva per VAD locale in onChunk
   const pct=Math.min(1,level/255), lit=Math.round(pct*N_SEGS);
-  const thrPct=Math.min(1,parseInt(document.getElementById('rThr').value)/6000);
+  // Soglia visiva: slider 100-6000 mappa su 0-255 con stessa curva gamma del boost
+  const thrRaw=parseInt(document.getElementById('rThr').value);
+  const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
   document.getElementById('thrLine').style.left=(thrPct*100)+'%';
   const s=vuEl.children;
   for(let i=0;i<N_SEGS;i++){const p=(i+1)/N_SEGS; s[i].className='seg '+(i<lit?(p<.6?'g':p<.85?'y':'r'):'');}
@@ -520,6 +524,7 @@ async function startVuMonitor(forceDeviceId){
     vuCtx.createMediaStreamSource(sharedMicStream).connect(vuAnalyser);
     dot('dMic','on');
     // Loop VU
+    let vuLogT=0;
     (function tick(){
       vuRaf=requestAnimationFrame(tick);
       if(!vuAnalyser||!vuCtx||vuCtx.state!=='running')return;
@@ -527,8 +532,16 @@ async function startVuMonitor(forceDeviceId){
       vuAnalyser.getByteFrequencyData(d);
       const binHz=vuCtx.sampleRate/vuAnalyser.fftSize;
       const lo=Math.floor(80/binHz),hi=Math.min(Math.floor(8000/binHz),d.length-1);
-      let sum=0,cnt=0;for(let i=lo;i<=hi;i++){sum+=d[i];cnt++;}
-      drawVU(cnt>0?sum/cnt:0);
+      // Usa il PICCO nella banda vocale, non la media
+      let peak=0;
+      for(let i=lo;i<=hi;i++){if(d[i]>peak)peak=d[i];}
+      // Boost: scala 0-255 → amplifica i valori bassi (curva gamma)
+      // peak=50 → ~100, peak=100 → ~160, peak=200 → ~220
+      const boosted=Math.min(255, Math.pow(peak/255, 0.55)*255);
+      drawVU(boosted);
+      // Log ogni 3s per debug calibrazione
+      const now=Date.now();
+      if(now-vuLogT>3000){vuLogT=now;console.log('[VU] raw peak:'+peak+' boosted:'+Math.round(boosted)+' bins:'+lo+'-'+hi);}
     })();
   }catch(e){
     dbg('❌ Mic errore: '+e.name+': '+e.message);
@@ -622,11 +635,10 @@ function sendSess(){
   const silMs=parseInt(document.getElementById('rSil').value);
   const eagerness=document.getElementById('selEag').value;
   const bargein=document.getElementById('chkBarge').checked;
-  const thrRaw=parseInt(document.getElementById('rThr').value);
-  const thr=Math.round(Math.min(0.99,thrRaw/6000)*100)/100;
-  dbg('📋 session.update voice:'+voice+' thr:'+thr+' sil:'+silMs+'ms');
+  // threshold OpenAI fisso a 0.5 — la soglia visiva è gestita client-side in onChunk
+  dbg('📋 session.update voice:'+voice+' sil:'+silMs+'ms (soglia VAD = client-side)');
   const td=vadMode==='server_vad'
-    ?{type:'server_vad',threshold:thr,silence_duration_ms:silMs,prefix_padding_ms:300,create_response:true,interrupt_response:bargein}
+    ?{type:'server_vad',threshold:0.5,silence_duration_ms:silMs,prefix_padding_ms:300,create_response:true,interrupt_response:bargein}
     :{type:'semantic_vad',eagerness,create_response:true,interrupt_response:bargein};
   ws.send(JSON.stringify({type:'session.update',session:{
     modalities:['text','audio'],instructions,voice,
@@ -642,6 +654,10 @@ function onChunk(e){
   const ctxSR=audioCtx?audioCtx.sampleRate:24000;
   if(ctxSR!==24000)pcm=resample(pcm,ctxSR,24000);
   if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
+  // VAD locale: se livello sotto soglia, non inviare (la linea rossa è questa soglia)
+  const thrRaw=parseInt(document.getElementById('rThr').value);
+  const thrLevel=Math.min(255, Math.pow((thrRaw/6000), 0.55)*255);
+  if(localVadLevel < thrLevel * 0.6) return; // 0.6 = isteresi per evitare cut bruschi
   ws.send(JSON.stringify({type:'input_audio_buffer.append',audio:btoa(String.fromCharCode(...new Uint8Array(pcm.buffer)))}));
 }
 function resample(pcm,from,to){
