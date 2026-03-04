@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Robot AI — OpenAI v6.2</title>
+  <title>Robot AI — OpenAI v6.3</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -455,7 +455,7 @@ async function startVuMonitor(){
       vuAnalyser.getByteFrequencyData(d);
       // Media delle frequenze vocali (banda 200-3000Hz)
       const binHz=vuCtx.sampleRate/vuAnalyser.fftSize;
-      const lo=Math.floor(200/binHz), hi=Math.floor(3000/binHz);
+      const lo=Math.floor(80/binHz), hi=Math.floor(8000/binHz);
       let sum=0,cnt=0;
       for(let i=lo;i<=Math.min(hi,d.length-1);i++){sum+=d[i];cnt++;}
       const avg=cnt>0?sum/cnt:0; // 0-255
@@ -746,7 +746,7 @@ function sendSess(){
   const bargein=document.getElementById('chkBarge').checked;
   console.log('[Session] voice:',voice,'prompt[:80]:',instructions.slice(0,80));
   const td=vadMode==='server_vad'
-    ?{type:'server_vad',threshold:Math.min(0.99,parseInt(document.getElementById('rThr').value)/6000),silence_duration_ms:silMs,prefix_padding_ms:300,create_response:true,interrupt_response:bargein}
+    ?{type:'server_vad',threshold:Math.round(Math.min(0.99,parseInt(document.getElementById('rThr').value)/6000)*100)/100,silence_duration_ms:silMs,prefix_padding_ms:300,create_response:true,interrupt_response:bargein}
     :{type:'semantic_vad',eagerness,create_response:true,interrupt_response:bargein};
   ws.send(JSON.stringify({type:'session.update',session:{
     modalities:['text','audio'],instructions,voice,
