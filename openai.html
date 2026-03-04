@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Robot AI — OpenAI v6.1</title>
+  <title>Robot AI — OpenAI v6.2</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -437,8 +437,12 @@ let robotMsgEl=null,robotTxt='';
 let sharedMicStream=null, vuCtx=null, vuAnalyser=null, vuRaf=null;
 async function startVuMonitor(){
   try{
+    dbg('🎤 Richiedo accesso microfono...');
     sharedMicStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    const tracks=sharedMicStream.getAudioTracks();
+    dbg(`✅ Mic ok: "${tracks[0]?.label||'sconosciuto'}"`);
     vuCtx=new AudioContext();
+    dbg(`🔊 AudioContext SR: ${vuCtx.sampleRate}Hz`);
     vuAnalyser=vuCtx.createAnalyser();
     vuAnalyser.fftSize=512;
     vuAnalyser.smoothingTimeConstant=0.3;
@@ -446,27 +450,62 @@ async function startVuMonitor(){
     dot('dMic','on');
     function tick(){
       vuRaf=requestAnimationFrame(tick);
+      // Usiamo frequencyData: molto più visibile e reattivo del timeDomain
       const d=new Uint8Array(vuAnalyser.frequencyBinCount);
-      vuAnalyser.getByteTimeDomainData(d);
-      let s=0;for(let i=0;i<d.length;i++){const v=(d[i]-128)/128;s+=v*v;}
-      drawVU(Math.sqrt(s/d.length)*32768);
+      vuAnalyser.getByteFrequencyData(d);
+      // Media delle frequenze vocali (banda 200-3000Hz)
+      const binHz=vuCtx.sampleRate/vuAnalyser.fftSize;
+      const lo=Math.floor(200/binHz), hi=Math.floor(3000/binHz);
+      let sum=0,cnt=0;
+      for(let i=lo;i<=Math.min(hi,d.length-1);i++){sum+=d[i];cnt++;}
+      const avg=cnt>0?sum/cnt:0; // 0-255
+      drawVU(avg); // drawVU ora lavora in scala 0-255
     }tick();
-  }catch(e){console.warn('[VuMonitor]',e.message);dot('dMic','er');}
+  }catch(e){dbg('❌ Mic errore: '+e.message);console.warn('[VuMonitor]',e.message);dot('dMic','er');}
 }
 
-function init(){buildVU();loadKey();renderChars();loadKnowLS();updVadUI();setInterval(tickTimer,500);netCheck();setInterval(netCheck,14000);enumCams();startVuMonitor();}
+function init(){
+  buildVU();loadKey();renderChars();loadKnowLS();updVadUI();
+  setInterval(tickTimer,500);netCheck();setInterval(netCheck,14000);enumCams();
+  startVuMonitor();
+  // Rileva cambio dispositivo audio (splitter, cuffie, ecc.)
+  navigator.mediaDevices.addEventListener('devicechange',onDeviceChange);
+}
+let deviceChangeT=null;
+async function onDeviceChange(){
+  clearTimeout(deviceChangeT);
+  deviceChangeT=setTimeout(async()=>{
+    dbg('🔌 Cambio dispositivo audio rilevato — reinizializzo mic...');
+    dot('dMic',null);
+    // Ferma stream precedente
+    if(sharedMicStream){sharedMicStream.getTracks().forEach(t=>t.stop());sharedMicStream=null;}
+    if(vuCtx){vuCtx.close();vuCtx=null;vuAnalyser=null;}
+    await enumCams();
+    await startVuMonitor();
+    if(connected){
+      dbg('⚠️ Riconnettiti per usare il nuovo dispositivo');
+      toast('🎤 Nuovo mic rilevato — riconnetti per usarlo');
+    }
+  },800); // debounce 800ms
+}
 
 /* VU */
 let vuEl=null;
 function buildVU(){vuEl=document.getElementById('vuSegs');for(let i=0;i<N_SEGS;i++){const d=document.createElement('div');d.className='seg';vuEl.appendChild(d);}}
-function drawVU(rms){
-  const MAX=6000,pct=Math.min(1,rms/MAX),lit=Math.round(pct*N_SEGS);
-  const thr=parseInt(document.getElementById('rThr').value);
-  document.getElementById('thrLine').style.left=(thr/MAX*100)+'%';
+function drawVU(level){
+  // level in scala 0-255 (da frequencyData) oppure 0-32768 (da onChunk RMS)
+  // normalizziamo tutto a 0-255
+  const lvl255 = level>255 ? Math.min(255, level/128) : level;
+  const pct=Math.min(1,lvl255/255), lit=Math.round(pct*N_SEGS);
+  // Soglia: slider 100-6000 → convertiamo in 0-255
+  const thrRaw=parseInt(document.getElementById('rThr').value);
+  const thrPct=Math.min(1,thrRaw/6000);
+  document.getElementById('thrLine').style.left=(thrPct*100)+'%';
   const s=vuEl.children;
   for(let i=0;i<N_SEGS;i++){const p=(i+1)/N_SEGS;s[i].className='seg '+(i<lit?(p<.6?'g':p<.85?'y':'r'):'');}
   const el=document.getElementById('rmsVal');
-  el.textContent=String(Math.round(rms)).padStart(4,'0');
+  el.textContent=String(Math.round(lvl255)).padStart(3,'0')+'%'.slice(0,Math.round(pct*3));
+  el.textContent=String(Math.round(pct*100)).padStart(3,' ')+'%';
   el.className='rms-val'+(pct>.85?' r':pct>.6?' y':'');
 }
 
@@ -690,9 +729,11 @@ async function conn(){
     analyser.connect(workletNode);startViz();
     const model=document.getElementById('selModel').value;
     ws=new WebSocket(`wss://api.openai.com/v1/realtime?model=${model}`,['realtime',`openai-insecure-api-key.${API_KEY}`,'openai-beta.realtime-v1']);
-    ws.binaryType='arraybuffer';ws.onopen=()=>console.log('[WS] open');ws.onmessage=onMsg;
+    ws.binaryType='arraybuffer';
+    ws.onopen=()=>{console.log('[WS] open');dbg('🔗 WebSocket aperto — attendo session.created...');};
+    ws.onmessage=onMsg;
     ws.onerror=e=>{console.error('[WS]',e);toast('❌ Errore WebSocket');disc();};
-    ws.onclose=e=>{console.log('[WS]',e.code,e.reason);if(connected)disc();else{setSt('idle');toast(`❌ (${e.code})`);}};
+    ws.onclose=e=>{console.log('[WS]',e.code,e.reason);dbg(`🔌 WS chiuso: ${e.code} ${e.reason||''}`);if(connected)disc();else{setSt('idle');toast(`❌ (${e.code})`);}};
   }catch(e){toast('❌ '+e.message);setSt('idle');disc();}
 }
 function sendSess(){
@@ -705,7 +746,7 @@ function sendSess(){
   const bargein=document.getElementById('chkBarge').checked;
   console.log('[Session] voice:',voice,'prompt[:80]:',instructions.slice(0,80));
   const td=vadMode==='server_vad'
-    ?{type:'server_vad',threshold:0.5,silence_duration_ms:silMs,prefix_padding_ms:300,create_response:true,interrupt_response:bargein}
+    ?{type:'server_vad',threshold:Math.min(0.99,parseInt(document.getElementById('rThr').value)/6000),silence_duration_ms:silMs,prefix_padding_ms:300,create_response:true,interrupt_response:bargein}
     :{type:'semantic_vad',eagerness,create_response:true,interrupt_response:bargein};
   ws.send(JSON.stringify({type:'session.update',session:{
     modalities:['text','audio'],instructions,voice,
@@ -715,13 +756,13 @@ function sendSess(){
   }}));
 }
 function onChunk(e){
-  if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
   let pcm=new Int16Array(e.data);
   const g=parseInt(document.getElementById('rGain').value)/100;
   if(g!==1){const o=new Int16Array(pcm.length);for(let i=0;i<pcm.length;i++)o[i]=Math.max(-32768,Math.min(32767,pcm[i]*g));pcm=o;}
-  // Ricampiona a 24kHz se il contesto audio ha un sample rate diverso (es. cuffie su iOS)
+  // Ricampiona a 24kHz se necessario
   const ctxSR=audioCtx?audioCtx.sampleRate:24000;
   if(ctxSR!==24000){pcm=resample(pcm,ctxSR,24000);}
+  if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
   ws.send(JSON.stringify({type:'input_audio_buffer.append',audio:btoa(String.fromCharCode(...new Uint8Array(pcm.buffer)))}));
 }
 /* Ricampionamento lineare PCM16 */
@@ -742,11 +783,15 @@ function onMsg(e){
   const t=m.type||'';
   if(t!=='response.audio.delta')console.log('[RX]',t,JSON.stringify(m).slice(0,100));
   switch(t){
-    case 'session.created':sendSess();break;
+    case 'session.created':dbg('📋 session.created — invio configurazione...');sendSess();break;
     case 'session.updated':
       connected=true;updBtn();setSt('listening');dot('dAI','on');
-      addMsg(`✅ Connesso · voce: ${m.session?.voice||activeVoice}`,'sys');
-      toast(`✅ ${m.session?.voice||activeVoice}`);break;
+      const vv=m.session?.voice||activeVoice;
+      const thr=m.session?.turn_detection?.threshold||'?';
+      const sd=m.session?.turn_detection?.silence_duration_ms||'?';
+      addMsg(`✅ Connesso · voce: ${vv}`,'sys');
+      dbg(`🎙 VAD threshold=${thr} · silenzio=${sd}ms`);
+      toast(`✅ ${vv}`);break;
     case 'response.audio.delta':
       if(m.delta){const b=Uint8Array.from(atob(m.delta),c=>c.charCodeAt(0));audioQ.push(new Int16Array(b.buffer));if(!playing)drain();}break;
     case 'response.audio_transcript.delta':if(m.delta)appendRobotTxt(m.delta);break;
@@ -866,7 +911,29 @@ function saveWav(){
 /* NET */
 async function netCheck(){try{await fetch('https://www.gstatic.com/generate_204',{mode:'no-cors',cache:'no-store'});dot('dNet','on');}catch{dot('dNet','er');}}
 
+/* DEBUG nel chat box */
+function dbg(msg){
+  const box=document.getElementById('chatBox');
+  const d=document.createElement('div');
+  d.className='msg sys';
+  d.style.fontSize='.6rem';
+  d.style.color='#2a5a7a';
+  d.textContent=`[${new Date().toLocaleTimeString()}] ${msg}`;
+  box.appendChild(d);box.scrollTop=box.scrollHeight;
+  console.log('[DBG]',msg);
+}
+
 /* TOAST */
+function dbg(msg){
+  const box=document.getElementById('chatBox');
+  const d=document.createElement('div');
+  d.className='msg sys';
+  d.style.fontSize='.6rem';
+  d.style.color='#2a7a5a';
+  d.textContent='['+new Date().toLocaleTimeString()+'] '+msg;
+  box.appendChild(d);box.scrollTop=box.scrollHeight;
+  console.log('[DBG]',msg);
+}
 let _tt=null;
 function toast(m){const e=document.getElementById('toast');e.textContent=m;e.classList.add('s');clearTimeout(_tt);_tt=setTimeout(()=>e.classList.remove('s'),3000);}
 
