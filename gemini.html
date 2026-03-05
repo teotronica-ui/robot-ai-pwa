@@ -292,6 +292,7 @@
     </div>
     <div class="f"><label>Modello</label>
       <select id="selModel">
+        <option value="gemini-2.5-flash-native-audio-latest">Gemini 2.5 Flash NA (Latest)</option>
         <option value="gemini-2.5-flash-native-audio-preview-12-2025">Gemini 2.5 Flash NA (Preview)</option>
         <option value="gemini-2.0-flash-live-001">Gemini 2.0 Flash Live</option>
       </select>
@@ -386,6 +387,7 @@ const OUTPUT_SR = 24000;   // sample rate dell'audio in uscita da Gemini
 
 // Prezzi Gemini Live ($/1M token, appross. — audio ~25 token/s)
 const PRICES = {
+  'gemini-2.5-flash-native-audio-latest':          {ai: 3.0, ao: 12.0},
   'gemini-2.5-flash-native-audio-preview-12-2025': {ai: 3.0, ao: 12.0},
   'gemini-2.0-flash-live-001':                     {ai: 0.5, ao:  2.0},
 };
@@ -733,29 +735,25 @@ function sendSetup(){
 
   const setup={
     model: 'models/'+model,
-    generation_config:{
-      response_modalities:['AUDIO'],
-      speech_config:{
-        voice_config:{
-          prebuilt_voice_config:{voice_name: voice}
+    // IMPORTANTE: Gemini Live API richiede camelCase (non snake_case)
+    generationConfig:{
+      responseModalities:['AUDIO'],
+      speechConfig:{
+        voiceConfig:{
+          prebuiltVoiceConfig:{voiceName: voice}
         }
       }
     },
-    system_instruction:{
+    // contextWindowCompression: gestisce sessioni lunghe (>10min)
+    contextWindowCompression:{slidingWindow:{}},
+    systemInstruction:{
       parts:[{text: instructions}]
-    },
-    // Trascrizioni: input (utente) e output (robot)
-    input_audio_transcription:{},
-    output_audio_transcription:{},
-    // VAD: Gemini gestisce tutto lato server nativamente
-    realtime_input_config:{
-      automatic_activity_detection:{
-        disabled: false
-      }
     }
   };
 
-  ws.send(JSON.stringify({setup}));
+  const setupMsg=JSON.stringify({setup});
+  dbg('📤 Setup JSON (prime 200 char): '+setupMsg.slice(0,200));
+  ws.send(setupMsg);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -787,12 +785,12 @@ function onChunk(e){
   const thrLevel=Math.min(255,Math.pow((thrRaw/6000),0.55)*255);
   if(localVadLevel<thrLevel*0.6)return;
 
-  // Formato Gemini: realtimeInput con audio blob
+  // Formato Gemini: camelCase come da documentazione Python funzionante
   ws.send(JSON.stringify({
-    realtime_input:{
-      media_chunks:[{
+    realtimeInput:{
+      mediaChunks:[{
         data: pcmToBase64(pcm),
-        mime_type:'audio/pcm;rate='+INPUT_SR
+        mimeType:'audio/pcm;rate='+INPUT_SR
       }]
     }
   }));
@@ -808,16 +806,23 @@ function resample(pcm,from,to){
 // WS MESSAGES — Gemini BidiGenerateContent protocol
 // ═══════════════════════════════════════════════════════════════
 function onMsg(e){
-  let m;try{m=JSON.parse(e.data);}catch{return;}
+  let m;
+  try{m=JSON.parse(e.data);}catch(ex){dbg('❌ JSON parse: '+ex.message);return;}
 
-  // Setup completato — la sessione è pronta
-  if(m.setupComplete!==undefined){
+  // Log raw per debug (solo prime 200 chars)
+  const raw=JSON.stringify(m);
+  if(!raw.includes('"data"'))  // non loggare i chunk audio base64
+    console.log('[RX]',raw.slice(0,200));
+
+  // Setup completato — Gemini manda {"setupComplete":{}} o {"setupComplete":true}
+  if('setupComplete' in m){
     clearTimeout(wsTimeoutTimer);
     connected=true;updBtn();setSt('listening');dot('dAI','on');
     reconnectCount=0;hideReconnBar();
     document.getElementById('btnConn').disabled=false;
     addMsg('✅ Gemini connesso · voce: '+(document.getElementById('selVoice').value||activeVoice),'sys');
     toast('✅ Gemini pronto');
+    dbg('✅ setupComplete ricevuto');
     return;
   }
 
@@ -989,17 +994,19 @@ function doSnap(){
   c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);
   const b64=c.toDataURL('image/jpeg',.85).split(',')[1];
   const fl=document.getElementById('snapFlash');fl.classList.add('go');setTimeout(()=>fl.classList.remove('go'),200);
-  // Gemini Live: invia immagine come client_content con parte inline_data
+  // Gemini Live: immagine via realtimeInput con mediaChunks (camelCase)
   ws.send(JSON.stringify({
-    client_content:{
-      turns:[{
-        role:'user',
-        parts:[
-          {inline_data:{mime_type:'image/jpeg',data:b64}},
-          {text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}
-        ]
-      }],
-      turn_complete:true
+    realtimeInput:{
+      mediaChunks:[
+        {mimeType:'image/jpeg', data:b64},
+      ]
+    }
+  }));
+  // Testo separato come clientContent
+  ws.send(JSON.stringify({
+    clientContent:{
+      turns:[{role:'user',parts:[{text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}]}],
+      turnComplete:true
     }
   }));
   document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
@@ -1085,7 +1092,7 @@ function buildSystemPrompt(){const base=activePrompt;if(!knowledge.text)return b
 // COSTO — stima approssimativa token audio Gemini
 // ═══════════════════════════════════════════════════════════════
 function renderCost(){
-  const P=PRICES[document.getElementById('selModel').value]||PRICES['gemini-2.5-flash-native-audio-preview-12-2025'];
+  const P=PRICES[document.getElementById('selModel').value]||PRICES['gemini-2.5-flash-native-audio-latest'];
   const aI=(tok.ai/1e6)*P.ai*EUR,aO=(tok.ao/1e6)*P.ao*EUR;
   const tot=aI+aO,fmt=v=>v<.0001?'<€0.0001':'€'+v.toFixed(4);
   document.getElementById('costBox').innerHTML=
