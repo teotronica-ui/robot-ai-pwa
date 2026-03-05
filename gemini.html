@@ -708,11 +708,27 @@ async function conn(){
 // Invia il messaggio BidiGenerateContent setup a Gemini
 function sendSetup(){
   const model=document.getElementById('selModel').value;
-  const voice=document.getElementById('selVoice').value||activeVoice;
+  let voice=document.getElementById('selVoice').value||activeVoice;
+
+  // Mappa voci OpenAI → equivalente Gemini più simile
+  // (può capitare se un personaggio è stato creato su openai.html)
+  const voiceMap={
+    'alloy':'Aoede','ash':'Charon','ballad':'Kore','coral':'Leda',
+    'echo':'Fenrir','sage':'Orus','shimmer':'Aoede','verse':'Puck',
+    'cedar':'Umbriel','marin':'Zephyr'
+  };
+  const GEMINI_VOICES=['Puck','Charon','Kore','Fenrir','Aoede','Leda','Orus','Zephyr','Autonoe','Umbriel'];
+  if(!GEMINI_VOICES.includes(voice)){
+    const mapped=voiceMap[voice.toLowerCase()]||'Aoede';
+    dbg('⚠️ Voce "'+voice+'" non valida per Gemini → mappata a "'+mapped+'"');
+    voice=mapped;
+    // Aggiorna anche il selettore UI
+    document.getElementById('selVoice').value=mapped;
+  }
+
   const instructions=buildSystemPrompt();
   const autoMute=document.getElementById('chkAutoMute').checked;
   const bargein=autoMute?false:document.getElementById('chkBarge').checked;
-
   dbg('📋 Setup: model='+model+' voice='+voice+' bargein='+bargein);
 
   const setup={
@@ -1013,13 +1029,24 @@ function renderChars(){
   else{chars.forEach(c=>sel.appendChild(new Option(c.name,c.name)));if(chars.find(c=>c.name===last))sel.value=last;}
   onCharChg();
 }
+const GEMINI_VOICES_LIST=['Puck','Charon','Kore','Fenrir','Aoede','Leda','Orus','Zephyr','Autonoe','Umbriel'];
+const OPENAI_TO_GEMINI={'alloy':'Aoede','ash':'Charon','ballad':'Kore','coral':'Leda','echo':'Fenrir','sage':'Orus','shimmer':'Aoede','verse':'Puck','cedar':'Umbriel','marin':'Zephyr'};
+
+function remapVoice(v){
+  if(!v)return'Aoede';
+  if(GEMINI_VOICES_LIST.includes(v))return v;
+  return OPENAI_TO_GEMINI[v.toLowerCase()]||'Aoede';
+}
+
 function onCharChg(){
   const name=document.getElementById('selChar').value,char=getChars().find(c=>c.name===name),prev=document.getElementById('charPrev');
   if(char){
     prev.style.display='';prev.textContent=char.prompt.slice(0,150)+(char.prompt.length>150?'…':'');
-    if(char.voice)document.getElementById('selVoice').value=char.voice;
+    const mappedVoice=remapVoice(char.voice);
+    if(char.voice&&mappedVoice!==char.voice)dbg('⚠️ Voce "'+char.voice+'" → mappata a "'+mappedVoice+'" (Gemini)');
+    if(mappedVoice)document.getElementById('selVoice').value=mappedVoice;
     try{localStorage.setItem(LS_LAST,name);}catch(e){}
-    activePrompt=char.prompt;activeVoice=char.voice||document.getElementById('selVoice').value;
+    activePrompt=char.prompt;activeVoice=mappedVoice||document.getElementById('selVoice').value;
     document.getElementById('charInfo').textContent='🎭 '+name+'  ·  🔊 '+activeVoice;
   }else{
     prev.style.display='none';activePrompt='Sei un assistente vocale. Rispondi sempre in italiano.';
