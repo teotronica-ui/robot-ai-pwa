@@ -379,11 +379,11 @@ const LS_CHARS  = 'robot_characters';   // condiviso con OpenAI — stessi perso
 const LS_LAST   = 'robot_last_char';
 const LS_KNOW   = 'robot_knowledge';    // condiviso con OpenAI
 
-// Gemini Live API WebSocket endpoint (Google AI, non Vertex AI)
-// Input audio: PCM16 16kHz  |  Output audio: PCM16 24kHz
-const GEMINI_WS = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
-const INPUT_SR  = 16000;   // sample rate richiesto da Gemini per l'input
-const OUTPUT_SR = 24000;   // sample rate dell'audio in uscita da Gemini
+// Gemini Live API — URL CORRETTO: v1alpha + /ws/ + BidiGenerateContent
+// (v1beta causa rifiuto su alcuni modelli native-audio)
+const GEMINI_WS = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent';
+const INPUT_SR  = 16000;   // Gemini accetta SOLO 16kHz — tassativo
+const OUTPUT_SR = 24000;   // audio in uscita da Gemini
 
 // Prezzi Gemini Live ($/1M token, appross. — audio ~25 token/s)
 const PRICES = {
@@ -421,6 +421,8 @@ let robotSpeaking=false, autoMuteSuspended=false;
 let reconnectCount=0, reconnectTimer=null, wsTimeoutTimer=null;
 let userDisconnected=false;
 let ctxWatchdogInterval=null, drainWatchdog=null;
+// Gemini: blocca l'invio audio finché setupComplete non è ricevuto
+let setupReady=false;
 
 // ═══════════════════════════════════════════════════════════════
 // INIT
@@ -659,6 +661,7 @@ async function conn(){
   onCharChg();
   activeVoice=document.getElementById('selVoice').value||activeVoice;
   setSt('connecting');
+  setupReady=false;  // blocca invio audio fino a setupComplete
   document.getElementById('btnConn').disabled=true;
   dbg('🔌 Connessione Gemini... (tentativo '+(reconnectCount+1)+')');
   try{
@@ -666,35 +669,58 @@ async function conn(){
       dbg('🎤 Avvio mic...');await startVuMonitor();
     }
     micStream=sharedMicStream;
-    audioCtx=vuCtx;analyser=vuAnalyser;
-    if(analyser)analyser.smoothingTimeConstant=0.15;
 
-    // Carica lo stesso audio-processor.js usato da OpenAI
+    // PROBLEMA 1 — Sample Rate:
+    // Il worklet audio-processor.js converte Float32→Int16 ma NON campiona.
+    // Se AudioContext gira a 48kHz, i chunk arrivano a 48kHz e Gemini li rifiuta.
+    // Soluzione: creiamo un AudioContext SEPARATO forzato a 16kHz.
+    // Il browser fa il downsampling nativo (anti-aliasing incluso) prima di passare
+    // i campioni al worklet. Così i chunk sono già a 16kHz — nessun resample manuale.
+    // Nota: NON usiamo vuCtx (che gira a 48kHz per il VU meter) ma un ctx dedicato.
+    if(audioCtx&&audioCtx!==vuCtx){try{await audioCtx.close();}catch(e){}}
+    audioCtx=new(window.AudioContext||window.webkitAudioContext)({sampleRate:INPUT_SR});
+    dbg('🔊 AudioContext Gemini: '+audioCtx.sampleRate+'Hz (forzato 16kHz)');
+    if(audioCtx.state==='suspended'){
+      try{await audioCtx.resume();}catch(e){}
+      if(audioCtx.state!=='running'){
+        const unlock=async()=>{try{await audioCtx?.resume();}catch(e){}};
+        document.body.addEventListener('touchstart',unlock,{once:true});
+        document.body.addEventListener('mousedown',unlock,{once:true});
+      }
+    }
+
+    // Worklet: riceve Float32 a 16kHz (già corretto), converte a Int16PCM e manda onChunk
     await audioCtx.audioWorklet.addModule('audio-processor.js');
     workletNode=new AudioWorkletNode(audioCtx,'pcm16-processor');
     workletNode.port.onmessage=onChunk;
-    if(analyser)analyser.connect(workletNode);
+
+    // Collega microfono → worklet tramite il ctx a 16kHz
+    // Il browser resampla automaticamente da 48kHz a 16kHz
+    const micSource=audioCtx.createMediaStreamSource(micStream);
+    micSource.connect(workletNode);
     dot('dMic','on');
 
     const model=document.getElementById('selModel').value;
     const url=GEMINI_WS+'?key='+API_KEY;
-    dbg('🌐 WS → '+model);
+    dbg('🌐 WS → '+url.split('?')[0].split('/').pop());
     ws=new WebSocket(url);
     ws.binaryType='arraybuffer';
 
     wsTimeoutTimer=setTimeout(()=>{
-      if(!connected){dbg('⏱ Timeout WS');toast('❌ Timeout');disc();scheduleReconnect();}
+      if(!connected){dbg('⏱ Timeout WS ('+WS_TIMEOUT_MS+'ms)');toast('❌ Timeout');disc();scheduleReconnect();}
     },WS_TIMEOUT_MS);
 
     ws.onopen=()=>{
       dbg('🔗 WS aperto — invio setup...');
       sendSetup();
+      // setupReady rimane false fino a setupComplete — onChunk scarta tutto nel frattempo
     };
     ws.onmessage=onMsg;
     ws.onerror=e=>{console.error('[WS]',e);dbg('❌ WS errore');};
     ws.onclose=e=>{
       dbg('🔌 WS chiuso: '+e.code+(e.reason?' '+e.reason:''));
       clearTimeout(wsTimeoutTimer);
+      setupReady=false;
       const wasConn=connected;disc();
       if(wasConn&&!userDisconnected)scheduleReconnect();
       else if(!wasConn&&!userDisconnected&&reconnectCount>0)scheduleReconnect();
@@ -769,23 +795,27 @@ function pcmToBase64(pcm){
 }
 
 function onChunk(e){
+  // PROBLEMA 2 — Invio precoce:
+  // Gemini chiude il WS se riceve realtimeInput prima di setupComplete.
+  // Il flag setupReady viene alzato solo quando onMsg riceve {"setupComplete"}.
+  if(!setupReady)return;
   if(autoMuteSuspended)return;
+  if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
+
   let pcm=new Int16Array(e.data);
+
+  // Gain
   const g=parseInt(document.getElementById('rGain').value)/100;
   if(g!==1){const o=new Int16Array(pcm.length);for(let i=0;i<pcm.length;i++)o[i]=Math.max(-32768,Math.min(32767,Math.round(pcm[i]*g)));pcm=o;}
 
-  // Resample da sample rate nativo del mic (tipicamente 48kHz) a 16kHz per Gemini
-  const ctxSR=audioCtx?audioCtx.sampleRate:48000;
-  if(ctxSR!==INPUT_SR)pcm=resample(pcm,ctxSR,INPUT_SR);
-
-  if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
+  // Nessun resample manuale: l'AudioContext è già stato forzato a INPUT_SR (16kHz)
+  // in conn(), quindi i campioni dal worklet sono già a 16kHz nativi del browser.
 
   // VAD locale
   const thrRaw=parseInt(document.getElementById('rThr').value);
   const thrLevel=Math.min(255,Math.pow((thrRaw/6000),0.55)*255);
   if(localVadLevel<thrLevel*0.6)return;
 
-  // Formato Gemini: camelCase come da documentazione Python funzionante
   ws.send(JSON.stringify({
     realtimeInput:{
       mediaChunks:[{
@@ -794,12 +824,6 @@ function onChunk(e){
       }]
     }
   }));
-}
-
-function resample(pcm,from,to){
-  const ratio=from/to,outLen=Math.round(pcm.length/ratio),out=new Int16Array(outLen);
-  for(let i=0;i<outLen;i++){const pos=i*ratio,i0=Math.floor(pos),i1=Math.min(i0+1,pcm.length-1),f=pos-i0;out[i]=Math.round(pcm[i0]*(1-f)+pcm[i1]*f);}
-  return out;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -817,12 +841,13 @@ function onMsg(e){
   // Setup completato — Gemini manda {"setupComplete":{}} o {"setupComplete":true}
   if('setupComplete' in m){
     clearTimeout(wsTimeoutTimer);
+    setupReady=true;   // ← ora onChunk può inviare audio
     connected=true;updBtn();setSt('listening');dot('dAI','on');
     reconnectCount=0;hideReconnBar();
     document.getElementById('btnConn').disabled=false;
     addMsg('✅ Gemini connesso · voce: '+(document.getElementById('selVoice').value||activeVoice),'sys');
     toast('✅ Gemini pronto');
-    dbg('✅ setupComplete ricevuto');
+    dbg('✅ setupComplete — audio abilitato');
     return;
   }
 
@@ -910,8 +935,10 @@ function disc(){
   connected=false;clearTimeout(wsTimeoutTimer);
   if(ws){ws.onclose=null;try{ws.close();}catch(e){}ws=null;}
   if(workletNode){try{workletNode.port.postMessage({cmd:'stop'});}catch(e){}workletNode=null;}
-  micStream=null;audioCtx=null;analyser=vuAnalyser;
-  audioQ=[];playing=false;silStart=null;nextPlayTime=0;
+  micStream=null;
+  if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch(e){}}
+  audioCtx=null;analyser=vuAnalyser;
+  audioQ=[];playing=false;silStart=null;nextPlayTime=0;setupReady=false;
   robotSpeaking=false;autoMuteSuspended=false;setRobotSpeaking(false);
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
   dot('dAI',null);setSt('idle');updBtn();
