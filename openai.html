@@ -3,11 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Robot AI — OpenAI v7</title>
+  <title>Robot AI — OpenAI v8</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    :root{--bg:#070d18;--surf:#0c1525;--card:#101d2e;--bord:#162538;--green:#00e5a0;--red:#ff3d3d;--yellow:#ffb800;--text:#dff0ff;--muted:#3d6080;--mono:'Share Tech Mono',monospace;--sans:'Exo 2',sans-serif;}
+    :root{
+      --bg:#070d18;--surf:#0c1525;--card:#101d2e;--bord:#162538;
+      --green:#00e5a0;--red:#ff3d3d;--yellow:#ffb800;--blue:#4db8ff;
+      --text:#dff0ff;--muted:#3d6080;
+      --mono:'Share Tech Mono',monospace;--sans:'Exo 2',sans-serif;
+    }
     body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100dvh;display:flex;flex-direction:column;align-items:center;padding:10px 10px 60px;gap:9px}
     body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:999;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,229,160,.007) 3px,rgba(0,229,160,.007) 4px)}
     .card{background:var(--card);border:1px solid var(--bord);border-radius:14px;padding:14px;width:100%;max-width:500px}
@@ -16,15 +21,25 @@
     #btnConn{width:100%;padding:18px;border:none;border-radius:11px;cursor:pointer;font-family:var(--sans);font-size:1.25rem;font-weight:900;letter-spacing:3px;background:linear-gradient(135deg,var(--green),#00c487);color:#001810;box-shadow:0 0 28px rgba(0,229,160,.28);transition:all .2s}
     #btnConn:active{transform:scale(.97)}
     #btnConn.off{background:linear-gradient(135deg,var(--red),#cc1a1a);color:#fff;box-shadow:0 0 28px rgba(255,61,61,.3)}
+    #btnConn:disabled{opacity:.5;cursor:not-allowed;transform:none}
     .dot-row{display:flex;justify-content:center;gap:16px;margin-top:10px;font-family:var(--mono);font-size:.7rem}
     .dw{display:flex;align-items:center;gap:6px}
     .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);transition:all .3s}
     .dot.on{background:var(--green);box-shadow:0 0 7px var(--green)}
     .dot.er{background:var(--red);box-shadow:0 0 7px var(--red)}
     .dot.tk{background:var(--yellow);box-shadow:0 0 7px var(--yellow);animation:bl .5s ease infinite alternate}
+    .dot.muted{background:var(--red);box-shadow:0 0 7px var(--red);animation:bl .8s ease infinite alternate}
     @keyframes bl{to{opacity:.25}}
-    .state{font-family:var(--mono);font-size:.82rem;color:var(--green);margin-top:7px;letter-spacing:1px;text-align:center}
+    .state{font-family:var(--mono);font-size:.82rem;color:var(--green);margin-top:7px;letter-spacing:1px;text-align:center;min-height:1.2em}
     .charinfo{font-size:.65rem;color:var(--muted);margin-top:3px;text-align:center;font-family:var(--mono)}
+
+    /* Reconnect counter */
+    .reconn-bar{display:none;align-items:center;gap:8px;margin-top:8px;padding:8px 12px;background:#1a0a00;border:1px solid var(--yellow);border-radius:9px;font-family:var(--mono);font-size:.72rem;color:var(--yellow)}
+    .reconn-bar.show{display:flex}
+    .reconn-spin{animation:spin 1s linear infinite;display:inline-block}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* VU */
     .vu-top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:7px}
     .rms-val{font-family:var(--mono);font-size:2rem;font-weight:700;letter-spacing:4px;color:var(--green);transition:color .08s;line-height:1;min-width:80px;text-align:right}
     .rms-val.y{color:var(--yellow)}.rms-val.r{color:var(--red)}
@@ -34,18 +49,29 @@
     .seg.g{background:var(--green);box-shadow:0 0 5px rgba(0,229,160,.6)}
     .seg.y{background:var(--yellow);box-shadow:0 0 5px rgba(255,184,0,.6)}
     .seg.r{background:var(--red);box-shadow:0 0 5px rgba(255,61,61,.6)}
+    .seg.muted{background:#1a0505!important;box-shadow:none!important}
     .thr{position:absolute;top:0;bottom:0;width:2px;background:var(--red);opacity:.85;pointer-events:none}
     .thr::before{content:'▼';position:absolute;top:-1px;left:50%;transform:translateX(-50%);font-size:.45rem;color:var(--red)}
+
+    /* Auto-mute indicator overlay on VU */
+    .vu-mute-overlay{position:absolute;inset:0;background:rgba(255,61,61,.12);border-radius:7px;display:none;align-items:center;justify-content:center;font-family:var(--mono);font-size:.65rem;color:var(--red);letter-spacing:2px;pointer-events:none}
+    .vu-mute-overlay.show{display:flex}
+
+    /* Chat */
     .chat-box{height:150px;overflow-y:auto;background:#040c15;border:1px solid var(--bord);border-radius:8px;padding:9px;display:flex;flex-direction:column;gap:5px;margin-top:10px}
     .msg{padding:6px 10px;border-radius:9px;max-width:92%;font-size:.77rem;line-height:1.45;word-break:break-word}
     .msg.robot{background:#0d1e30;align-self:flex-start;border-bottom-left-radius:3px}
     .msg.user{background:#002a18;align-self:flex-end;color:#a7f3d0;border-bottom-right-radius:3px}
     .msg.sys{background:transparent;color:#2a7a5a;font-size:.63rem;align-self:center;font-family:var(--mono)}
+
+    /* Camera */
     .cam-ph{width:100%;aspect-ratio:16/9;background:#040c15;border:2px dashed var(--bord);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:.75rem;font-family:var(--mono);flex-direction:column;gap:6px}
     #camVideo{width:100%;aspect-ratio:16/9;background:#040c15;border-radius:9px;object-fit:cover;display:none;border:1px solid var(--bord)}
     canvas{display:none}
     .snap-flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:9999;transition:opacity .15s}
     .snap-flash.go{opacity:.7}
+
+    /* Controls */
     .sg{margin-top:11px}
     .sh{display:flex;justify-content:space-between;font-size:.68rem;margin-bottom:4px}
     .sh .l{color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px}
@@ -111,6 +137,11 @@
     .mic-row{display:flex;gap:7px;margin-bottom:8px;align-items:center}
     .btn-sm{background:var(--surf);border:1px solid var(--bord);border-radius:8px;color:var(--text);padding:7px 11px;font-size:.8rem;cursor:pointer;white-space:nowrap;font-family:var(--sans);font-weight:700}
     .btn-sm.gr{border-color:var(--green);color:var(--green)}
+
+    /* Auto-mute status badge */
+    .amute-badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:.65rem;padding:3px 8px;border-radius:12px;border:1px solid var(--bord);color:var(--muted);margin-top:6px;transition:all .3s}
+    .amute-badge.robot-speaking{background:#001810;border-color:var(--green);color:var(--green)}
+    .amute-badge.mic-muted{background:#1a0000;border-color:var(--red);color:var(--red)}
   </style>
 </head>
 <body>
@@ -120,6 +151,10 @@
 <!-- CONNETTI -->
 <div class="card conn-card">
   <button id="btnConn" onclick="toggleConn()">📡  CONNETTI</button>
+  <div class="reconn-bar" id="reconnBar">
+    <span class="reconn-spin">⟳</span>
+    <span id="reconnMsg">Riconnessione in corso...</span>
+  </div>
   <div class="dot-row">
     <div class="dw"><div class="dot" id="dNet"></div><span>NET</span></div>
     <div class="dw"><div class="dot" id="dAI"></div><span>AI</span></div>
@@ -148,7 +183,10 @@
   <div class="vu-wrap">
     <div class="vu-segs" id="vuSegs"></div>
     <div class="thr" id="thrLine"></div>
+    <div class="vu-mute-overlay" id="vuMuteOverlay">🔇 MIC SOSPESO — ROBOT PARLA</div>
   </div>
+  <!-- Auto-mute status -->
+  <div id="amuteBadge" class="amute-badge">⚪ Auto-mute: standby</div>
   <div class="chat-box" id="chatBox"><div class="msg sys">— conversazione —</div></div>
 </div>
 
@@ -185,12 +223,15 @@
     <button id="btnMute" onclick="toggleMute()">🎙 ATTIVO</button>
   </div>
   <div class="trow">
-    <div><div class="tlbl">🔊 Anti-Eco</div><div class="tsub">Attiva se senti eco · riconnetti per applicare</div></div>
-    <label class="tsw"><input type="checkbox" id="chkEcho"><span class="ts"></span></label>
+    <div>
+      <div class="tlbl">🔇 Auto-mute durante risposta</div>
+      <div class="tsub">Sospende mic mentre il robot parla · elimina eco acustico</div>
+    </div>
+    <label class="tsw"><input type="checkbox" id="chkAutoMute" checked><span class="ts"></span></label>
   </div>
   <div class="trow">
-    <div><div class="tlbl">🛑 Barge-in</div><div class="tsub">Puoi interrompere il robot parlando</div></div>
-    <label class="tsw"><input type="checkbox" id="chkBarge" checked><span class="ts"></span></label>
+    <div><div class="tlbl">🛑 Barge-in</div><div class="tsub">Puoi interrompere il robot parlando · disabilitato con Auto-mute ON</div></div>
+    <label class="tsw"><input type="checkbox" id="chkBarge"><span class="ts"></span></label>
   </div>
 </div>
 
@@ -259,68 +300,39 @@
     </div>
     <div class="f"><label>Modello AI</label>
       <select id="selModel">
-        <option value="gpt-4o-realtime-preview">gpt-4o-realtime</option>
-        <option value="gpt-4o-mini-realtime-preview">gpt-4o-mini (€)</option>
+        <option value="gpt-4o-realtime-preview">GPT-4o Realtime</option>
+        <option value="gpt-4o-mini-realtime-preview">GPT-4o Mini RT</option>
       </select>
     </div>
   </div>
-  <div class="upl" onclick="document.getElementById('fChar').click()">
-    <input type="file" id="fChar" accept=".txt" onchange="importChar(this)">
-    📂 Importa personaggio da .txt
-  </div>
-</div>
-
-<!-- CONOSCENZA -->
-<div class="card">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-    <div class="card-hd" style="margin:0">📚 Conoscenza Evento</div>
-    <button class="bs" style="flex:0;min-width:auto;padding:5px 10px;font-size:.68rem" id="btnKnowEd" onclick="toggleKnowEd()">✏️ Modifica</button>
-  </div>
-  <div class="know-view" id="knowView">Nessuna conoscenza caricata.</div>
-  <div class="ined" id="knowEd">
-    <div style="font-size:.7rem;color:var(--muted);font-family:var(--mono)">Aggiunto in coda al system prompt</div>
-    <div><label>Titolo</label><input type="text" id="knowTitle" placeholder="es. Fiera del Levante 2025"></div>
-    <div><label>Contenuto</label><textarea id="knowText" rows="7" placeholder="Informazioni sull'evento..."></textarea></div>
-    <div class="ed-row">
-      <button class="bsave" onclick="saveKnow()">💾 Salva</button>
-      <button class="bdel" onclick="clearKnow()">🗑 Svuota</button>
-      <button class="bcan" onclick="closeKnowEd()">✕</button>
+  <div class="r2">
+    <div class="f"><label>VAD Mode</label>
+      <select id="selVad" onchange="updVadUI()">
+        <option value="server_vad">Server VAD</option>
+        <option value="semantic_vad">Semantic VAD</option>
+      </select>
     </div>
-  </div>
-  <div class="upl" onclick="document.getElementById('fKnow').click()">
-    <input type="file" id="fKnow" accept=".txt" onchange="loadKnowFile(this)">
-    📂 Carica file .txt conoscenza
-  </div>
-</div>
-
-<!-- AI PARAMS -->
-<div class="card">
-  <div class="card-hd">🧠 Parametri AI</div>
-  <div class="f"><label>Temperatura</label>
-    <select id="selTemp">
-      <option value="0.6">🎯 Preciso (0.6)</option><option value="0.7">📐 Stabile (0.7)</option>
-      <option value="0.8" selected>⚖️ Bilanciato (0.8)</option>
-      <option value="1.0">🎨 Creativo (1.0)</option><option value="1.2">🎭 Molto creativo (1.2)</option>
-    </select>
-  </div>
-  <div class="f"><label>Modalità VAD</label>
-    <select id="selVad" onchange="updVadUI()">
-      <option value="server_vad">🔇 Server VAD — dopo N ms di silenzio</option>
-      <option value="semantic_vad">🧠 Semantic VAD — capisce quando finisci</option>
-    </select>
+    <div class="f"><label>Temperatura</label>
+      <select id="selTemp">
+        <option value="0.6">0.6 – Preciso</option>
+        <option value="0.8" selected>0.8 – Bilanciato</option>
+        <option value="1.0">1.0 – Creativo</option>
+      </select>
+    </div>
   </div>
   <div id="pSVad">
     <div class="sg">
-      <div class="sh"><span class="l">Silenzio prima risposta</span><span class="v" id="vSil">500 ms</span></div>
-      <input type="range" id="rSil" min="100" max="2000" step="100" value="500" oninput="oSil(this.value)">
-      <div class="sticks"><span>100ms</span><span>500ms</span><span>2000ms</span></div>
+      <div class="sh"><span class="l">Silenzio VAD</span><span class="v" id="vSil">800 ms</span></div>
+      <input type="range" id="rSil" min="200" max="2000" step="100" value="800" oninput="oSil(this.value)">
+      <div class="sticks"><span>200ms</span><span>800ms</span><span>2s</span></div>
     </div>
   </div>
   <div id="pSemVad" style="display:none">
-    <div class="f" style="margin-top:9px"><label>Reattività (Eagerness)</label>
+    <div class="f" style="margin-top:10px"><label>Eagerness</label>
       <select id="selEag">
-        <option value="low">🐢 Paziente (low)</option><option value="medium" selected>⚖️ Normale (medium)</option>
-        <option value="high">🚀 Reattivo (high)</option><option value="auto">🤖 Auto</option>
+        <option value="low">Low – aspetta di più</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High – risponde subito</option>
       </select>
     </div>
   </div>
@@ -328,10 +340,46 @@
 
 <!-- REC -->
 <div class="card">
-  <div class="card-hd">⏺ Registrazione</div>
+  <div class="card-hd">⏺ Registrazione conversazione</div>
   <div class="brow">
     <button class="bs" id="btnRec" onclick="toggleRec()">⏺ AVVIA REC</button>
-    <button class="bs dn" onclick="cancelRec()">✕ Annulla</button>
+    <button class="bs dn" onclick="cancelRec()">✕ CANCELLA</button>
+  </div>
+</div>
+
+<!-- CONOSCENZA -->
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <div class="card-hd" style="margin:0">📚 Conoscenza Evento</div>
+    <button class="btn-sm" id="btnKnowEd" onclick="toggleKnowEd()">✏️ Modifica</button>
+  </div>
+  <div class="know-view" id="knowView">Nessuna conoscenza caricata.</div>
+  <div class="ined" id="knowEd">
+    <div><label>Titolo</label><input type="text" id="knowTitle" placeholder="es. Fiera Automatica 2025..."></div>
+    <div><label>Testo (info evento, prodotti, FAQ...)</label><textarea id="knowText" rows="6" placeholder="Scrivi o incolla le informazioni..."></textarea></div>
+    <div class="ed-row">
+      <button class="bsave" onclick="saveKnow()">💾 Salva</button>
+      <button class="bcan" onclick="closeKnowEd()">✕</button>
+    </div>
+  </div>
+  <div class="upl" onclick="document.getElementById('fKnow').click()" style="margin-top:8px">
+    <input type="file" id="fKnow" accept=".txt" onchange="loadKnowFile(this)">
+    📂 Carica file .txt con info evento
+  </div>
+  <div class="brow" style="margin-top:8px">
+    <button class="bs dn" onclick="clearKnow()">🗑 Rimuovi conoscenza</button>
+  </div>
+</div>
+
+<!-- IMPORT/EXPORT PERSONAGGIO -->
+<div class="card">
+  <div class="card-hd">📤 Import / Export Personaggio</div>
+  <div class="brow">
+    <button class="bs" onclick="exportChar()">📤 Esporta .txt</button>
+    <div class="upl" style="flex:1;margin-top:0" onclick="document.getElementById('fChar').click()">
+      <input type="file" id="fChar" accept=".txt" onchange="importChar(this)">
+      📂 Importa .txt
+    </div>
   </div>
 </div>
 
@@ -352,17 +400,28 @@
 <div id="toast"></div>
 
 <script>
-// ═══ CONSTANTS ═══
+// ═══════════════════════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════════════════════
 const LS_KEY='robot_key_openai', LS_CHARS='robot_characters', LS_LAST='robot_last_char', LS_KNOW='robot_knowledge';
 const PRICES={'gpt-4o-realtime-preview':{ai:32,ao:64,ti:3,to:12,c:.4},'gpt-4o-mini-realtime-preview':{ai:10,ao:20,ti:1.1,to:4.4,c:.3}};
 const EUR=0.92, N_SEGS=36;
+const WS_TIMEOUT_MS   = 15000;  // timeout connessione WS
+const RECONNECT_BASE  = 2000;   // backoff iniziale riconnessione (ms)
+const RECONNECT_MAX   = 30000;  // backoff massimo
+const RECONNECT_LIMIT = 10;     // max tentativi prima di arrendersi
+const AUDIO_Q_MAX     = 60;     // max frame in coda audio
+const DRAIN_WATCHDOG  = 6000;   // ms prima di sbloccare drain() bloccato
+const CTX_WATCHDOG_MS = 2000;   // intervallo check AudioContext
 
-// ═══ STATE ═══
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
 let API_KEY='', activePrompt='Sei un assistente vocale. Rispondi sempre in italiano.', activeVoice='alloy';
-let localVadLevel=0; // livello VU corrente per VAD locale
+let localVadLevel=0;
 let ws=null, audioCtx=null, workletNode=null, micStream=null;
 let muted=false, connected=false, isRec=false, recChunks=[];
-let audioQ=[], playing=false, analyser=null, rafId=null, silStart=null;
+let audioQ=[], playing=false, analyser=null, silStart=null;
 let tok={ai:0,ao:0,ti:0,to:0,c:0};
 let editingChar=null, camStream=null, camActive=false;
 let knowledge={title:'',text:''};
@@ -370,19 +429,45 @@ let robotMsgEl=null, robotTxt='';
 // mic/VU
 let sharedMicStream=null, vuCtx=null, vuAnalyser=null, vuRaf=null;
 let availableMics=[], currentMicId='';
+// auto-mute
+let robotSpeaking=false, autoMuteSuspended=false;
+// reconnect
+let reconnectCount=0, reconnectTimer=null, wsTimeoutTimer=null;
+let userDisconnected=false; // true = disconnessione volontaria
+// watchdog
+let ctxWatchdogInterval=null, drainWatchdog=null;
 
-// ═══ INIT ═══
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
 function init(){
   buildVU(); loadKey(); renderChars(); loadKnowLS(); updVadUI();
   setInterval(tickTimer,500); netCheck(); setInterval(netCheck,14000); enumCams();
-  // iOS: non chiamare getUserMedia qui — serve user gesture
-  // Ascolta cambi dispositivo
   try{navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);}catch(e){}
-  // Aggiorna lista mic ogni 4s (iOS non sempre emette devicechange)
   setInterval(pollMics,4000);
+  // Sincronizza stato barge-in con auto-mute
+  document.getElementById('chkAutoMute').addEventListener('change', onAutoMuteChange);
+  onAutoMuteChange();
 }
 
-// ═══ KEY ═══
+function onAutoMuteChange(){
+  const autoMute = document.getElementById('chkAutoMute').checked;
+  const bargeEl  = document.getElementById('chkBarge');
+  if(autoMute){
+    // Con auto-mute ON, il barge-in non ha senso (il mic è sospeso)
+    bargeEl.checked = false;
+    bargeEl.disabled = true;
+    bargeEl.closest('.trow').style.opacity = '0.4';
+  } else {
+    bargeEl.disabled = false;
+    bargeEl.closest('.trow').style.opacity = '1';
+  }
+  if(connected) sendSess();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// KEY
+// ═══════════════════════════════════════════════════════════════
 function loadKey(){
   try{
     const k=localStorage.getItem(LS_KEY);
@@ -397,10 +482,7 @@ function setKS(ok,len){
 }
 function onKeyIn(){
   const k=document.getElementById('keyIn').value.replace(/[\u200B-\u200D\uFEFF\r\n\t]/g,'').trim();
-  if(k.length>10){
-    try{localStorage.setItem(LS_KEY,k);}catch(e){}
-    setKS(true,k.length);
-  }
+  if(k.length>10){try{localStorage.setItem(LS_KEY,k);}catch(e){} setKS(true,k.length);}
 }
 function loadKeysFile(inp){
   const file=inp.files[0]; if(!file)return;
@@ -428,27 +510,67 @@ function loadKeysFile(inp){
   r.readAsArrayBuffer(file);
 }
 
-// ═══ VU METER ═══
+// ═══════════════════════════════════════════════════════════════
+// VU METER
+// ═══════════════════════════════════════════════════════════════
 let vuEl=null;
 function buildVU(){
   vuEl=document.getElementById('vuSegs');
   for(let i=0;i<N_SEGS;i++){const d=document.createElement('div');d.className='seg';vuEl.appendChild(d);}
 }
 function drawVU(level){
-  localVadLevel=level; // salva per VAD locale in onChunk
+  localVadLevel=level;
   const pct=Math.min(1,level/255), lit=Math.round(pct*N_SEGS);
-  // Soglia visiva: slider 100-6000 mappa su 0-255 con stessa curva gamma del boost
   const thrRaw=parseInt(document.getElementById('rThr').value);
   const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
   document.getElementById('thrLine').style.left=(thrPct*100)+'%';
   const s=vuEl.children;
-  for(let i=0;i<N_SEGS;i++){const p=(i+1)/N_SEGS; s[i].className='seg '+(i<lit?(p<.6?'g':p<.85?'y':'r'):'');}
+  const isMutedNow = autoMuteSuspended;
+  for(let i=0;i<N_SEGS;i++){
+    if(isMutedNow){s[i].className='seg muted';}
+    else{const p=(i+1)/N_SEGS; s[i].className='seg '+(i<lit?(p<.6?'g':p<.85?'y':'r'):'');}
+  }
   const el=document.getElementById('rmsVal');
   el.textContent=String(Math.round(pct*100)).padStart(3,' ')+'%';
   el.className='rms-val'+(pct>.85?' r':pct>.6?' y':'');
 }
 
-// ═══ CHAT / DEBUG ═══
+// ═══════════════════════════════════════════════════════════════
+// AUTO-MUTE LOGIC
+// ═══════════════════════════════════════════════════════════════
+function setRobotSpeaking(speaking){
+  robotSpeaking = speaking;
+  const autoMute = document.getElementById('chkAutoMute').checked;
+  autoMuteSuspended = speaking && autoMute;
+
+  const overlay   = document.getElementById('vuMuteOverlay');
+  const badge     = document.getElementById('amuteBadge');
+  const micDot    = document.getElementById('dMic');
+
+  if(autoMuteSuspended){
+    overlay.classList.add('show');
+    badge.className='amute-badge mic-muted';
+    badge.textContent='🔇 Mic sospeso — robot in risposta';
+    if(workletNode) workletNode.port.postMessage({cmd:'gain', value:0});
+  } else if(speaking && !autoMute){
+    // Robot parla ma auto-mute OFF
+    overlay.classList.remove('show');
+    badge.className='amute-badge robot-speaking';
+    badge.textContent='🔊 Robot parla · auto-mute OFF';
+    if(workletNode) workletNode.port.postMessage({cmd:'gain', value: parseInt(document.getElementById('rGain').value)/100});
+  } else {
+    overlay.classList.remove('show');
+    badge.className='amute-badge';
+    badge.textContent='⚪ Auto-mute: standby';
+    if(workletNode) workletNode.port.postMessage({cmd:'gain', value: parseInt(document.getElementById('rGain').value)/100});
+    // Reimposta stato mic dot
+    if(connected && !muted) dot('dMic','on');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CHAT / DEBUG
+// ═══════════════════════════════════════════════════════════════
 function addMsg(txt,type){
   const box=document.getElementById('chatBox');
   const d=document.createElement('div'); d.className='msg '+type; d.textContent=txt;
@@ -468,61 +590,67 @@ function dbg(msg){
   box.appendChild(d); box.scrollTop=box.scrollHeight; console.log('[DBG]',msg);
 }
 
-// ═══ MIC — REGOLA iOS: UN SOLO getUserMedia, dentro user gesture ═══
+// ═══════════════════════════════════════════════════════════════
+// MIC — iOS: un solo getUserMedia, dentro user gesture
+// ═══════════════════════════════════════════════════════════════
 async function startVuMonitor(forceDeviceId){
-  // Chiudi tutto il precedente — obbligatorio su Safari per liberare risorsa hw
   if(sharedMicStream){sharedMicStream.getTracks().forEach(t=>t.stop());sharedMicStream=null;}
   if(vuRaf){cancelAnimationFrame(vuRaf);vuRaf=null;}
   if(vuCtx&&vuCtx.state!=='closed'){
     try{await vuCtx.close();}catch(e){}
     vuCtx=null; vuAnalyser=null;
-    await new Promise(r=>setTimeout(r,250)); // pausa: iOS deve rilasciare hw
+    await new Promise(r=>setTimeout(r,250));
   }
   try{
     let devId=forceDeviceId||document.getElementById('selMic')?.value||'';
-    // Se auto, pre-enumera per trovare mic esterno
-    if(!devId){
-      const devs=await navigator.mediaDevices.enumerateDevices();
-      const mics=devs.filter(d=>d.kind==='audioinput');
-      const ext=mics.find(m=>m.deviceId&&m.deviceId!=='default'&&!/built.?in|built_in|interno|internal|receiver/i.test(m.label));
-      if(ext&&mics.length>1){devId=ext.deviceId;}
-    }
-    const constraint=devId
-      ?{audio:{deviceId:{exact:devId},echoCancellation:false,noiseSuppression:false,autoGainControl:false}}
-      :{audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}};
-    dbg('🎤 getUserMedia '+(devId?'id:'+devId.slice(0,10)+'...':'(default)')+'...');
+
+    // iOS + split jack: NON cercare mic "non-default".
+    // Quando lo split è collegato, iOS registra il suo mic come dispositivo default.
+    // Cercarne uno "non default" porta a selezionare il mic sbagliato.
+    // Se l'utente ha selezionato esplicitamente un deviceId dal menu, lo usiamo.
+    // Altrimenti usiamo "default" (= quello collegato fisicamente in quel momento).
+
+    const constraint = devId
+      ? {audio:{deviceId:{exact:devId}, echoCancellation:false, noiseSuppression:false, autoGainControl:false}}
+      : {audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}};
+
+    dbg('🎤 getUserMedia '+(devId?'id:'+devId.slice(0,10)+'...':'(default — split jack)')+'...');
     sharedMicStream=await navigator.mediaDevices.getUserMedia(constraint);
+
     const track=sharedMicStream.getAudioTracks()[0];
     const settings=track?.getSettings()||{};
     currentMicId=settings.deviceId||devId||'';
     const label=track?.label||'sconosciuto';
-    dbg('✅ MIC: "'+label+'" SR:'+( settings.sampleRate||'?')+'Hz');
+    dbg('✅ MIC: "'+label+'" SR:'+(settings.sampleRate||'?')+'Hz');
     console.log('[MIC]',label,settings);
-    // Aggiorna lista con label ora visibili
+
     await pollMics();
     const sel=document.getElementById('selMic');
     if(sel&&currentMicId){const m=[...sel.options].find(o=>o.value===currentMicId);if(m)sel.value=currentMicId;}
-    // Track ended = mic rimosso fisicamente
+
+    // Track ended = jack rimosso fisicamente
     track.addEventListener('ended',()=>{
-      dbg('⚠️ Mic disconnesso');dot('dMic',null);
-      setTimeout(()=>startVuMonitor().catch(e=>dbg('❌ Restart mic: '+e.message)),1500);
+      dbg('⚠️ Mic disconnesso fisicamente');
+      dot('dMic',null);
+      setTimeout(()=>startVuMonitor().catch(e=>dbg('❌ Restart mic: '+e.message)), 1500);
     });
-    // AudioContext — DOPO getUserMedia, dentro la catena della user gesture
+
     vuCtx=new (window.AudioContext||window.webkitAudioContext)();
     dbg('🔊 AudioContext: '+vuCtx.sampleRate+'Hz state:'+vuCtx.state);
-    if(vuCtx.state==='suspended'){
-      try{await vuCtx.resume();}catch(e){}
-    }
-    // Fallback sblocco al prossimo touch (iOS lo sospende se non in gesture diretta)
+    if(vuCtx.state==='suspended'){try{await vuCtx.resume();}catch(e){}}
+
+    // Fallback sblocco al prossimo touch (iOS sospende se non in gesture diretta)
     if(vuCtx.state!=='running'){
-      dbg('⏳ AudioContext suspended — tocca lo schermo');
+      dbg('⏳ AudioContext suspended — tocca lo schermo per sbloccare');
       const unlock=async()=>{try{await vuCtx?.resume();dbg('▶ AudioContext sbloccato');}catch(e){}};
       document.body.addEventListener('touchstart',unlock,{once:true});
       document.body.addEventListener('mousedown',unlock,{once:true});
     }
+
     vuAnalyser=vuCtx.createAnalyser(); vuAnalyser.fftSize=512; vuAnalyser.smoothingTimeConstant=0.3;
     vuCtx.createMediaStreamSource(sharedMicStream).connect(vuAnalyser);
     dot('dMic','on');
+
     // Loop VU
     let vuLogT=0;
     (function tick(){
@@ -532,28 +660,31 @@ async function startVuMonitor(forceDeviceId){
       vuAnalyser.getByteFrequencyData(d);
       const binHz=vuCtx.sampleRate/vuAnalyser.fftSize;
       const lo=Math.floor(80/binHz),hi=Math.min(Math.floor(8000/binHz),d.length-1);
-      // Usa il PICCO nella banda vocale, non la media
       let peak=0;
       for(let i=lo;i<=hi;i++){if(d[i]>peak)peak=d[i];}
-      // Boost: scala 0-255 → amplifica i valori bassi (curva gamma)
-      // peak=50 → ~100, peak=100 → ~160, peak=200 → ~220
       const boosted=Math.min(255, Math.pow(peak/255, 0.55)*255);
       drawVU(boosted);
-      // Log ogni 3s per debug calibrazione
       const now=Date.now();
       if(now-vuLogT>3000){vuLogT=now;console.log('[VU] raw peak:'+peak+' boosted:'+Math.round(boosted)+' bins:'+lo+'-'+hi);}
     })();
+
+    // Avvia watchdog AudioContext
+    startCtxWatchdog();
+
   }catch(e){
     dbg('❌ Mic errore: '+e.name+': '+e.message);
     dot('dMic','er');
+    toast('❌ Mic: '+e.name);
   }
 }
+
 async function switchMic(){
   const devId=document.getElementById('selMic')?.value||'';
-  dbg('🔄 Cambio mic '+(devId?devId.slice(0,10)+'...':'auto'));
+  dbg('🔄 Cambio mic '+(devId?devId.slice(0,10)+'...':'auto/default'));
   await startVuMonitor(devId||undefined);
-  if(connected){toast('🎤 Riconnetti per il nuovo mic');}
+  if(connected){toast('🎤 Riconnetti per applicare il nuovo mic');}
 }
+
 async function pollMics(){
   try{
     const devs=await navigator.mediaDevices.enumerateDevices();
@@ -562,71 +693,191 @@ async function pollMics(){
     availableMics=mics;
     if(changed){
       const lbl=mics.map(m=>'"'+(m.label||m.deviceId.slice(0,8))+'"').join(', ');
-      dbg('📋 Mic ('+mics.length+'): '+lbl);
+      dbg('📋 Mic disponibili ('+mics.length+'): '+lbl);
       renderMicSelect();
     }
   }catch(e){}
 }
+
 function renderMicSelect(){
   const sel=document.getElementById('selMic'); if(!sel)return;
   const prev=sel.value;
-  sel.innerHTML='<option value="">🎤 Auto</option>';
+  sel.innerHTML='<option value="">🎤 Auto (default — split jack)</option>';
   availableMics.forEach(m=>sel.appendChild(new Option(m.label||m.deviceId.slice(0,14),m.deviceId)));
   if(prev&&[...sel.options].find(o=>o.value===prev))sel.value=prev;
 }
+
 let dcT=null;
 function onDeviceChange(){
   clearTimeout(dcT);
   dcT=setTimeout(()=>{dbg('🔌 Dispositivo audio cambiato');pollMics();},600);
 }
 
-// ═══ CONNESSIONE ═══
-async function toggleConn(){if(connected)disc();else await conn();}
+// ═══════════════════════════════════════════════════════════════
+// WATCHDOG AudioContext — risveglia se sospeso da iOS
+// ═══════════════════════════════════════════════════════════════
+function startCtxWatchdog(){
+  if(ctxWatchdogInterval) clearInterval(ctxWatchdogInterval);
+  ctxWatchdogInterval=setInterval(async()=>{
+    if(!vuCtx)return;
+    if(vuCtx.state==='suspended'){
+      dbg('⚠️ AudioContext sospeso — tentativo resume...');
+      try{
+        await vuCtx.resume();
+        if(vuCtx.state==='running') dbg('▶ AudioContext ripristinato dal watchdog');
+      }catch(e){dbg('❌ Resume fallito: '+e.message);}
+    }
+  }, CTX_WATCHDOG_MS);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONNESSIONE
+// ═══════════════════════════════════════════════════════════════
+async function toggleConn(){
+  if(connected || reconnectTimer){
+    userDisconnected=true;
+    cancelReconnect();
+    disc();
+  } else {
+    userDisconnected=false;
+    reconnectCount=0;
+    await conn();
+  }
+}
+
 async function conn(){
   const raw=document.getElementById('keyIn').value;
   API_KEY=raw.replace(/[\x00-\x1F\x7F\u200B-\u200D\uFEFF]/g,'').trim();
   if(API_KEY.length<20){toast('❌ Chiave troppo corta ('+API_KEY.length+' chars)');return;}
-  onCharChg(); activeVoice=document.getElementById('selVoice').value||activeVoice;
-  setSt('connecting'); dbg('🔌 Avvio connessione...');
+  onCharChg();
+  activeVoice=document.getElementById('selVoice').value||activeVoice;
+  setSt('connecting');
+  document.getElementById('btnConn').disabled=true;
+  dbg('🔌 Avvio connessione... (tentativo '+(reconnectCount+1)+')');
+
   try{
-    // Assicura mic attivo (siamo in user gesture — click su Connetti)
+    // Assicura mic attivo (siamo in user gesture oppure in riconnessione)
     if(!sharedMicStream||sharedMicStream.getAudioTracks()[0]?.readyState!=='live'){
       dbg('🎤 Avvio mic...');
       await startVuMonitor();
     }
-    // Anti-eco: unico caso in cui apriamo secondo stream
-    const echoCancel=document.getElementById('chkEcho').checked;
-    if(echoCancel){
-      try{
-        dbg('🔊 Anti-eco stream...');
-        micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
-      }catch(e){dbg('⚠️ Anti-eco fallito, uso mic base');micStream=sharedMicStream;}
-    }else{
-      micStream=sharedMicStream;
-    }
+
+    // UN SOLO stream, senza anti-eco software (inutile con split jack fisico)
+    micStream=sharedMicStream;
+
     // Riusa AudioContext del VU
     audioCtx=vuCtx;
     analyser=vuAnalyser;
-    if(analyser)analyser.smoothingTimeConstant=0.15;
-    if(echoCancel&&micStream!==sharedMicStream&&audioCtx){
-      audioCtx.createMediaStreamSource(micStream).connect(analyser);
-    }
+    if(analyser) analyser.smoothingTimeConstant=0.15;
+
     await audioCtx.audioWorklet.addModule('audio-processor.js');
     workletNode=new AudioWorkletNode(audioCtx,'pcm16-processor');
     workletNode.port.onmessage=onChunk;
-    if(analyser)analyser.connect(workletNode);
+    if(analyser) analyser.connect(workletNode);
     dot('dMic','on');
+
     const model=document.getElementById('selModel').value;
     dbg('🌐 WebSocket → '+model);
-    ws=new WebSocket('wss://api.openai.com/v1/realtime?model='+model,
-      ['realtime','openai-insecure-api-key.'+API_KEY,'openai-beta.realtime-v1']);
+    ws=new WebSocket(
+      'wss://api.openai.com/v1/realtime?model='+model,
+      ['realtime','openai-insecure-api-key.'+API_KEY,'openai-beta.realtime-v1']
+    );
     ws.binaryType='arraybuffer';
-    ws.onopen=()=>{console.log('[WS] open');dbg('🔗 WS aperto — attendo session.created...');};
+
+    // Timeout: se session.updated non arriva entro WS_TIMEOUT_MS, disconnetti
+    wsTimeoutTimer=setTimeout(()=>{
+      if(!connected){
+        dbg('⏱ Timeout connessione WS ('+WS_TIMEOUT_MS+'ms)');
+        toast('❌ Timeout connessione');
+        disc();
+        scheduleReconnect();
+      }
+    }, WS_TIMEOUT_MS);
+
+    ws.onopen=()=>{ console.log('[WS] open'); dbg('🔗 WS aperto — attendo session.created...'); };
     ws.onmessage=onMsg;
-    ws.onerror=e=>{console.error('[WS]',e);toast('❌ WS errore');disc();};
-    ws.onclose=e=>{dbg('🔌 WS chiuso: '+e.code+' '+( e.reason||''));if(connected)disc();else{setSt('idle');toast('❌ ('+e.code+')');};};
-  }catch(e){toast('❌ '+e.message);dbg('❌ conn errore: '+e.message);setSt('idle');}
+    ws.onerror=e=>{
+      console.error('[WS] error',e);
+      dbg('❌ WS errore');
+    };
+    ws.onclose=e=>{
+      dbg('🔌 WS chiuso: '+e.code+(e.reason?' '+e.reason:''));
+      clearTimeout(wsTimeoutTimer);
+      const wasConnected=connected;
+      disc();
+      if(wasConnected && !userDisconnected){
+        scheduleReconnect();
+      } else if(!wasConnected && !userDisconnected && reconnectCount>0){
+        scheduleReconnect();
+      }
+    };
+
+  }catch(e){
+    clearTimeout(wsTimeoutTimer);
+    dbg('❌ conn errore: '+e.name+': '+e.message);
+    toast('❌ '+e.message);
+    setSt('idle');
+    document.getElementById('btnConn').disabled=false;
+    if(!userDisconnected) scheduleReconnect();
+  }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// RECONNECT con exponential backoff
+// ═══════════════════════════════════════════════════════════════
+function scheduleReconnect(){
+  if(userDisconnected) return;
+  if(reconnectCount >= RECONNECT_LIMIT){
+    dbg('❌ Raggiunto limite riconnessioni ('+RECONNECT_LIMIT+'). Premi Connetti manualmente.');
+    toast('❌ Impossibile riconnettersi');
+    hideReconnBar();
+    document.getElementById('btnConn').disabled=false;
+    return;
+  }
+  reconnectCount++;
+  const delay=Math.min(RECONNECT_BASE * Math.pow(2, reconnectCount-1), RECONNECT_MAX);
+  const delaySec=Math.round(delay/1000);
+  dbg('⏳ Riconnessione #'+reconnectCount+' tra '+delaySec+'s...');
+  showReconnBar(reconnectCount, delaySec);
+
+  let remaining=delaySec;
+  const tick=setInterval(()=>{
+    remaining--;
+    showReconnBar(reconnectCount, remaining);
+    if(remaining<=0) clearInterval(tick);
+  },1000);
+
+  reconnectTimer=setTimeout(async()=>{
+    clearInterval(tick);
+    reconnectTimer=null;
+    hideReconnBar();
+    if(!userDisconnected) await conn();
+  }, delay);
+}
+
+function cancelReconnect(){
+  if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+  reconnectCount=0;
+  hideReconnBar();
+}
+
+function showReconnBar(attempt, sec){
+  const bar=document.getElementById('reconnBar');
+  document.getElementById('reconnMsg').textContent=
+    'Riconnessione #'+attempt+'/'+RECONNECT_LIMIT+' tra '+sec+'s...';
+  bar.classList.add('show');
+  document.getElementById('btnConn').disabled=false;
+  document.getElementById('btnConn').classList.remove('off');
+  document.getElementById('btnConn').textContent='✕  ANNULLA RICONNESSIONE';
+}
+
+function hideReconnBar(){
+  document.getElementById('reconnBar').classList.remove('show');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SESSION
+// ═══════════════════════════════════════════════════════════════
 function sendSess(){
   const voice=document.getElementById('selVoice').value||activeVoice;
   const instructions=buildSystemPrompt();
@@ -634,12 +885,16 @@ function sendSess(){
   const vadMode=document.getElementById('selVad').value;
   const silMs=parseInt(document.getElementById('rSil').value);
   const eagerness=document.getElementById('selEag').value;
-  const bargein=document.getElementById('chkBarge').checked;
-  // threshold OpenAI fisso a 0.5 — la soglia visiva è gestita client-side in onChunk
-  dbg('📋 session.update voice:'+voice+' sil:'+silMs+'ms (soglia VAD = client-side)');
+  // Con auto-mute ON, il barge-in è disabilitato
+  const autoMute=document.getElementById('chkAutoMute').checked;
+  const bargein=autoMute ? false : document.getElementById('chkBarge').checked;
+
+  dbg('📋 session.update voice:'+voice+' silMs:'+silMs+' autoMute:'+autoMute+' bargein:'+bargein);
+
   const td=vadMode==='server_vad'
     ?{type:'server_vad',threshold:0.5,silence_duration_ms:silMs,prefix_padding_ms:300,create_response:true,interrupt_response:bargein}
     :{type:'semantic_vad',eagerness,create_response:true,interrupt_response:bargein};
+
   ws.send(JSON.stringify({type:'session.update',session:{
     modalities:['text','audio'],instructions,voice,
     input_audio_format:'pcm16',output_audio_format:'pcm16',
@@ -647,68 +902,213 @@ function sendSess(){
     turn_detection:td,temperature:temp,max_response_output_tokens:4096
   }}));
 }
+
+// ═══════════════════════════════════════════════════════════════
+// AUDIO CHUNK (dal worklet)
+// ═══════════════════════════════════════════════════════════════
+function pcmToBase64(pcm){
+  // Loop sicuro — evita stack overflow di spread su array grandi
+  const bytes=new Uint8Array(pcm.buffer);
+  let binary='';
+  const chunk=8192;
+  for(let i=0;i<bytes.length;i+=chunk){
+    binary+=String.fromCharCode(...bytes.subarray(i,i+chunk));
+  }
+  return btoa(binary);
+}
+
 function onChunk(e){
+  // Se auto-mute sospeso: non inviare nulla, il gain è già 0 nel worklet
+  if(autoMuteSuspended) return;
+
   let pcm=new Int16Array(e.data);
   const g=parseInt(document.getElementById('rGain').value)/100;
-  if(g!==1){const o=new Int16Array(pcm.length);for(let i=0;i<pcm.length;i++)o[i]=Math.max(-32768,Math.min(32767,pcm[i]*g));pcm=o;}
+  if(g!==1){
+    const o=new Int16Array(pcm.length);
+    for(let i=0;i<pcm.length;i++) o[i]=Math.max(-32768,Math.min(32767,Math.round(pcm[i]*g)));
+    pcm=o;
+  }
   const ctxSR=audioCtx?audioCtx.sampleRate:24000;
-  if(ctxSR!==24000)pcm=resample(pcm,ctxSR,24000);
-  if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
-  // VAD locale: se livello sotto soglia, non inviare (la linea rossa è questa soglia)
+  if(ctxSR!==24000) pcm=resample(pcm,ctxSR,24000);
+  if(!ws||ws.readyState!==WebSocket.OPEN||muted) return;
+
+  // VAD locale: isteresi per evitare cut bruschi
   const thrRaw=parseInt(document.getElementById('rThr').value);
   const thrLevel=Math.min(255, Math.pow((thrRaw/6000), 0.55)*255);
-  if(localVadLevel < thrLevel * 0.6) return; // 0.6 = isteresi per evitare cut bruschi
-  ws.send(JSON.stringify({type:'input_audio_buffer.append',audio:btoa(String.fromCharCode(...new Uint8Array(pcm.buffer)))}));
+  if(localVadLevel < thrLevel * 0.6) return;
+
+  ws.send(JSON.stringify({type:'input_audio_buffer.append', audio:pcmToBase64(pcm)}));
 }
+
 function resample(pcm,from,to){
-  const ratio=from/to,outLen=Math.round(pcm.length/ratio),out=new Int16Array(outLen);
-  for(let i=0;i<outLen;i++){const pos=i*ratio,i0=Math.floor(pos),i1=Math.min(i0+1,pcm.length-1),f=pos-i0;out[i]=Math.round(pcm[i0]*(1-f)+pcm[i1]*f);}
+  const ratio=from/to, outLen=Math.round(pcm.length/ratio), out=new Int16Array(outLen);
+  for(let i=0;i<outLen;i++){
+    const pos=i*ratio, i0=Math.floor(pos), i1=Math.min(i0+1,pcm.length-1), f=pos-i0;
+    out[i]=Math.round(pcm[i0]*(1-f)+pcm[i1]*f);
+  }
   return out;
 }
+
+// ═══════════════════════════════════════════════════════════════
+// WS MESSAGES
+// ═══════════════════════════════════════════════════════════════
 function onMsg(e){
-  let m;try{m=JSON.parse(e.data);}catch{return;}
+  let m; try{m=JSON.parse(e.data);}catch{return;}
   const t=m.type||'';
-  if(t!=='response.audio.delta')console.log('[RX]',t);
+  if(t!=='response.audio.delta') console.log('[RX]',t);
   switch(t){
-    case 'session.created':dbg('📋 session.created → sendSess');sendSess();break;
+    case 'session.created':
+      dbg('📋 session.created → sendSess');
+      sendSess();
+      break;
     case 'session.updated':
-      connected=true;updBtn();setSt('listening');dot('dAI','on');
+      clearTimeout(wsTimeoutTimer);
+      connected=true; updBtn(); setSt('listening'); dot('dAI','on');
+      reconnectCount=0; // reset contatore: connessione stabile
+      hideReconnBar();
+      document.getElementById('btnConn').disabled=false;
       addMsg('✅ Connesso · voce: '+(m.session?.voice||activeVoice),'sys');
-      toast('✅ '+( m.session?.voice||activeVoice));break;
+      toast('✅ '+(m.session?.voice||activeVoice));
+      break;
     case 'response.audio.delta':
-      if(m.delta){const b=Uint8Array.from(atob(m.delta),c=>c.charCodeAt(0));audioQ.push(new Int16Array(b.buffer));if(!playing)drain();}break;
-    case 'response.audio_transcript.delta':if(m.delta)appendRobotTxt(m.delta);break;
-    case 'response.audio_transcript.done':finalizeRobot();break;
-    case 'conversation.item.input_audio_transcription.completed':if(m.transcript)addMsg(m.transcript,'user');break;
-    case 'response.done':if(m.response?.usage)addTok(m.response.usage);silStart=Date.now();setSt('listening');break;
-    case 'input_audio_buffer.speech_started':setSt('talking');dot('dMic','tk');silStart=null;break;
-    case 'input_audio_buffer.speech_stopped':setSt('listening');dot('dMic','on');break;
-    case 'response.audio.done':setSt('listening');if(!silStart)silStart=Date.now();break;
-    case 'error':addMsg('❌ '+(m.error?.message||'Errore API'),'sys');toast('⚠️ '+(m.error?.message||'err'));break;
+      if(m.delta){
+        const b=Uint8Array.from(atob(m.delta),c=>c.charCodeAt(0));
+        // Limite coda audio: evita accumulo incontrollato
+        if(audioQ.length>AUDIO_Q_MAX){
+          dbg('⚠️ Coda audio piena ('+audioQ.length+') — scarico vecchi frame');
+          audioQ=audioQ.slice(-Math.floor(AUDIO_Q_MAX/2));
+        }
+        audioQ.push(new Int16Array(b.buffer));
+        if(!playing) drain();
+      }
+      break;
+    case 'response.audio_transcript.delta':
+      if(m.delta) appendRobotTxt(m.delta);
+      break;
+    case 'response.audio_transcript.done':
+      finalizeRobot();
+      break;
+    case 'conversation.item.input_audio_transcription.completed':
+      if(m.transcript) addMsg(m.transcript,'user');
+      break;
+    case 'response.created':
+      // Il robot sta per iniziare a parlare
+      setRobotSpeaking(true);
+      break;
+    case 'response.done':
+      if(m.response?.usage) addTok(m.response.usage);
+      silStart=Date.now();
+      setSt('listening');
+      // Il robot ha finito di elaborare — l'audio potrebbe ancora essere in coda
+      // Non riabilitiamo il mic qui, lo facciamo a response.audio.done
+      break;
+    case 'response.audio.done':
+      // Tutto l'audio del robot è stato inviato — riabilita mic
+      setRobotSpeaking(false);
+      setSt('listening');
+      if(!silStart) silStart=Date.now();
+      break;
+    case 'input_audio_buffer.speech_started':
+      setSt('talking'); dot('dMic','tk'); silStart=null;
+      break;
+    case 'input_audio_buffer.speech_stopped':
+      setSt('listening'); dot('dMic','on');
+      break;
+    case 'error':
+      const errMsg=m.error?.message||'Errore API';
+      addMsg('❌ '+errMsg,'sys');
+      toast('⚠️ '+errMsg);
+      dbg('❌ API error: '+errMsg);
+      // Alcuni errori non chiudono il WS — gestiamo esplicitamente
+      if(m.error?.code==='session_expired'||m.error?.type==='server_error'){
+        disc(); if(!userDisconnected) scheduleReconnect();
+      }
+      break;
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// DISCONNECT
+// ═══════════════════════════════════════════════════════════════
 function disc(){
   connected=false;
-  if(ws){try{ws.close();}catch(e){}ws=null;}
-  if(workletNode){workletNode.port.postMessage({cmd:'stop'});workletNode=null;}
-  if(micStream&&micStream!==sharedMicStream){micStream.getTracks().forEach(t=>t.stop());}
-  micStream=null; audioCtx=null; analyser=vuAnalyser;
-  audioQ=[];playing=false;silStart=null;
-  dot('dAI',null);setSt('idle');updBtn();
+  clearTimeout(wsTimeoutTimer);
+  if(ws){
+    ws.onclose=null; // evita doppio trigger
+    try{ws.close();}catch(e){}
+    ws=null;
+  }
+  if(workletNode){
+    try{workletNode.port.postMessage({cmd:'stop'});}catch(e){}
+    workletNode=null;
+  }
+  micStream=null;
+  audioCtx=null; analyser=vuAnalyser;
+  audioQ=[]; playing=false; silStart=null;
+  robotSpeaking=false; autoMuteSuspended=false;
+  setRobotSpeaking(false); // reset UI
+  if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
+  dot('dAI',null); setSt('idle'); updBtn();
+  document.getElementById('btnConn').disabled=false;
 }
-async function drain(){
-  if(!audioCtx||!audioQ.length){playing=false;return;}
-  playing=true;
-  const pcm=audioQ.shift(),f=new Float32Array(pcm.length);
-  for(let i=0;i<pcm.length;i++)f[i]=pcm[i]/(pcm[i]<0?0x8000:0x7FFF);
-  const buf=audioCtx.createBuffer(1,f.length,24000); buf.copyToChannel(f,0);
-  if(isRec)recChunks.push(pcm);
-  const src=audioCtx.createBufferSource(); src.buffer=buf; src.connect(audioCtx.destination);
-  src.onended=()=>drain(); src.start();
-}
-function startViz(){/* VU gestito da startVuMonitor */}
 
-// ═══ CAMERA ═══
+// ═══════════════════════════════════════════════════════════════
+// DRAIN — riproduce coda audio con protezione completa
+// ═══════════════════════════════════════════════════════════════
+async function drain(){
+  if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
+  if(!audioCtx||!audioQ.length){playing=false;return;}
+
+  playing=true;
+
+  // Assicurati che AudioContext sia running
+  if(audioCtx.state==='suspended'){
+    try{await audioCtx.resume();}catch(e){
+      dbg('❌ drain: AudioContext resume fallito');
+      playing=false;
+      return;
+    }
+  }
+  if(audioCtx.state!=='running'){
+    // Non possiamo riprodurre ora, ritenta tra poco
+    drainWatchdog=setTimeout(()=>drain(), 500);
+    return;
+  }
+
+  const pcm=audioQ.shift();
+  const f=new Float32Array(pcm.length);
+  for(let i=0;i<pcm.length;i++) f[i]=pcm[i]/(pcm[i]<0?0x8000:0x7FFF);
+
+  let buf, src;
+  try{
+    buf=audioCtx.createBuffer(1,f.length,24000);
+    buf.copyToChannel(f,0);
+    if(isRec) recChunks.push(pcm);
+    src=audioCtx.createBufferSource();
+    src.buffer=buf;
+    src.connect(audioCtx.destination);
+    src.onended=()=>{
+      if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
+      drain();
+    };
+    src.start();
+    // Watchdog: se onended non scatta entro DRAIN_WATCHDOG ms, forziamo drain
+    drainWatchdog=setTimeout(()=>{
+      dbg('⚠️ drain watchdog: onended non ricevuto, forzando drain');
+      playing=false;
+      drain();
+    }, DRAIN_WATCHDOG);
+  }catch(ex){
+    dbg('❌ drain errore: '+ex.message);
+    playing=false;
+    // Ritenta dopo breve pausa
+    drainWatchdog=setTimeout(()=>drain(), 300);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CAMERA
+// ═══════════════════════════════════════════════════════════════
 async function enumCams(){
   try{
     const devs=await navigator.mediaDevices.enumerateDevices();
@@ -731,8 +1131,8 @@ async function toggleCam(){
   }catch(e){toast('❌ Cam: '+e.message);}
 }
 function stopCam(){
-  if(camStream)camStream.getTracks().forEach(t=>t.stop());
-  camStream=null;camActive=false;
+  if(camStream) camStream.getTracks().forEach(t=>t.stop());
+  camStream=null; camActive=false;
   document.getElementById('camVideo').style.display='none';
   document.getElementById('camPh').style.display='flex';
   document.getElementById('btnCamOn').textContent='📷 Attiva cam';
@@ -743,7 +1143,7 @@ function doSnap(){
   if(!camActive){toast('❌ Attiva prima la cam');return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connetti prima OpenAI');return;}
   const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
-  c.width=v.videoWidth;c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
+  c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
   const b64=c.toDataURL('image/jpeg',.85).split(',')[1];
   const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
   ws.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'user',content:[
@@ -754,8 +1154,16 @@ function doSnap(){
   addMsg('📸 [foto inviata]','sys'); toast('📸 Foto inviata!');
 }
 
-// ═══ SLIDERS ═══
-function oGain(v){document.getElementById('vGain').textContent=v+'%';}
+// ═══════════════════════════════════════════════════════════════
+// SLIDERS
+// ═══════════════════════════════════════════════════════════════
+function oGain(v){
+  document.getElementById('vGain').textContent=v+'%';
+  // Aggiorna gain nel worklet live (solo se mic non è auto-mutato)
+  if(workletNode && !autoMuteSuspended){
+    workletNode.port.postMessage({cmd:'gain', value:parseInt(v)/100});
+  }
+}
 function oThr(v){document.getElementById('vThr').textContent=v;}
 function oSil(v){document.getElementById('vSil').textContent=v+' ms';}
 function updVadUI(){
@@ -764,12 +1172,26 @@ function updVadUI(){
   document.getElementById('pSemVad').style.display=m==='semantic_vad'?'':'none';
 }
 
-// ═══ STATUS ═══
-function setSt(s){const m={idle:'● IDLE',connecting:'◌ CONNESSIONE...',listening:'◉ IN ASCOLTO',talking:'▶ PARLA'};document.getElementById('stLbl').textContent=m[s]||s;}
-function dot(id,st){const d=document.getElementById(id);if(!d)return;d.className='dot'+(st==='on'?' on':st==='er'?' er':st==='tk'?' tk':'');}
-function updBtn(){const b=document.getElementById('btnConn');if(connected){b.classList.add('off');b.textContent='🔴  DISCONNETTI';}else{b.classList.remove('off');b.textContent='📡  CONNETTI';}}
+// ═══════════════════════════════════════════════════════════════
+// STATUS
+// ═══════════════════════════════════════════════════════════════
+function setSt(s){
+  const m={idle:'● IDLE',connecting:'◌ CONNESSIONE...',listening:'◉ IN ASCOLTO',talking:'▶ PARLA'};
+  document.getElementById('stLbl').textContent=m[s]||s;
+}
+function dot(id,st){
+  const d=document.getElementById(id); if(!d)return;
+  d.className='dot'+(st==='on'?' on':st==='er'?' er':st==='tk'?' tk':st==='muted'?' muted':'');
+}
+function updBtn(){
+  const b=document.getElementById('btnConn');
+  if(connected){b.classList.add('off');b.textContent='🔴  DISCONNETTI';}
+  else{b.classList.remove('off');b.textContent='📡  CONNETTI';}
+}
 
-// ═══ MUTE ═══
+// ═══════════════════════════════════════════════════════════════
+// MUTE MANUALE
+// ═══════════════════════════════════════════════════════════════
 function toggleMute(){
   muted=!muted;
   const b=document.getElementById('btnMute');
@@ -777,9 +1199,14 @@ function toggleMute(){
   toast(muted?'🔇 Mic silenziato':'🎙 Mic attivo');
 }
 
-// ═══ PERSONAGGI ═══
+// ═══════════════════════════════════════════════════════════════
+// PERSONAGGI
+// ═══════════════════════════════════════════════════════════════
 function getChars(){try{return JSON.parse(localStorage.getItem(LS_CHARS))||[];}catch{return[];}}
-function saveCharsLS(a){try{localStorage.setItem(LS_CHARS,JSON.stringify(a));}catch(e){}}
+function saveCharsLS(a){
+  try{localStorage.setItem(LS_CHARS,JSON.stringify(a));}
+  catch(e){toast('⚠️ Salvataggio fallito: '+e.message);}
+}
 function renderChars(){
   const sel=document.getElementById('selChar'),chars=getChars();
   let last=''; try{last=localStorage.getItem(LS_LAST)||'';}catch(e){}
@@ -794,10 +1221,10 @@ function onCharChg(){
     prev.style.display='';prev.textContent=char.prompt.slice(0,150)+(char.prompt.length>150?'…':'');
     if(char.voice)document.getElementById('selVoice').value=char.voice;
     try{localStorage.setItem(LS_LAST,name);}catch(e){}
-    activePrompt=char.prompt;activeVoice=char.voice||document.getElementById('selVoice').value;
+    activePrompt=char.prompt; activeVoice=char.voice||document.getElementById('selVoice').value;
     document.getElementById('charInfo').textContent='🎭 '+name+'  ·  🔊 '+activeVoice;
   }else{
-    prev.style.display='none';activePrompt='Sei un assistente vocale. Rispondi sempre in italiano.';
+    prev.style.display='none'; activePrompt='Sei un assistente vocale. Rispondi sempre in italiano.';
     activeVoice=document.getElementById('selVoice').value;
     document.getElementById('charInfo').textContent='— nessun personaggio —';
   }
@@ -818,34 +1245,52 @@ function saveChar(){
   const name=document.getElementById('edName').value.trim(),prompt=document.getElementById('edPrompt').value.trim(),voice=document.getElementById('edVoice').value;
   if(!name||!prompt){toast('⚠️ Nome e istruzioni obbligatori');return;}
   let chars=getChars();
-  if(editingChar&&editingChar!==name)chars=chars.filter(c=>c.name!==editingChar);
+  if(editingChar&&editingChar!==name) chars=chars.filter(c=>c.name!==editingChar);
   const idx=chars.findIndex(c=>c.name===name);
-  if(idx>=0)chars[idx]={name,prompt,voice};else chars.push({name,prompt,voice});
-  saveCharsLS(chars);try{localStorage.setItem(LS_LAST,name);}catch(e){}
-  renderChars();document.getElementById('selChar').value=name;onCharChg();closeCharEd();
+  if(idx>=0) chars[idx]={name,prompt,voice}; else chars.push({name,prompt,voice});
+  saveCharsLS(chars);
+  try{localStorage.setItem(LS_LAST,name);}catch(e){}
+  renderChars(); document.getElementById('selChar').value=name; onCharChg(); closeCharEd();
   toast('✅ "'+name+'" salvato');
   if(connected){sendSess();addMsg('🔄 Personaggio aggiornato','sys');}
 }
 function delChar(){
   if(!editingChar)return;
   saveCharsLS(getChars().filter(c=>c.name!==editingChar));
-  renderChars();closeCharEd();toast('🗑 Eliminato');
+  renderChars(); closeCharEd(); toast('🗑 Eliminato');
+}
+function exportChar(){
+  const name=document.getElementById('selChar').value;
+  const char=getChars().find(c=>c.name===name);
+  if(!char){toast('⚠️ Nessun personaggio selezionato');return;}
+  const txt='NOME='+char.name+'\nVOCE='+( char.voice||'')+'\n'+char.prompt;
+  const url=URL.createObjectURL(new Blob([txt],{type:'text/plain'}));
+  const a=document.createElement('a'); a.href=url; a.download=char.name.replace(/\s+/g,'_')+'.txt'; a.click();
+  URL.revokeObjectURL(url); toast('📤 Esportato');
 }
 function importChar(inp){
-  const file=inp.files[0];if(!file)return;
-  const r=new FileReader();r.onload=e=>{
+  const file=inp.files[0]; if(!file)return;
+  const r=new FileReader();
+  r.onload=e=>{
     const lines=e.target.result.replace(/\r/g,'').split('\n');
     let name=file.name.replace('.txt',''),voice='',start=0;
     if(lines[0]?.startsWith('NOME=')){name=lines[0].slice(5).trim();start++;}
     if(lines[start]?.startsWith('VOCE=')){voice=lines[start].slice(5).trim();start++;}
     const prompt=lines.slice(start).join('\n').trim();
-    document.getElementById('edName').value=name;document.getElementById('edPrompt').value=prompt;document.getElementById('edVoice').value=voice;
-    document.getElementById('btnCharDel').style.display='none';document.getElementById('charEdTitle').textContent='✏️ Importa';
-    editingChar=null;document.getElementById('charEd').classList.add('open');inp.value='';toast('📂 Caricato — controlla e salva');
-  };r.readAsText(file);
+    document.getElementById('edName').value=name;
+    document.getElementById('edPrompt').value=prompt;
+    document.getElementById('edVoice').value=voice;
+    document.getElementById('btnCharDel').style.display='none';
+    document.getElementById('charEdTitle').textContent='✏️ Importa';
+    editingChar=null; document.getElementById('charEd').classList.add('open');
+    inp.value=''; toast('📂 Caricato — controlla e salva');
+  };
+  r.readAsText(file);
 }
 
-// ═══ CONOSCENZA ═══
+// ═══════════════════════════════════════════════════════════════
+// CONOSCENZA
+// ═══════════════════════════════════════════════════════════════
 function loadKnowLS(){const s=localStorage.getItem(LS_KNOW);if(s)try{knowledge=JSON.parse(s);}catch{}renderKnowView();}
 function renderKnowView(){
   const v=document.getElementById('knowView');
@@ -855,24 +1300,39 @@ function renderKnowView(){
 function toggleKnowEd(){
   const ed=document.getElementById('knowEd');
   if(ed.classList.contains('open')){closeKnowEd();}
-  else{document.getElementById('knowTitle').value=knowledge.title||'';document.getElementById('knowText').value=knowledge.text||'';ed.classList.add('open');document.getElementById('btnKnowEd').textContent='✕ Chiudi';setTimeout(()=>document.getElementById('knowText').focus(),50);}
+  else{
+    document.getElementById('knowTitle').value=knowledge.title||'';
+    document.getElementById('knowText').value=knowledge.text||'';
+    ed.classList.add('open');
+    document.getElementById('btnKnowEd').textContent='✕ Chiudi';
+    setTimeout(()=>document.getElementById('knowText').focus(),50);
+  }
 }
 function closeKnowEd(){document.getElementById('knowEd').classList.remove('open');document.getElementById('btnKnowEd').textContent='✏️ Modifica';}
 function saveKnow(){
   knowledge={title:document.getElementById('knowTitle').value.trim(),text:document.getElementById('knowText').value.trim()};
-  try{localStorage.setItem(LS_KNOW,JSON.stringify(knowledge));}catch(e){}
-  renderKnowView();closeKnowEd();toast('✅ Conoscenza salvata');
+  try{localStorage.setItem(LS_KNOW,JSON.stringify(knowledge));}
+  catch(e){toast('⚠️ Salvataggio fallito: '+e.message); return;}
+  renderKnowView(); closeKnowEd(); toast('✅ Conoscenza salvata');
   if(connected){sendSess();addMsg('🔄 Conoscenza aggiornata','sys');}
 }
-function clearKnow(){knowledge={title:'',text:''};try{localStorage.removeItem(LS_KNOW);}catch(e){}renderKnowView();closeKnowEd();toast('🗑 Rimossa');if(connected)sendSess();}
+function clearKnow(){
+  knowledge={title:'',text:''};
+  try{localStorage.removeItem(LS_KNOW);}catch(e){}
+  renderKnowView(); closeKnowEd(); toast('🗑 Rimossa');
+  if(connected) sendSess();
+}
 function loadKnowFile(inp){
-  const file=inp.files[0];if(!file)return;
-  const r=new FileReader();r.onload=e=>{
+  const file=inp.files[0]; if(!file)return;
+  const r=new FileReader();
+  r.onload=e=>{
     document.getElementById('knowTitle').value=file.name.replace('.txt','');
     document.getElementById('knowText').value=e.target.result.replace(/\r/g,'').trim();
-    document.getElementById('knowEd').classList.add('open');document.getElementById('btnKnowEd').textContent='✕ Chiudi';
-    inp.value='';toast('📂 Caricato — premi Salva');
-  };r.readAsText(file);
+    document.getElementById('knowEd').classList.add('open');
+    document.getElementById('btnKnowEd').textContent='✕ Chiudi';
+    inp.value=''; toast('📂 Caricato — premi Salva');
+  };
+  r.readAsText(file);
 }
 function buildSystemPrompt(){
   const base=activePrompt;
@@ -880,22 +1340,26 @@ function buildSystemPrompt(){
   return base+'\n\n---\nINFORMAZIONI EVENTO'+(knowledge.title?' ('+knowledge.title+')':'')+(':\n')+knowledge.text;
 }
 
-// ═══ SPEED TEST ═══
+// ═══════════════════════════════════════════════════════════════
+// SPEED TEST
+// ═══════════════════════════════════════════════════════════════
 async function doSpeed(){
   const btn=document.getElementById('btnSpeed'),res=document.getElementById('spRes');
-  btn.textContent='⌛ Test...';btn.disabled=true;res.style.display='none';
+  btn.textContent='⌛ Test...'; btn.disabled=true; res.style.display='none';
   try{
     const t0=Date.now();
     await fetch('https://speed.cloudflare.com/__down?measId=0&bytes=1000000',{cache:'no-store'});
-    const dt=(Date.now()-t0)/1000,mbps=(8/dt).toFixed(2);
+    const dt=(Date.now()-t0)/1000, mbps=(8/dt).toFixed(2);
     const levels=[[1,'⚠️ INSUFFICIENTE','sp0'],[3,'🟡 SUFFICIENTE','sp1'],[10,'🟢 DISCRETO','sp2'],[30,'✅ BUONO','sp3'],[Infinity,'🚀 OTTIMO','sp4']];
     const [,label,cls]=levels.find(([lim])=>mbps<lim);
-    res.className='spres '+cls;res.textContent=label+'  ·  '+mbps+' Mbps  ·  '+Math.round(dt*1000)+' ms';res.style.display='block';
-  }catch(err){res.className='spres sp0';res.textContent='❌ '+err.message;res.style.display='block';}
-  btn.textContent='⚡  TEST VELOCITÀ';btn.disabled=false;
+    res.className='spres '+cls; res.textContent=label+'  ·  '+mbps+' Mbps  ·  '+Math.round(dt*1000)+' ms'; res.style.display='block';
+  }catch(err){res.className='spres sp0'; res.textContent='❌ '+err.message; res.style.display='block';}
+  btn.textContent='⚡  TEST VELOCITÀ'; btn.disabled=false;
 }
 
-// ═══ TIMER SILENZIO ═══
+// ═══════════════════════════════════════════════════════════════
+// TIMER SILENZIO
+// ═══════════════════════════════════════════════════════════════
 function tickTimer(){
   const el=document.getElementById('silTimer');
   if(!silStart||!connected){el.textContent='00:00';el.className='timer';return;}
@@ -904,18 +1368,20 @@ function tickTimer(){
   el.className='timer'+(s>=300?' r':s>=120?' y':'');
 }
 
-// ═══ COSTO ═══
+// ═══════════════════════════════════════════════════════════════
+// COSTO
+// ═══════════════════════════════════════════════════════════════
 function addTok(u){
   const ai=u.input_token_details||{},ao=u.output_token_details||{};
-  tok.ai+=(ai.audio_tokens||0);tok.ao+=(ao.audio_tokens||0);
+  tok.ai+=(ai.audio_tokens||0); tok.ao+=(ao.audio_tokens||0);
   tok.ti+=Math.max(0,(u.input_tokens||0)-(ai.audio_tokens||0));
   tok.to+=Math.max(0,(u.output_tokens||0)-(ao.audio_tokens||0));
-  tok.c+=(ai.cached_tokens||0);renderCost();
+  tok.c+=(ai.cached_tokens||0); renderCost();
 }
 function renderCost(){
   const P=PRICES[document.getElementById('selModel').value]||PRICES['gpt-4o-realtime-preview'];
   const aI=(tok.ai/1e6)*P.ai*EUR,aO=(tok.ao/1e6)*P.ao*EUR,tI=(tok.ti/1e6)*P.ti*EUR,tO=(tok.to/1e6)*P.to*EUR,ca=(tok.c/1e6)*P.c*EUR;
-  const tot=aI+aO+tI+tO-ca,fmt=v=>v<.0001?'<€0.0001':'€'+v.toFixed(4);
+  const tot=aI+aO+tI+tO-ca, fmt=v=>v<.0001?'<€0.0001':'€'+v.toFixed(4);
   document.getElementById('costBox').innerHTML=
     '🎤 Audio IN:  '+tok.ai.toLocaleString()+' tok → '+fmt(aI)+'<br>'+
     '🔊 Audio OUT: '+tok.ao.toLocaleString()+' tok → '+fmt(aO)+'<br>'+
@@ -926,7 +1392,9 @@ function renderCost(){
 }
 function resetCost(){tok={ai:0,ao:0,ti:0,to:0,c:0};document.getElementById('costBox').innerHTML='<span style="color:var(--muted)">Azzerato.</span>';}
 
-// ═══ REC ═══
+// ═══════════════════════════════════════════════════════════════
+// REC
+// ═══════════════════════════════════════════════════════════════
 function toggleRec(){
   isRec=!isRec;const b=document.getElementById('btnRec');
   if(isRec){recChunks=[];b.textContent='⏹ STOP REC';b.classList.add('rec');toast('⏺ REC avviata');}
@@ -943,17 +1411,29 @@ function saveWav(){
   w(0,'RIFF');v.setUint32(4,36+pcm.length*2,true);w(8,'WAVE');w(12,'fmt ');
   v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,SR,true);
   v.setUint32(28,SR*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');
-  v.setUint32(40,pcm.length*2,true);for(let i=0;i<pcm.length;i++)v.setInt16(44+i*2,pcm[i],true);
+  v.setUint32(40,pcm.length*2,true);
+  for(let i=0;i<pcm.length;i++)v.setInt16(44+i*2,pcm[i],true);
   const url=URL.createObjectURL(new Blob([b],{type:'audio/wav'}));
   const a=document.createElement('a');a.href=url;a.download='robot-'+Date.now()+'.wav';a.click();URL.revokeObjectURL(url);toast('💾 WAV salvato');
 }
 
-// ═══ NET ═══
-async function netCheck(){try{await fetch('https://www.gstatic.com/generate_204',{mode:'no-cors',cache:'no-store'});dot('dNet','on');}catch{dot('dNet','er');}}
+// ═══════════════════════════════════════════════════════════════
+// NET CHECK
+// ═══════════════════════════════════════════════════════════════
+async function netCheck(){
+  try{await fetch('https://www.gstatic.com/generate_204',{mode:'no-cors',cache:'no-store'});dot('dNet','on');}
+  catch{dot('dNet','er');}
+}
 
-// ═══ TOAST ═══
+// ═══════════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════════
 let _tt=null;
-function toast(m){const e=document.getElementById('toast');e.textContent=m;e.classList.add('s');clearTimeout(_tt);_tt=setTimeout(()=>e.classList.remove('s'),3000);}
+function toast(m){
+  const e=document.getElementById('toast');
+  e.textContent=m; e.classList.add('s');
+  clearTimeout(_tt); _tt=setTimeout(()=>e.classList.remove('s'),3000);
+}
 
 init();
 </script>
