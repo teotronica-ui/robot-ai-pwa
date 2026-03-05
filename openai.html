@@ -626,24 +626,30 @@ async function startVuMonitor(forceDeviceId){
       const mics=devs.filter(d=>d.kind==='audioinput');
       dbg('📋 Mic disponibili dopo permesso: '+mics.map(m=>'"'+(m.label||'?')+'"').join(', '));
 
-      // Cerca microfono cablato esterno (split jack / wired headset)
-      // Pattern iOS: "Wired Microphone", "Headset Microphone", "iPhone Microphone" (= built-in, da escludere)
-      const wired=mics.find(m=>
+      // Il default era già quello giusto se il suo label NON è built-in
+      const defaultLabel=tempLabel.toLowerCase();
+      const defaultIsBuiltin=/iphone|built.?in|receiver|interno|microfono\s+iphone/i.test(defaultLabel);
+
+      // Cerca microfono esterno tra tutti i disponibili
+      // Strategia: escludi quelli built-in, prendi il primo rimasto
+      const external=mics.find(m=>
         m.deviceId && m.deviceId!=='' &&
-        /wired|headset|cuffie|external|esterno/i.test(m.label) &&
-        !/built.?in|receiver|interno|iphone\s+micro/i.test(m.label)
+        !/iphone|built.?in|receiver|interno|microfono\s+iphone/i.test(m.label) &&
+        m.label // deve avere una label visibile
       );
 
-      if(wired && wired.deviceId !== tempStream.getAudioTracks()[0]?.getSettings()?.deviceId){
-        // Trovato mic esterno diverso dal default — chiudi temp e riapri con deviceId esatto
+      dbg('🔍 Default is built-in: '+defaultIsBuiltin+' | External found: '+(external?'"'+external.label+'"':'no'));
+
+      if(defaultIsBuiltin && external){
+        // Default è built-in ma esiste uno esterno → switch
         tempStream.getTracks().forEach(t=>t.stop());
-        devId=wired.deviceId;
-        dbg('🎯 Wired mic trovato: "'+wired.label+'" — switch a deviceId:'+devId.slice(0,12)+'...');
+        devId=external.deviceId;
+        dbg('🎯 Switch a mic esterno: "'+external.label+'" deviceId:'+devId.slice(0,12)+'...');
       } else {
-        // Default è già quello giusto (su iOS con split jack collegato è già il Wired Headset)
-        // Riutilizziamo lo stream già aperto
+        // Default è già quello giusto, oppure non c'è alternativa
         sharedMicStream=tempStream;
-        devId=''; // segnala che è già aperto
+        devId='';
+        dbg(defaultIsBuiltin ? '⚠️ Solo mic built-in disponibile' : '✅ Default già mic esterno: "'+tempLabel+'"');
       }
     }
 
