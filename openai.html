@@ -422,6 +422,7 @@ let localVadLevel=0;
 let ws=null, audioCtx=null, workletNode=null, micStream=null;
 let muted=false, connected=false, isRec=false, recChunks=[];
 let audioQ=[], playing=false, analyser=null, silStart=null;
+let nextPlayTime=0;   // scheduling preciso: quando finisce l'ultimo buffer pianificato
 let tok={ai:0,ao:0,ti:0,to:0,c:0};
 let editingChar=null, camStream=null, camActive=false;
 let knowledge={title:'',text:''};
@@ -973,12 +974,17 @@ function onMsg(e){
     case 'response.audio.delta':
       if(m.delta){
         const b=Uint8Array.from(atob(m.delta),c=>c.charCodeAt(0));
+        const pcm=new Int16Array(b.buffer);
+        // Registra al momento della ricezione dalla rete, non della riproduzione.
+        // Così il WAV è sempre continuo indipendentemente dal timing del drain.
+        if(isRec) recChunks.push(pcm);
         // Limite coda audio: evita accumulo incontrollato
         if(audioQ.length>AUDIO_Q_MAX){
           dbg('⚠️ Coda audio piena ('+audioQ.length+') — scarico vecchi frame');
           audioQ=audioQ.slice(-Math.floor(AUDIO_Q_MAX/2));
+          nextPlayTime=0; // reset scheduling dopo il taglio
         }
-        audioQ.push(new Int16Array(b.buffer));
+        audioQ.push(pcm);
         if(!playing) drain();
       }
       break;
@@ -1044,7 +1050,7 @@ function disc(){
   }
   micStream=null;
   audioCtx=null; analyser=vuAnalyser;
-  audioQ=[]; playing=false; silStart=null;
+  audioQ=[]; playing=false; silStart=null; nextPlayTime=0;
   robotSpeaking=false; autoMuteSuspended=false;
   setRobotSpeaking(false); // reset UI
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
@@ -1053,56 +1059,78 @@ function disc(){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// DRAIN — riproduce coda audio con protezione completa
+// DRAIN — scheduling preciso, zero gap tra chunk
 // ═══════════════════════════════════════════════════════════════
+// Invece di aspettare onended per accodare il prossimo buffer,
+// pianifichiamo ogni buffer esattamente al momento in cui finisce
+// il precedente usando audioCtx.currentTime + offset.
+// Questo elimina i micro-gap tra chunk che causano audio a scatti.
+// La registrazione avviene al momento della ricezione dalla rete,
+// non al momento della riproduzione — così il WAV è sempre continuo.
+
 async function drain(){
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
   if(!audioCtx||!audioQ.length){playing=false;return;}
 
-  playing=true;
-
-  // Assicurati che AudioContext sia running
+  // Assicurati che AudioContext sia running prima di iniziare
   if(audioCtx.state==='suspended'){
     try{await audioCtx.resume();}catch(e){
-      dbg('❌ drain: AudioContext resume fallito');
-      playing=false;
+      dbg('❌ drain: AudioContext resume fallito — retry tra 500ms');
+      drainWatchdog=setTimeout(()=>drain(), 500);
       return;
     }
   }
   if(audioCtx.state!=='running'){
-    // Non possiamo riprodurre ora, ritenta tra poco
-    drainWatchdog=setTimeout(()=>drain(), 500);
+    drainWatchdog=setTimeout(()=>drain(), 300);
     return;
   }
 
-  const pcm=audioQ.shift();
-  const f=new Float32Array(pcm.length);
-  for(let i=0;i<pcm.length;i++) f[i]=pcm[i]/(pcm[i]<0?0x8000:0x7FFF);
+  playing=true;
 
-  let buf, src;
-  try{
-    buf=audioCtx.createBuffer(1,f.length,24000);
-    buf.copyToChannel(f,0);
-    if(isRec) recChunks.push(pcm);
-    src=audioCtx.createBufferSource();
-    src.buffer=buf;
-    src.connect(audioCtx.destination);
-    src.onended=()=>{
-      if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
-      drain();
-    };
-    src.start();
-    // Watchdog: se onended non scatta entro DRAIN_WATCHDOG ms, forziamo drain
-    drainWatchdog=setTimeout(()=>{
-      dbg('⚠️ drain watchdog: onended non ricevuto, forzando drain');
-      playing=false;
-      drain();
-    }, DRAIN_WATCHDOG);
-  }catch(ex){
-    dbg('❌ drain errore: '+ex.message);
+  // Svuota tutta la coda in un ciclo sincrono, pianificando ogni buffer
+  // con timestamp preciso — nessun gap, nessuna latenza di callback
+  while(audioQ.length > 0){
+    const pcm = audioQ.shift();
+    const f = new Float32Array(pcm.length);
+    for(let i=0;i<pcm.length;i++) f[i]=pcm[i]/(pcm[i]<0?0x8000:0x7FFF);
+
+    let buf, src;
+    try{
+      buf=audioCtx.createBuffer(1, f.length, 24000);
+      buf.copyToChannel(f, 0);
+      src=audioCtx.createBufferSource();
+      src.buffer=buf;
+      src.connect(audioCtx.destination);
+
+      // Scheduling: inizia esattamente quando finisce il buffer precedente.
+      // Se nextPlayTime è nel passato (es. dopo una pausa), usa currentTime + 0.01s
+      // di headroom per evitare glitch.
+      const startAt = Math.max(audioCtx.currentTime + 0.01, nextPlayTime);
+      src.start(startAt);
+      nextPlayTime = startAt + buf.duration;
+
+      // Watchdog sull'ultimo buffer pianificato: se dopo la durata attesa
+      // la coda è ancora vuota e playing=true, sblocchiamo lo stato
+      if(audioQ.length === 0){
+        const expectedEnd = (nextPlayTime - audioCtx.currentTime) * 1000 + DRAIN_WATCHDOG;
+        drainWatchdog=setTimeout(()=>{
+          playing=false;
+          nextPlayTime=0;
+          dbg('⏱ drain: riproduzione completata');
+        }, expectedEnd);
+      }
+    }catch(ex){
+      dbg('❌ drain errore su chunk: '+ex.message);
+      // Salta il chunk difettoso e continua
+      nextPlayTime=0; // reset scheduling dopo errore
+    }
+  }
+
+  // Se la coda è vuota, polling leggero per nuovi chunk in arrivo dallo stream
+  // (l'API manda delta in modo asincrono — potrebbero arrivare altri chunk)
+  if(audioQ.length === 0){
     playing=false;
-    // Ritenta dopo breve pausa
-    drainWatchdog=setTimeout(()=>drain(), 300);
+    // Non serve un loop di polling: onMsg chiamerà drain() se playing===false
   }
 }
 
@@ -1402,19 +1430,39 @@ function toggleRec(){
 }
 function cancelRec(){isRec=false;recChunks=[];const b=document.getElementById('btnRec');b.textContent='⏺ AVVIA REC';b.classList.remove('rec');toast('REC annullata');}
 function saveWav(){
-  const SR=24000,sil=new Int16Array(SR),parts=[];
-  recChunks.forEach((c,i)=>{parts.push(c);if(i<recChunks.length-1)parts.push(sil);});
-  const tot=parts.reduce((a,c)=>a+c.length,0),pcm=new Int16Array(tot);let off=0;
-  parts.forEach(p=>{pcm.set(p,off);off+=p.length;});
-  const b=new ArrayBuffer(44+pcm.length*2),v=new DataView(b);
+  if(!recChunks.length){toast('⚠️ Nessun audio da salvare');return;}
+
+  // Concatenazione diretta senza silenzio artificiale tra i chunk.
+  // I chunk sono già in ordine cronologico perché registrati alla ricezione dalla rete.
+  const total = recChunks.reduce((a,c)=>a+c.length, 0);
+  const pcm   = new Int16Array(total);
+  let off=0;
+  recChunks.forEach(c=>{pcm.set(c,off);off+=c.length;});
+
+  // Fade-out sugli ultimi 200 campioni per evitare click di fine registrazione
+  const fadeLen = Math.min(200, pcm.length);
+  for(let i=0;i<fadeLen;i++){
+    pcm[pcm.length-fadeLen+i] = Math.round(pcm[pcm.length-fadeLen+i] * (1 - i/fadeLen));
+  }
+
+  // Header WAV standard PCM16 mono 24000Hz
+  const SR=24000;
+  const buf=new ArrayBuffer(44+pcm.length*2), v=new DataView(buf);
   const w=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
-  w(0,'RIFF');v.setUint32(4,36+pcm.length*2,true);w(8,'WAVE');w(12,'fmt ');
-  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,SR,true);
-  v.setUint32(28,SR*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');
-  v.setUint32(40,pcm.length*2,true);
-  for(let i=0;i<pcm.length;i++)v.setInt16(44+i*2,pcm[i],true);
-  const url=URL.createObjectURL(new Blob([b],{type:'audio/wav'}));
-  const a=document.createElement('a');a.href=url;a.download='robot-'+Date.now()+'.wav';a.click();URL.revokeObjectURL(url);toast('💾 WAV salvato');
+  w(0,'RIFF'); v.setUint32(4,36+pcm.length*2,true);
+  w(8,'WAVE'); w(12,'fmt ');
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,SR,true); v.setUint32(28,SR*2,true);
+  v.setUint16(32,2,true);  v.setUint16(34,16,true);
+  w(36,'data'); v.setUint32(40,pcm.length*2,true);
+  for(let i=0;i<pcm.length;i++) v.setInt16(44+i*2,pcm[i],true);
+
+  const url=URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
+  const a=document.createElement('a');
+  a.href=url; a.download='robot-'+Date.now()+'.wav'; a.click();
+  URL.revokeObjectURL(url);
+  const durSec=(pcm.length/SR).toFixed(1);
+  toast('💾 WAV salvato ('+durSec+'s)');
 }
 
 // ═══════════════════════════════════════════════════════════════
