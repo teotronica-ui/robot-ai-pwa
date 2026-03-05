@@ -379,11 +379,11 @@ const LS_CHARS  = 'robot_characters';   // condiviso con OpenAI — stessi perso
 const LS_LAST   = 'robot_last_char';
 const LS_KNOW   = 'robot_knowledge';    // condiviso con OpenAI
 
-// Gemini Live API — URL CORRETTO: v1alpha + /ws/ + BidiGenerateContent
-// (v1beta causa rifiuto su alcuni modelli native-audio)
-const GEMINI_WS = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent';
-const INPUT_SR  = 16000;   // Gemini accetta SOLO 16kHz — tassativo
-const OUTPUT_SR = 24000;   // audio in uscita da Gemini
+// URL ufficiale Google AI per WebSocket raw (da documentazione):
+// v1beta per uso standard — v1alpha solo per affective dialog / proactive audio
+const GEMINI_WS = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
+const INPUT_SR  = 16000;
+const OUTPUT_SR = 24000;
 
 // Prezzi Gemini Live ($/1M token, appross. — audio ~25 token/s)
 const PRICES = {
@@ -670,32 +670,15 @@ async function conn(){
     }
     micStream=sharedMicStream;
 
-    // PROBLEMA 1 — Sample Rate:
-    // Il worklet audio-processor.js converte Float32→Int16 ma NON campiona.
-    // Se AudioContext gira a 48kHz, i chunk arrivano a 48kHz e Gemini li rifiuta.
-    // Soluzione: creiamo un AudioContext SEPARATO forzato a 16kHz.
-    // Il browser fa il downsampling nativo (anti-aliasing incluso) prima di passare
-    // i campioni al worklet. Così i chunk sono già a 16kHz — nessun resample manuale.
-    // Nota: NON usiamo vuCtx (che gira a 48kHz per il VU meter) ma un ctx dedicato.
-    if(audioCtx&&audioCtx!==vuCtx){try{await audioCtx.close();}catch(e){}}
-    audioCtx=new(window.AudioContext||window.webkitAudioContext)({sampleRate:INPUT_SR});
-    dbg('🔊 AudioContext Gemini: '+audioCtx.sampleRate+'Hz (forzato 16kHz)');
-    if(audioCtx.state==='suspended'){
-      try{await audioCtx.resume();}catch(e){}
-      if(audioCtx.state!=='running'){
-        const unlock=async()=>{try{await audioCtx?.resume();}catch(e){}};
-        document.body.addEventListener('touchstart',unlock,{once:true});
-        document.body.addEventListener('mousedown',unlock,{once:true});
-      }
-    }
+    // La doc ufficiale dice: "the Live API will resample if needed, any sample rate can be sent"
+    // Usiamo il vuCtx condiviso (già aperto a 48kHz) e dichiariamo il SR nel mimeType.
+    // Niente AudioContext separato — evita conflitti con il VU meter su iOS.
+    audioCtx=vuCtx;
+    if(audioCtx.state==='suspended'){try{await audioCtx.resume();}catch(e){}}
 
-    // Worklet: riceve Float32 a 16kHz (già corretto), converte a Int16PCM e manda onChunk
     await audioCtx.audioWorklet.addModule('audio-processor.js');
     workletNode=new AudioWorkletNode(audioCtx,'pcm16-processor');
     workletNode.port.onmessage=onChunk;
-
-    // Collega microfono → worklet tramite il ctx a 16kHz
-    // Il browser resampla automaticamente da 48kHz a 16kHz
     const micSource=audioCtx.createMediaStreamSource(micStream);
     micSource.connect(workletNode);
     dot('dMic','on');
@@ -759,26 +742,23 @@ function sendSetup(){
   const bargein=autoMute?false:document.getElementById('chkBarge').checked;
   dbg('📋 Setup: model='+model+' voice='+voice+' bargein='+bargein);
 
-  const setup={
-    model: 'models/'+model,
-    // IMPORTANTE: Gemini Live API richiede camelCase (non snake_case)
-    generationConfig:{
-      responseModalities:['AUDIO'],
-      speechConfig:{
-        voiceConfig:{
-          prebuiltVoiceConfig:{voiceName: voice}
+  const setup = {
+    model: 'models/' + model,
+    generationConfig: {
+      responseModalities: ['AUDIO'],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: { voiceName: voice }
         }
       }
     },
-    // contextWindowCompression: gestisce sessioni lunghe (>10min)
-    contextWindowCompression:{slidingWindow:{}},
-    systemInstruction:{
-      parts:[{text: instructions}]
+    systemInstruction: {
+      parts: [{ text: instructions }]
     }
   };
 
-  const setupMsg=JSON.stringify({setup});
-  dbg('📤 Setup JSON (prime 200 char): '+setupMsg.slice(0,200));
+  const setupMsg = JSON.stringify({ setup: setup });
+  dbg('📤 Setup (prime 200): ' + setupMsg.slice(0, 200));
   ws.send(setupMsg);
 }
 
@@ -795,21 +775,18 @@ function pcmToBase64(pcm){
 }
 
 function onChunk(e){
-  // PROBLEMA 2 — Invio precoce:
-  // Gemini chiude il WS se riceve realtimeInput prima di setupComplete.
-  // Il flag setupReady viene alzato solo quando onMsg riceve {"setupComplete"}.
   if(!setupReady)return;
   if(autoMuteSuspended)return;
   if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
 
   let pcm=new Int16Array(e.data);
-
-  // Gain
   const g=parseInt(document.getElementById('rGain').value)/100;
   if(g!==1){const o=new Int16Array(pcm.length);for(let i=0;i<pcm.length;i++)o[i]=Math.max(-32768,Math.min(32767,Math.round(pcm[i]*g)));pcm=o;}
 
-  // Nessun resample manuale: l'AudioContext è già stato forzato a INPUT_SR (16kHz)
-  // in conn(), quindi i campioni dal worklet sono già a 16kHz nativi del browser.
+  // Dichiariamo il sample rate reale del mic nel mimeType.
+  // La doc Google dice: "Live API will resample if needed, any sample rate can be sent".
+  // Quindi inviamo a qualsiasi SR il browser usa (tipicamente 48000) e Google resampla.
+  const actualSR = audioCtx ? audioCtx.sampleRate : 48000;
 
   // VAD locale
   const thrRaw=parseInt(document.getElementById('rThr').value);
@@ -817,10 +794,10 @@ function onChunk(e){
   if(localVadLevel<thrLevel*0.6)return;
 
   ws.send(JSON.stringify({
-    realtimeInput:{
-      mediaChunks:[{
+    realtimeInput: {
+      mediaChunks: [{
         data: pcmToBase64(pcm),
-        mimeType:'audio/pcm;rate='+INPUT_SR
+        mimeType: 'audio/pcm;rate=' + actualSR
       }]
     }
   }));
@@ -936,8 +913,7 @@ function disc(){
   if(ws){ws.onclose=null;try{ws.close();}catch(e){}ws=null;}
   if(workletNode){try{workletNode.port.postMessage({cmd:'stop'});}catch(e){}workletNode=null;}
   micStream=null;
-  if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch(e){}}
-  audioCtx=null;analyser=vuAnalyser;
+  audioCtx=null;
   audioQ=[];playing=false;silStart=null;nextPlayTime=0;setupReady=false;
   robotSpeaking=false;autoMuteSuspended=false;setRobotSpeaking(false);
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
