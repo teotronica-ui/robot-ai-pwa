@@ -13,13 +13,12 @@
       --text:#dff0ff;--muted:#3d6080;
       --mono:'Share Tech Mono',monospace;--sans:'Exo 2',sans-serif;
     }
-    /* Gemini usa blu al posto del verde per distinguersi visivamente dall'OpenAI */
     body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100dvh;display:flex;flex-direction:column;align-items:center;padding:10px 10px 60px;gap:9px}
     body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:999;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(79,138,255,.007) 3px,rgba(79,138,255,.007) 4px)}
     .card{background:var(--card);border:1px solid var(--bord);border-radius:14px;padding:14px;width:100%;max-width:500px}
     .card-hd{font-family:var(--mono);font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:11px}
     .conn-card{border-color:rgba(79,138,255,.35);background:linear-gradient(160deg,#0c1525,#091020)}
-    #btnConn{width:100%;padding:18px;border:none;border-radius:11px;cursor:pointer;font-family:var(--sans);font-size:1.25rem;font-weight:900;letter-spacing:3px;background:linear-gradient(135deg,#4f8aff,#2563eb);color:#fff;box-shadow:0 0 28px rgba(79,138,255,.28);transition:all .2s}
+    #btnConn{width:100%;padding:18px;border:none;border-radius:11px;cursor:pointer;font-family:var(--sans);font-size:1.25rem;font-weight:900;letter-spacing:3px;background:linear-gradient(135deg,var(--green),#2563eb);color:#fff;box-shadow:0 0 28px rgba(79,138,255,.28);transition:all .2s}
     #btnConn:active{transform:scale(.97)}
     #btnConn.off{background:linear-gradient(135deg,var(--red),#cc1a1a);color:#fff;box-shadow:0 0 28px rgba(255,61,61,.3)}
     #btnConn:disabled{opacity:.5;cursor:not-allowed;transform:none}
@@ -33,10 +32,14 @@
     @keyframes bl{to{opacity:.25}}
     .state{font-family:var(--mono);font-size:.82rem;color:var(--green);margin-top:7px;letter-spacing:1px;text-align:center;min-height:1.2em}
     .charinfo{font-size:.65rem;color:var(--muted);margin-top:3px;text-align:center;font-family:var(--mono)}
+
+    /* Reconnect counter */
     .reconn-bar{display:none;align-items:center;gap:8px;margin-top:8px;padding:8px 12px;background:#1a0a00;border:1px solid var(--yellow);border-radius:9px;font-family:var(--mono);font-size:.72rem;color:var(--yellow)}
     .reconn-bar.show{display:flex}
     .reconn-spin{animation:spin 1s linear infinite;display:inline-block}
     @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* VU */
     .vu-top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:7px}
     .rms-val{font-family:var(--mono);font-size:2rem;font-weight:700;letter-spacing:4px;color:var(--green);transition:color .08s;line-height:1;min-width:80px;text-align:right}
     .rms-val.y{color:var(--yellow)}.rms-val.r{color:var(--red)}
@@ -46,21 +49,29 @@
     .seg.g{background:var(--green);box-shadow:0 0 5px rgba(79,138,255,.6)}
     .seg.y{background:var(--yellow);box-shadow:0 0 5px rgba(255,184,0,.6)}
     .seg.r{background:var(--red);box-shadow:0 0 5px rgba(255,61,61,.6)}
-    .seg.muted{background:#010510!important;box-shadow:none!important}
+    .seg.muted{background:#1a0505!important;box-shadow:none!important}
     .thr{position:absolute;top:0;bottom:0;width:2px;background:var(--red);opacity:.85;pointer-events:none}
     .thr::before{content:'▼';position:absolute;top:-1px;left:50%;transform:translateX(-50%);font-size:.45rem;color:var(--red)}
+
+    /* Auto-mute indicator overlay on VU */
     .vu-mute-overlay{position:absolute;inset:0;background:rgba(255,61,61,.12);border-radius:7px;display:none;align-items:center;justify-content:center;font-family:var(--mono);font-size:.65rem;color:var(--red);letter-spacing:2px;pointer-events:none}
     .vu-mute-overlay.show{display:flex}
+
+    /* Chat */
     .chat-box{height:150px;overflow-y:auto;background:#040c15;border:1px solid var(--bord);border-radius:8px;padding:9px;display:flex;flex-direction:column;gap:5px;margin-top:10px}
     .msg{padding:6px 10px;border-radius:9px;max-width:92%;font-size:.77rem;line-height:1.45;word-break:break-word}
     .msg.robot{background:#0d1e30;align-self:flex-start;border-bottom-left-radius:3px}
-    .msg.user{background:#001a2e;align-self:flex-end;color:#a7d4f0;border-bottom-right-radius:3px}
-    .msg.sys{background:transparent;color:#2a5a7a;font-size:.63rem;align-self:center;font-family:var(--mono)}
+    .msg.user{background:#002a18;align-self:flex-end;color:#a7f3d0;border-bottom-right-radius:3px}
+    .msg.sys{background:transparent;color:#2a7a5a;font-size:.63rem;align-self:center;font-family:var(--mono)}
+
+    /* Camera */
     .cam-ph{width:100%;aspect-ratio:16/9;background:#040c15;border:2px dashed var(--bord);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:.75rem;font-family:var(--mono);flex-direction:column;gap:6px}
     #camVideo{width:100%;aspect-ratio:16/9;background:#040c15;border-radius:9px;object-fit:cover;display:none;border:1px solid var(--bord)}
     canvas{display:none}
     .snap-flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:9999;transition:opacity .15s}
     .snap-flash.go{opacity:.7}
+
+    /* Controls */
     .sg{margin-top:11px}
     .sh{display:flex;justify-content:space-between;font-size:.68rem;margin-bottom:4px}
     .sh .l{color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px}
@@ -82,7 +93,7 @@
     #btnMute.on{background:#2a0808;border-color:var(--red);color:var(--red)}
     #btnSpeed{width:100%;padding:12px;background:var(--surf);border:1px solid var(--bord);border-radius:10px;color:var(--text);font-family:var(--sans);font-size:.85rem;font-weight:700;cursor:pointer}
     .spres{margin-top:8px;padding:10px 14px;border-radius:8px;font-family:var(--mono);font-size:.83rem;display:none;border:1px solid;text-align:center}
-    .sp0{background:#2a0808;border-color:var(--red);color:var(--red)}.sp1{background:#2a1a00;border-color:var(--yellow);color:var(--yellow)}.sp2{background:#1a2400;border-color:#aacc00;color:#aacc00}.sp3,.sp4{background:#001428;border-color:var(--green);color:var(--green)}
+    .sp0{background:#2a0808;border-color:var(--red);color:var(--red)}.sp1{background:#2a1a00;border-color:var(--yellow);color:var(--yellow)}.sp2{background:#1a2400;border-color:#aacc00;color:#aacc00}.sp3,.sp4{background:#002a18;border-color:var(--green);color:var(--green)}
     .timer{font-family:var(--mono);font-size:2.8rem;font-weight:700;text-align:center;letter-spacing:6px;color:var(--green);transition:color .5s;padding:5px 0;line-height:1}
     .timer.y{color:var(--yellow)}.timer.r{color:var(--red)}
     .timersub{text-align:center;font-size:.6rem;color:var(--muted);font-family:var(--mono);margin-top:3px}
@@ -104,7 +115,7 @@
     .ined input,.ined select,.ined textarea{width:100%;background:var(--card);border:1px solid var(--bord);border-radius:7px;color:var(--text);font-size:.85rem;padding:8px 10px;outline:none;-webkit-appearance:none;font-family:var(--sans)}
     .ined textarea{resize:vertical;line-height:1.5}
     .ed-row{display:flex;gap:7px}
-    .bsave{flex:1;background:linear-gradient(135deg,#4f8aff,#2563eb);color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:900;padding:10px;cursor:pointer}
+    .bsave{flex:1;background:linear-gradient(135deg,var(--green),#2563eb);color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:900;padding:10px;cursor:pointer}
     .bdel{background:#2a0808;color:var(--red);border:1px solid var(--red);border-radius:8px;font-size:.85rem;padding:10px 12px;cursor:pointer}
     .bcan{background:var(--card);color:var(--muted);border:1px solid var(--bord);border-radius:8px;font-size:.85rem;padding:10px 12px;cursor:pointer}
     .know-view{font-size:.75rem;color:var(--muted);background:#040c15;border:1px solid var(--bord);border-radius:8px;padding:10px;min-height:48px;font-family:var(--mono);white-space:pre-wrap;line-height:1.6;max-height:120px;overflow-y:auto}
@@ -126,8 +137,10 @@
     .mic-row{display:flex;gap:7px;margin-bottom:8px;align-items:center}
     .btn-sm{background:var(--surf);border:1px solid var(--bord);border-radius:8px;color:var(--text);padding:7px 11px;font-size:.8rem;cursor:pointer;white-space:nowrap;font-family:var(--sans);font-weight:700}
     .btn-sm.gr{border-color:var(--green);color:var(--green)}
+
+    /* Auto-mute status badge */
     .amute-badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:.65rem;padding:3px 8px;border-radius:12px;border:1px solid var(--bord);color:var(--muted);margin-top:6px;transition:all .3s}
-    .amute-badge.robot-speaking{background:#00081a;border-color:var(--green);color:var(--green)}
+    .amute-badge.robot-speaking{background:#001810;border-color:var(--green);color:var(--green)}
     .amute-badge.mic-muted{background:#1a0000;border-color:var(--red);color:var(--red)}
   </style>
 </head>
@@ -161,8 +174,9 @@
     </div>
     <div class="rms-val" id="rmsVal"> 0%</div>
   </div>
+  <!-- selezione mic -->
   <div class="mic-row">
-    <select class="mic-sel" id="selMic"><option value="">🎤 Auto (default — split jack)</option></select>
+    <select class="mic-sel" id="selMic"><option value="">🎤 Auto</option></select>
     <button class="btn-sm gr" onclick="startVuMonitor()">▶ MIC</button>
     <button class="btn-sm" onclick="switchMic()">🔄</button>
   </div>
@@ -171,6 +185,7 @@
     <div class="thr" id="thrLine"></div>
     <div class="vu-mute-overlay" id="vuMuteOverlay">🔇 MIC SOSPESO — ROBOT PARLA</div>
   </div>
+  <!-- Auto-mute status -->
   <div id="amuteBadge" class="amute-badge">⚪ Auto-mute: standby</div>
   <div class="chat-box" id="chatBox"><div class="msg sys">— conversazione —</div></div>
 </div>
@@ -198,7 +213,7 @@
     <div class="sticks"><span>0%</span><span>◆ 100%</span><span>150%</span></div>
   </div>
   <div class="sg">
-    <div class="sh"><span class="l">Soglia VAD locale (linea rossa)</span><span class="v" id="vThr">1000</span></div>
+    <div class="sh"><span class="l">Soglia VAD (linea rossa)</span><span class="v" id="vThr">1000</span></div>
     <input type="range" id="rThr" min="100" max="6000" step="100" value="1000" oninput="oThr(this.value)">
     <div class="sticks"><span>100</span><span>3000</span><span>6000</span></div>
   </div>
@@ -262,11 +277,9 @@
     <div><label>Voce preferita</label>
       <select id="edVoice">
         <option value="">— usa quella selezionata —</option>
-        <option value="Puck">Puck</option><option value="Charon">Charon</option>
-        <option value="Kore">Kore</option><option value="Fenrir">Fenrir</option>
-        <option value="Aoede">Aoede</option><option value="Leda">Leda</option>
-        <option value="Orus">Orus</option><option value="Zephyr">Zephyr</option>
-        <option value="Autonoe">Autonoe</option><option value="Umbriel">Umbriel</option>
+        <option value="Puck">Puck</option><option value="Charon">Charon</option><option value="Kore">Kore</option>
+        <option value="Fenrir">Fenrir</option><option value="Aoede">Aoede</option><option value="Leda">Leda</option>
+        <option value="Orus">Orus</option><option value="Zephyr">Zephyr</option><option value="Autonoe">Autonoe</option><option value="Umbriel">Umbriel</option>
       </select>
     </div>
     <div class="ed-row">
@@ -278,19 +291,14 @@
   <div class="r2" style="margin-top:10px">
     <div class="f"><label>Voce Gemini</label>
       <select id="selVoice">
-        <option value="Puck">Puck (Vivace M)</option>
-        <option value="Charon">Charon (Intenso M)</option>
-        <option value="Kore">Kore (Fermo F)</option>
-        <option value="Fenrir">Fenrir (Eccitabile M)</option>
-        <option value="Aoede" selected>Aoede (Scorrevole F)</option>
-        <option value="Leda">Leda (Giovane F)</option>
-        <option value="Orus">Orus (Fermo M)</option>
-        <option value="Zephyr">Zephyr (Brillante)</option>
-        <option value="Autonoe">Autonoe (Brillante F)</option>
-        <option value="Umbriel">Umbriel (Facile M)</option>
+        <option value="Puck">Puck (Vivace M)</option><option value="Charon">Charon (Intenso M)</option>
+        <option value="Kore">Kore (Fermo F)</option><option value="Fenrir">Fenrir (Eccitabile M)</option>
+        <option value="Aoede" selected>Aoede (Scorrevole F)</option><option value="Leda">Leda (Giovane F)</option>
+        <option value="Orus">Orus (Fermo M)</option><option value="Zephyr">Zephyr (Brillante)</option>
+        <option value="Autonoe">Autonoe (Brillante F)</option><option value="Umbriel">Umbriel (Facile M)</option>
       </select>
     </div>
-    <div class="f"><label>Modello</label>
+    <div class="f"><label>Modello AI</label>
       <select id="selModel">
         <option value="gemini-2.5-flash-native-audio-latest">Gemini 2.5 Flash NA (Latest)</option>
         <option value="gemini-2.5-flash-native-audio-preview-12-2025">Gemini 2.5 Flash NA (Preview)</option>
@@ -298,14 +306,36 @@
       </select>
     </div>
   </div>
-  <div class="f" style="margin-top:4px"><label>Lingua risposta</label>
-    <select id="selLang">
-      <option value="it" selected>🇮🇹 Italiano</option>
-      <option value="en">🇬🇧 English</option>
-      <option value="es">🇪🇸 Español</option>
-      <option value="fr">🇫🇷 Français</option>
-      <option value="de">🇩🇪 Deutsch</option>
-    </select>
+  <div class="r2">
+    <div class="f"><label>VAD Mode</label>
+      <select id="selVad" onchange="updVadUI()">
+        <option value="server_vad">Server VAD</option>
+        <option value="semantic_vad">Semantic VAD</option>
+      </select>
+    </div>
+    <div class="f"><label>Temperatura</label>
+      <select id="selTemp">
+        <option value="0.6">0.6 – Preciso</option>
+        <option value="0.8" selected>0.8 – Bilanciato</option>
+        <option value="1.0">1.0 – Creativo</option>
+      </select>
+    </div>
+  </div>
+  <div id="pSVad">
+    <div class="sg">
+      <div class="sh"><span class="l">Silenzio VAD</span><span class="v" id="vSil">800 ms</span></div>
+      <input type="range" id="rSil" min="200" max="2000" step="100" value="800" oninput="oSil(this.value)">
+      <div class="sticks"><span>200ms</span><span>800ms</span><span>2s</span></div>
+    </div>
+  </div>
+  <div id="pSemVad" style="display:none">
+    <div class="f" style="margin-top:10px"><label>Eagerness</label>
+      <select id="selEag">
+        <option value="low">Low – aspetta di più</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High – risponde subito</option>
+      </select>
+    </div>
   </div>
 </div>
 
@@ -359,12 +389,12 @@
   <div class="card-hd">🔑 API Key Google <span style="color:var(--muted);font-size:.57rem">— si inserisce una volta sola</span></div>
   <div class="f">
     <label>Chiave API</label>
-    <input type="password" id="keyIn" placeholder="AIza..." autocomplete="off" spellcheck="false" oninput="onKeyIn()">
+    <input type="password" id="keyIn" placeholder="sk-proj-..." autocomplete="off" spellcheck="false" oninput="onKeyIn()">
     <div class="ks" id="kStat">⚠️ Nessuna chiave salvata</div>
   </div>
   <div class="upl" onclick="document.getElementById('fKeys').click()">
     <input type="file" id="fKeys" accept=".txt" onchange="loadKeysFile(this)">
-    📂 Carica <strong>keys.txt</strong> · <code>GEMINI_KEY=AIza...</code>
+    📂 Carica <strong>keys.txt</strong> · <code>OPENAI_KEY=sk-...</code>
   </div>
 </div>
 
@@ -374,33 +404,22 @@
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
-const LS_KEY    = 'robot_key_gemini';
-const LS_CHARS  = 'robot_characters';   // condiviso con OpenAI — stessi personaggi
-const LS_LAST   = 'robot_last_char';
-const LS_KNOW   = 'robot_knowledge';    // condiviso con OpenAI
-
-// URL ufficiale Google AI per WebSocket raw (da documentazione):
-// v1beta per uso standard — v1alpha solo per affective dialog / proactive audio
-const GEMINI_WS = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
-const INPUT_SR  = 16000;
-const OUTPUT_SR = 24000;
-
-// Prezzi Gemini Live ($/1M token, appross. — audio ~25 token/s)
-const PRICES = {
-  'gemini-2.5-flash-native-audio-latest':          {ai: 3.0, ao: 12.0},
-  'gemini-2.5-flash-native-audio-preview-12-2025': {ai: 3.0, ao: 12.0},
-  'gemini-2.0-flash-live-001':                     {ai: 0.5, ao:  2.0},
+const LS_KEY='robot_key_gemini', LS_CHARS='robot_characters', LS_LAST='robot_last_char', LS_KNOW='robot_knowledge';
+const GEMINI_WS='wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
+const INPUT_SR=16000, OUTPUT_SR=24000;
+const PRICES={
+  'gemini-2.5-flash-native-audio-latest':{ai:3.0,ao:12.0},
+  'gemini-2.5-flash-native-audio-preview-12-2025':{ai:3.0,ao:12.0},
+  'gemini-2.0-flash-live-001':{ai:0.5,ao:2.0}
 };
-const EUR = 0.92;
-
-const WS_TIMEOUT_MS   = 15000;
-const RECONNECT_BASE  = 2000;
-const RECONNECT_MAX   = 30000;
-const RECONNECT_LIMIT = 10;
-const AUDIO_Q_MAX     = 60;
-const DRAIN_WATCHDOG  = 6000;
-const CTX_WATCHDOG_MS = 2000;
-const N_SEGS          = 36;
+const EUR=0.92, N_SEGS=36;
+const WS_TIMEOUT_MS   = 15000;  // timeout connessione WS
+const RECONNECT_BASE  = 2000;   // backoff iniziale riconnessione (ms)
+const RECONNECT_MAX   = 30000;  // backoff massimo
+const RECONNECT_LIMIT = 10;     // max tentativi prima di arrendersi
+const AUDIO_Q_MAX     = 60;     // max frame in coda audio
+const DRAIN_WATCHDOG  = 6000;   // ms prima di sbloccare drain() bloccato
+const CTX_WATCHDOG_MS = 2000;   // intervallo check AudioContext
 
 // ═══════════════════════════════════════════════════════════════
 // STATE
@@ -410,37 +429,49 @@ let localVadLevel=0;
 let ws=null, audioCtx=null, workletNode=null, micStream=null;
 let muted=false, connected=false, isRec=false, recChunks=[];
 let audioQ=[], playing=false, analyser=null, silStart=null;
-let nextPlayTime=0;
-let tok={ai:0, ao:0};
+let nextPlayTime=0;   // scheduling preciso: quando finisce l'ultimo buffer pianificato
+let tok={ai:0,ao:0};
 let editingChar=null, camStream=null, camActive=false;
-let knowledge={title:'', text:''};
+let knowledge={title:'',text:''};
 let robotMsgEl=null, robotTxt='';
+// mic/VU
 let sharedMicStream=null, vuCtx=null, vuAnalyser=null, vuRaf=null;
 let availableMics=[], currentMicId='';
+// auto-mute
 let robotSpeaking=false, autoMuteSuspended=false;
+// reconnect
 let reconnectCount=0, reconnectTimer=null, wsTimeoutTimer=null;
-let userDisconnected=false;
+let userDisconnected=false; // true = disconnessione volontaria
+// watchdog
 let ctxWatchdogInterval=null, drainWatchdog=null;
-// Gemini: blocca l'invio audio finché setupComplete non è ricevuto
 let setupReady=false;
 
 // ═══════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════
 function init(){
-  buildVU(); loadKey(); renderChars(); loadKnowLS();
+  buildVU(); loadKey(); renderChars(); loadKnowLS(); updVadUI();
   setInterval(tickTimer,500); netCheck(); setInterval(netCheck,14000); enumCams();
   try{navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);}catch(e){}
   setInterval(pollMics,4000);
+  // Sincronizza stato barge-in con auto-mute
   document.getElementById('chkAutoMute').addEventListener('change', onAutoMuteChange);
   onAutoMuteChange();
 }
 
 function onAutoMuteChange(){
-  const autoMute=document.getElementById('chkAutoMute').checked;
-  const bargeEl=document.getElementById('chkBarge');
-  if(autoMute){bargeEl.checked=false;bargeEl.disabled=true;bargeEl.closest('.trow').style.opacity='0.4';}
-  else{bargeEl.disabled=false;bargeEl.closest('.trow').style.opacity='1';}
+  const autoMute = document.getElementById('chkAutoMute').checked;
+  const bargeEl  = document.getElementById('chkBarge');
+  if(autoMute){
+    // Con auto-mute ON, il barge-in non ha senso (il mic è sospeso)
+    bargeEl.checked = false;
+    bargeEl.disabled = true;
+    bargeEl.closest('.trow').style.opacity = '0.4';
+  } else {
+    bargeEl.disabled = false;
+    bargeEl.closest('.trow').style.opacity = '1';
+  }
+  if(connected) sendSess();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -449,36 +480,41 @@ function onAutoMuteChange(){
 function loadKey(){
   try{
     const k=localStorage.getItem(LS_KEY);
-    if(k&&k.length>10){document.getElementById('keyIn').value=k;setKS(true,k.length);}
+    if(k&&k.length>10){document.getElementById('keyIn').value=k; setKS(true,k.length);}
     else setKS(false,0);
   }catch(e){setKS(false,0);}
 }
 function setKS(ok,len){
   const e=document.getElementById('kStat');
   e.className='ks '+(ok?'ok':'w');
-  e.textContent=ok?'✅ Chiave salvata ('+len+' chars)':'⚠️ Inserisci la chiave Google AI';
+  e.textContent=ok?'✅ Chiave salvata ('+len+' chars)':'⚠️ Inserisci la chiave o carica keys.txt';
 }
 function onKeyIn(){
   const k=document.getElementById('keyIn').value.replace(/[\u200B-\u200D\uFEFF\r\n\t]/g,'').trim();
-  if(k.length>10){try{localStorage.setItem(LS_KEY,k);}catch(e){}setKS(true,k.length);}
+  if(k.length>10){try{localStorage.setItem(LS_KEY,k);}catch(e){} setKS(true,k.length);}
 }
 function loadKeysFile(inp){
-  const file=inp.files[0];if(!file)return;
+  const file=inp.files[0]; if(!file)return;
   const r=new FileReader();
   r.onload=e=>{
-    const b=new Uint8Array(e.target.result);let t='';
+    const b=new Uint8Array(e.target.result); let t='';
     if(b[0]===0xFF&&b[1]===0xFE){for(let i=2;i<b.length-1;i+=2)t+=String.fromCharCode(b[i]|(b[i+1]<<8));}
     else if(b[0]===0xFE&&b[1]===0xFF){for(let i=2;i<b.length-1;i+=2)t+=String.fromCharCode((b[i]<<8)|b[i+1]);}
     else{t=new TextDecoder().decode(e.target.result);if(t.charCodeAt(0)===0xFEFF)t=t.slice(1);}
     let ok=false;
     t.replace(/\r/g,'').split('\n').forEach(ln=>{
       ln=ln.trim();
-      if(ln.startsWith('GEMINI_KEY=')){
+      if(ln.startsWith('OPENAI_KEY=')){
         const k=ln.slice(11).replace(/^["'\s]+|["'\s]+$/g,'');
-        if(k.length>10){document.getElementById('keyIn').value=k;try{localStorage.setItem(LS_KEY,k);}catch(ex){}setKS(true,k.length);ok=true;toast('✅ Chiave caricata');}
+        if(k.length>10){
+          document.getElementById('keyIn').value=k;
+          try{localStorage.setItem(LS_KEY,k);}catch(ex){}
+          setKS(true,k.length); ok=true; toast('✅ Chiave caricata ('+k.length+' chars)');
+        }
       }
     });
-    if(!ok)toast('⚠️ GEMINI_KEY= non trovata');inp.value='';
+    if(!ok)toast('⚠️ OPENAI_KEY= non trovata nel file');
+    inp.value='';
   };
   r.readAsArrayBuffer(file);
 }
@@ -493,14 +529,15 @@ function buildVU(){
 }
 function drawVU(level){
   localVadLevel=level;
-  const pct=Math.min(1,level/255),lit=Math.round(pct*N_SEGS);
+  const pct=Math.min(1,level/255), lit=Math.round(pct*N_SEGS);
   const thrRaw=parseInt(document.getElementById('rThr').value);
-  const thrPct=Math.min(1,Math.pow((thrRaw/6000),0.55));
+  const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
   document.getElementById('thrLine').style.left=(thrPct*100)+'%';
   const s=vuEl.children;
+  const isMutedNow = autoMuteSuspended;
   for(let i=0;i<N_SEGS;i++){
-    if(autoMuteSuspended){s[i].className='seg muted';}
-    else{const p=(i+1)/N_SEGS;s[i].className='seg '+(i<lit?(p<.6?'g':p<.85?'y':'r'):'');}
+    if(isMutedNow){s[i].className='seg muted';}
+    else{const p=(i+1)/N_SEGS; s[i].className='seg '+(i<lit?(p<.6?'g':p<.85?'y':'r'):'');}
   }
   const el=document.getElementById('rmsVal');
   el.textContent=String(Math.round(pct*100)).padStart(3,' ')+'%';
@@ -508,40 +545,45 @@ function drawVU(level){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// AUTO-MUTE
+// AUTO-MUTE LOGIC
 // ═══════════════════════════════════════════════════════════════
 function setRobotSpeaking(speaking){
-  robotSpeaking=speaking;
-  const autoMute=document.getElementById('chkAutoMute').checked;
-  autoMuteSuspended=speaking&&autoMute;
-  const overlay=document.getElementById('vuMuteOverlay');
-  const badge=document.getElementById('amuteBadge');
+  robotSpeaking = speaking;
+  const autoMute = document.getElementById('chkAutoMute').checked;
+  autoMuteSuspended = speaking && autoMute;
+
+  const overlay   = document.getElementById('vuMuteOverlay');
+  const badge     = document.getElementById('amuteBadge');
+  const micDot    = document.getElementById('dMic');
+
   if(autoMuteSuspended){
     overlay.classList.add('show');
     badge.className='amute-badge mic-muted';
     badge.textContent='🔇 Mic sospeso — robot in risposta';
-    if(workletNode)workletNode.port.postMessage({cmd:'gain',value:0});
-  }else if(speaking&&!autoMute){
+    if(workletNode) workletNode.port.postMessage({cmd:'gain', value:0});
+  } else if(speaking && !autoMute){
+    // Robot parla ma auto-mute OFF
     overlay.classList.remove('show');
     badge.className='amute-badge robot-speaking';
     badge.textContent='🔊 Robot parla · auto-mute OFF';
-    if(workletNode)workletNode.port.postMessage({cmd:'gain',value:parseInt(document.getElementById('rGain').value)/100});
-  }else{
+    if(workletNode) workletNode.port.postMessage({cmd:'gain', value: parseInt(document.getElementById('rGain').value)/100});
+  } else {
     overlay.classList.remove('show');
     badge.className='amute-badge';
     badge.textContent='⚪ Auto-mute: standby';
-    if(workletNode)workletNode.port.postMessage({cmd:'gain',value:parseInt(document.getElementById('rGain').value)/100});
-    if(connected&&!muted)dot('dMic','on');
+    if(workletNode) workletNode.port.postMessage({cmd:'gain', value: parseInt(document.getElementById('rGain').value)/100});
+    // Reimposta stato mic dot
+    if(connected && !muted) dot('dMic','on');
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CHAT
+// CHAT / DEBUG
 // ═══════════════════════════════════════════════════════════════
 function addMsg(txt,type){
   const box=document.getElementById('chatBox');
-  const d=document.createElement('div');d.className='msg '+type;d.textContent=txt;
-  box.appendChild(d);box.scrollTop=box.scrollHeight;
+  const d=document.createElement('div'); d.className='msg '+type; d.textContent=txt;
+  box.appendChild(d); box.scrollTop=box.scrollHeight;
 }
 function appendRobotTxt(delta){
   robotTxt+=delta;
@@ -552,59 +594,117 @@ function appendRobotTxt(delta){
 function finalizeRobot(){robotMsgEl=null;robotTxt='';}
 function dbg(msg){
   const box=document.getElementById('chatBox');
-  const d=document.createElement('div');d.className='msg sys';d.style.fontSize='.6rem';d.style.color='#2a5a7a';
+  const d=document.createElement('div'); d.className='msg sys'; d.style.fontSize='.6rem'; d.style.color='#2a7a5a';
   d.textContent='['+new Date().toLocaleTimeString()+'] '+msg;
-  box.appendChild(d);box.scrollTop=box.scrollHeight;console.log('[DBG]',msg);
+  box.appendChild(d); box.scrollTop=box.scrollHeight; console.log('[DBG]',msg);
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MIC — identica a openai-v8, con resampling a 16kHz per Gemini
+// MIC — iOS: un solo getUserMedia, dentro user gesture
+// ═══════════════════════════════════════════════════════════════
+// Strategia selezione mic iOS + split jack:
+// iOS nasconde i deviceId reali finché non hai già il permesso.
+// Al primo avvio facciamo getUserMedia senza constraint (ottieni permesso),
+// poi enumeriamo i dispositivi (ora con label visibili), cerchiamo il
+// "Wired Headset" / "Headset Microphone" e se trovato riprendiamo
+// lo stream con il deviceId corretto.
 // ═══════════════════════════════════════════════════════════════
 async function startVuMonitor(forceDeviceId){
   if(sharedMicStream){sharedMicStream.getTracks().forEach(t=>t.stop());sharedMicStream=null;}
   if(vuRaf){cancelAnimationFrame(vuRaf);vuRaf=null;}
-  if(vuCtx&&vuCtx.state!=='closed'){try{await vuCtx.close();}catch(e){}vuCtx=null;vuAnalyser=null;await new Promise(r=>setTimeout(r,250));}
+  if(vuCtx&&vuCtx.state!=='closed'){
+    try{await vuCtx.close();}catch(e){}
+    vuCtx=null; vuAnalyser=null;
+    await new Promise(r=>setTimeout(r,250));
+  }
   try{
     let devId=forceDeviceId||document.getElementById('selMic')?.value||'';
+
     if(!devId){
+      // FASE 1: apri con default per sbloccare il permesso e rendere visibili le label
       dbg('🎤 getUserMedia (default — permesso + detect wired)...');
-      const tempStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+      const tempStream=await navigator.mediaDevices.getUserMedia({
+        audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}
+      });
       const tempLabel=tempStream.getAudioTracks()[0]?.label||'';
       dbg('📋 Mic default: "'+tempLabel+'"');
+
+      // FASE 2: ora che abbiamo il permesso, enumera con label visibili
       const devs=await navigator.mediaDevices.enumerateDevices();
       const mics=devs.filter(d=>d.kind==='audioinput');
-      dbg('📋 Mic disponibili: '+mics.map(m=>'"'+(m.label||'?')+'"').join(', '));
-      const defaultIsBuiltin=/iphone|built.?in|receiver|interno|microfono\s+iphone/i.test(tempLabel.toLowerCase());
-      const external=mics.find(m=>m.deviceId&&m.deviceId!==''&&!/iphone|built.?in|receiver|interno|microfono\s+iphone/i.test(m.label)&&m.label);
-      dbg('🔍 Built-in: '+defaultIsBuiltin+' | External: '+(external?'"'+external.label+'"':'no'));
-      if(defaultIsBuiltin&&external){tempStream.getTracks().forEach(t=>t.stop());devId=external.deviceId;dbg('🎯 Switch: "'+external.label+'"');}
-      else{sharedMicStream=tempStream;devId='';dbg(defaultIsBuiltin?'⚠️ Solo built-in':'✅ Default già esterno: "'+tempLabel+'"');}
+      dbg('📋 Mic disponibili dopo permesso: '+mics.map(m=>'"'+(m.label||'?')+'"').join(', '));
+
+      // Il default era già quello giusto se il suo label NON è built-in
+      const defaultLabel=tempLabel.toLowerCase();
+      const defaultIsBuiltin=/iphone|built.?in|receiver|interno|microfono\s+iphone/i.test(defaultLabel);
+
+      // Cerca microfono esterno tra tutti i disponibili
+      // Strategia: escludi quelli built-in, prendi il primo rimasto
+      const external=mics.find(m=>
+        m.deviceId && m.deviceId!=='' &&
+        !/iphone|built.?in|receiver|interno|microfono\s+iphone/i.test(m.label) &&
+        m.label // deve avere una label visibile
+      );
+
+      dbg('🔍 Default is built-in: '+defaultIsBuiltin+' | External found: '+(external?'"'+external.label+'"':'no'));
+
+      if(defaultIsBuiltin && external){
+        // Default è built-in ma esiste uno esterno → switch
+        tempStream.getTracks().forEach(t=>t.stop());
+        devId=external.deviceId;
+        dbg('🎯 Switch a mic esterno: "'+external.label+'" deviceId:'+devId.slice(0,12)+'...');
+      } else {
+        // Default è già quello giusto, oppure non c'è alternativa
+        sharedMicStream=tempStream;
+        devId='';
+        dbg(defaultIsBuiltin ? '⚠️ Solo mic built-in disponibile' : '✅ Default già mic esterno: "'+tempLabel+'"');
+      }
     }
+
     if(!sharedMicStream){
-      const constraint=devId?{audio:{deviceId:{exact:devId},echoCancellation:false,noiseSuppression:false,autoGainControl:false}}:{audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}};
-      dbg('🎤 getUserMedia '+(devId?'exact:'+devId.slice(0,12):'(default)')+'...');
+      // Apri con deviceId specifico (selezionato manualmente o trovato nella fase 2)
+      const constraint=devId
+        ?{audio:{deviceId:{exact:devId}, echoCancellation:false, noiseSuppression:false, autoGainControl:false}}
+        :{audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}};
+      dbg('🎤 getUserMedia '+(devId?'exact:'+devId.slice(0,12)+'...':'(default)')+'...');
       sharedMicStream=await navigator.mediaDevices.getUserMedia(constraint);
     }
+
     const track=sharedMicStream.getAudioTracks()[0];
     const settings=track?.getSettings()||{};
     currentMicId=settings.deviceId||devId||'';
     const label=track?.label||'sconosciuto';
-    dbg('✅ MIC: "'+label+'" SR:'+(settings.sampleRate||'?')+'Hz');
+    dbg('✅ MIC attivo: "'+label+'" SR:'+(settings.sampleRate||'?')+'Hz');
+    console.log('[MIC]',label,settings);
+
     await pollMics();
     const sel=document.getElementById('selMic');
     if(sel&&currentMicId){const m=[...sel.options].find(o=>o.value===currentMicId);if(m)sel.value=currentMicId;}
-    track.addEventListener('ended',()=>{dbg('⚠️ Mic disconnesso');dot('dMic',null);setTimeout(()=>startVuMonitor().catch(e=>dbg('❌ Restart: '+e.message)),1500);});
-    vuCtx=new(window.AudioContext||window.webkitAudioContext)();
+
+    // Track ended = jack rimosso fisicamente
+    track.addEventListener('ended',()=>{
+      dbg('⚠️ Mic disconnesso fisicamente — restart...');
+      dot('dMic',null);
+      setTimeout(()=>startVuMonitor().catch(e=>dbg('❌ Restart mic: '+e.message)), 1500);
+    });
+
+    vuCtx=new (window.AudioContext||window.webkitAudioContext)();
     dbg('🔊 AudioContext: '+vuCtx.sampleRate+'Hz state:'+vuCtx.state);
     if(vuCtx.state==='suspended'){try{await vuCtx.resume();}catch(e){}}
+
+    // Fallback sblocco al prossimo touch (iOS sospende se non in gesture diretta)
     if(vuCtx.state!=='running'){
+      dbg('⏳ AudioContext suspended — tocca lo schermo per sbloccare');
       const unlock=async()=>{try{await vuCtx?.resume();dbg('▶ AudioContext sbloccato');}catch(e){}};
       document.body.addEventListener('touchstart',unlock,{once:true});
       document.body.addEventListener('mousedown',unlock,{once:true});
     }
-    vuAnalyser=vuCtx.createAnalyser();vuAnalyser.fftSize=512;vuAnalyser.smoothingTimeConstant=0.3;
+
+    vuAnalyser=vuCtx.createAnalyser(); vuAnalyser.fftSize=512; vuAnalyser.smoothingTimeConstant=0.3;
     vuCtx.createMediaStreamSource(sharedMicStream).connect(vuAnalyser);
     dot('dMic','on');
+
+    // Loop VU
     let vuLogT=0;
     (function tick(){
       vuRaf=requestAnimationFrame(tick);
@@ -613,55 +713,99 @@ async function startVuMonitor(forceDeviceId){
       vuAnalyser.getByteFrequencyData(d);
       const binHz=vuCtx.sampleRate/vuAnalyser.fftSize;
       const lo=Math.floor(80/binHz),hi=Math.min(Math.floor(8000/binHz),d.length-1);
-      let peak=0;for(let i=lo;i<=hi;i++){if(d[i]>peak)peak=d[i];}
-      drawVU(Math.min(255,Math.pow(peak/255,0.55)*255));
-      const now=Date.now();if(now-vuLogT>3000){vuLogT=now;console.log('[VU] peak:'+peak);}
+      let peak=0;
+      for(let i=lo;i<=hi;i++){if(d[i]>peak)peak=d[i];}
+      const boosted=Math.min(255, Math.pow(peak/255, 0.55)*255);
+      drawVU(boosted);
+      const now=Date.now();
+      if(now-vuLogT>3000){vuLogT=now;console.log('[VU] raw peak:'+peak+' boosted:'+Math.round(boosted)+' bins:'+lo+'-'+hi);}
     })();
+
+    // Avvia watchdog AudioContext
     startCtxWatchdog();
-  }catch(e){dbg('❌ Mic: '+e.name+': '+e.message);dot('dMic','er');toast('❌ Mic: '+e.name);}
+
+  }catch(e){
+    dbg('❌ Mic errore: '+e.name+': '+e.message);
+    dot('dMic','er');
+    toast('❌ Mic: '+e.name);
+  }
 }
-async function switchMic(){const devId=document.getElementById('selMic')?.value||'';await startVuMonitor(devId||undefined);if(connected)toast('🎤 Riconnetti per applicare');}
+
+async function switchMic(){
+  const devId=document.getElementById('selMic')?.value||'';
+  dbg('🔄 Cambio mic '+(devId?devId.slice(0,10)+'...':'auto/default'));
+  await startVuMonitor(devId||undefined);
+  if(connected){toast('🎤 Riconnetti per applicare il nuovo mic');}
+}
+
 async function pollMics(){
   try{
     const devs=await navigator.mediaDevices.enumerateDevices();
     const mics=devs.filter(d=>d.kind==='audioinput');
     const changed=mics.length!==availableMics.length||mics.some((m,i)=>m.deviceId!==availableMics[i]?.deviceId);
-    availableMics=mics;if(changed){dbg('📋 Mic ('+mics.length+'): '+mics.map(m=>'"'+(m.label||'?')+'"').join(', '));renderMicSelect();}
+    availableMics=mics;
+    if(changed){
+      const lbl=mics.map(m=>'"'+(m.label||m.deviceId.slice(0,8))+'"').join(', ');
+      dbg('📋 Mic disponibili ('+mics.length+'): '+lbl);
+      renderMicSelect();
+    }
   }catch(e){}
 }
+
 function renderMicSelect(){
-  const sel=document.getElementById('selMic');if(!sel)return;
-  const prev=sel.value;sel.innerHTML='<option value="">🎤 Auto (default — split jack)</option>';
+  const sel=document.getElementById('selMic'); if(!sel)return;
+  const prev=sel.value;
+  sel.innerHTML='<option value="">🎤 Auto (default — split jack)</option>';
   availableMics.forEach(m=>sel.appendChild(new Option(m.label||m.deviceId.slice(0,14),m.deviceId)));
   if(prev&&[...sel.options].find(o=>o.value===prev))sel.value=prev;
 }
-let dcT=null;
-function onDeviceChange(){clearTimeout(dcT);dcT=setTimeout(()=>{dbg('🔌 Dispositivo cambiato');pollMics();},600);}
 
-function startCtxWatchdog(){
-  if(ctxWatchdogInterval)clearInterval(ctxWatchdogInterval);
-  ctxWatchdogInterval=setInterval(async()=>{
-    if(!vuCtx)return;
-    if(vuCtx.state==='suspended'){dbg('⚠️ AudioContext sospeso — resume...');try{await vuCtx.resume();if(vuCtx.state==='running')dbg('▶ AudioContext ripristinato');}catch(e){}}
-  },CTX_WATCHDOG_MS);
+let dcT=null;
+function onDeviceChange(){
+  clearTimeout(dcT);
+  dcT=setTimeout(()=>{dbg('🔌 Dispositivo audio cambiato');pollMics();},600);
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CONNESSIONE GEMINI LIVE API
+// WATCHDOG AudioContext — risveglia se sospeso da iOS
+// ═══════════════════════════════════════════════════════════════
+function startCtxWatchdog(){
+  if(ctxWatchdogInterval) clearInterval(ctxWatchdogInterval);
+  ctxWatchdogInterval=setInterval(async()=>{
+    if(!vuCtx)return;
+    if(vuCtx.state==='suspended'){
+      dbg('⚠️ AudioContext sospeso — tentativo resume...');
+      try{
+        await vuCtx.resume();
+        if(vuCtx.state==='running') dbg('▶ AudioContext ripristinato dal watchdog');
+      }catch(e){dbg('❌ Resume fallito: '+e.message);}
+    }
+  }, CTX_WATCHDOG_MS);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONNESSIONE
 // ═══════════════════════════════════════════════════════════════
 async function toggleConn(){
-  if(connected||reconnectTimer){userDisconnected=true;cancelReconnect();disc();}
-  else{userDisconnected=false;reconnectCount=0;await conn();}
+  if(connected || reconnectTimer){
+    userDisconnected=true;
+    cancelReconnect();
+    disc();
+  } else {
+    userDisconnected=false;
+    reconnectCount=0;
+    await conn();
+  }
 }
 
 async function conn(){
   const raw=document.getElementById('keyIn').value;
   API_KEY=raw.replace(/[\x00-\x1F\x7F\u200B-\u200D\uFEFF]/g,'').trim();
-  if(API_KEY.length<20){toast('❌ Chiave troppo corta');return;}
+  if(API_KEY.length<20){toast('❌ Chiave troppo corta ('+API_KEY.length+' chars)');return;}
   onCharChg();
   activeVoice=document.getElementById('selVoice').value||activeVoice;
   setSt('connecting');
-  setupReady=false;  // blocca invio audio fino a setupComplete
+  setupReady=false;
   document.getElementById('btnConn').disabled=true;
   dbg('🔌 Connessione Gemini... (tentativo '+(reconnectCount+1)+')');
   try{
@@ -669,105 +813,66 @@ async function conn(){
       dbg('🎤 Avvio mic...');await startVuMonitor();
     }
     micStream=sharedMicStream;
-
-    // La doc ufficiale dice: "the Live API will resample if needed, any sample rate can be sent"
-    // Usiamo il vuCtx condiviso (già aperto a 48kHz) e dichiariamo il SR nel mimeType.
-    // Niente AudioContext separato — evita conflitti con il VU meter su iOS.
-    audioCtx=vuCtx;
+    audioCtx=vuCtx; analyser=vuAnalyser;
+    if(analyser)analyser.smoothingTimeConstant=0.15;
     if(audioCtx.state==='suspended'){try{await audioCtx.resume();}catch(e){}}
-
     await audioCtx.audioWorklet.addModule('audio-processor.js');
     workletNode=new AudioWorkletNode(audioCtx,'pcm16-processor');
     workletNode.port.onmessage=onChunk;
-    const micSource=audioCtx.createMediaStreamSource(micStream);
-    micSource.connect(workletNode);
+    if(analyser)analyser.connect(workletNode);
     dot('dMic','on');
-
     const model=document.getElementById('selModel').value;
     const url=GEMINI_WS+'?key='+API_KEY;
-    dbg('🌐 WS → '+url.split('?')[0].split('/').pop());
+    dbg('🌐 WS → '+model);
     ws=new WebSocket(url);
-    // NON impostiamo binaryType='arraybuffer' — Gemini manda JSON come testo,
-    // lasciamo il default che converte blob in stringa automaticamente.
-
     wsTimeoutTimer=setTimeout(()=>{
-      if(!connected){dbg('⏱ Timeout WS ('+WS_TIMEOUT_MS+'ms)');toast('❌ Timeout');disc();scheduleReconnect();}
+      if(!connected){dbg('⏱ Timeout WS');toast('❌ Timeout');disc();scheduleReconnect();}
     },WS_TIMEOUT_MS);
-
-    ws.onopen=()=>{
-      dbg('🔗 WS aperto — invio setup...');
-      sendSetup();
-      // setupReady rimane false fino a setupComplete — onChunk scarta tutto nel frattempo
-    };
+    ws.onopen=()=>{ dbg('🔗 WS aperto — invio setup...'); sendSetup(); };
     ws.onmessage=onMsg;
     ws.onerror=e=>{console.error('[WS]',e);dbg('❌ WS errore');};
     ws.onclose=e=>{
       dbg('🔌 WS chiuso: '+e.code+(e.reason?' '+e.reason:''));
       clearTimeout(wsTimeoutTimer);
       setupReady=false;
-      const wasConn=connected;disc();
+      const wasConn=connected; disc();
       if(wasConn&&!userDisconnected)scheduleReconnect();
       else if(!wasConn&&!userDisconnected&&reconnectCount>0)scheduleReconnect();
     };
   }catch(e){
     clearTimeout(wsTimeoutTimer);
-    dbg('❌ conn: '+e.name+': '+e.message);toast('❌ '+e.message);setSt('idle');
+    dbg('❌ conn: '+e.name+': '+e.message); toast('❌ '+e.message); setSt('idle');
     document.getElementById('btnConn').disabled=false;
     if(!userDisconnected)scheduleReconnect();
   }
 }
 
-// Invia il messaggio BidiGenerateContent setup a Gemini
 function sendSetup(){
   const model=document.getElementById('selModel').value;
   let voice=document.getElementById('selVoice').value||activeVoice;
-
-  // Mappa voci OpenAI → equivalente Gemini più simile
-  // (può capitare se un personaggio è stato creato su openai.html)
-  const voiceMap={
-    'alloy':'Aoede','ash':'Charon','ballad':'Kore','coral':'Leda',
-    'echo':'Fenrir','sage':'Orus','shimmer':'Aoede','verse':'Puck',
-    'cedar':'Umbriel','marin':'Zephyr'
-  };
   const GEMINI_VOICES=['Puck','Charon','Kore','Fenrir','Aoede','Leda','Orus','Zephyr','Autonoe','Umbriel'];
+  const voiceMap={alloy:'Aoede',ash:'Charon',ballad:'Kore',coral:'Leda',echo:'Fenrir',sage:'Orus',shimmer:'Aoede',verse:'Puck',cedar:'Umbriel',marin:'Zephyr'};
   if(!GEMINI_VOICES.includes(voice)){
     const mapped=voiceMap[voice.toLowerCase()]||'Aoede';
-    dbg('⚠️ Voce "'+voice+'" non valida per Gemini → mappata a "'+mapped+'"');
+    dbg('⚠️ Voce "'+voice+'" → "'+mapped+'" (Gemini)');
     voice=mapped;
-    // Aggiorna anche il selettore UI
     document.getElementById('selVoice').value=mapped;
   }
-
   const instructions=buildSystemPrompt();
-  const autoMute=document.getElementById('chkAutoMute').checked;
-  const bargein=autoMute?false:document.getElementById('chkBarge').checked;
-  dbg('📋 Setup: model='+model+' voice='+voice+' bargein='+bargein);
-
-  const setup = {
-    model: 'models/' + model,
-    generationConfig: {
-      responseModalities: ['AUDIO'],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: voice }
-        }
-      }
+  dbg('📋 Setup: '+model+' voce:'+voice);
+  const setup={
+    model:'models/'+model,
+    generationConfig:{
+      responseModalities:['AUDIO'],
+      speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:voice}}}
     },
-    systemInstruction: {
-      parts: [{ text: instructions }]
-    }
+    systemInstruction:{parts:[{text:instructions}]}
   };
-
-  const setupMsg = JSON.stringify({ setup: setup });
-  dbg('📤 Setup (prime 200): ' + setupMsg.slice(0, 200));
-  ws.send(setupMsg);
+  const msg=JSON.stringify({setup:setup});
+  dbg('📤 '+msg.slice(0,180));
+  ws.send(msg);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// AUDIO CHUNK (dal worklet) → invia a Gemini
-// Gemini richiede PCM16 a 16kHz — il mic gira a 48kHz su iOS/Android
-// quindi resampliamo qui prima dell'invio
-// ═══════════════════════════════════════════════════════════════
 function pcmToBase64(pcm){
   const bytes=new Uint8Array(pcm.buffer);
   let binary='';const chunk=8192;
@@ -779,143 +884,72 @@ function onChunk(e){
   if(!setupReady)return;
   if(autoMuteSuspended)return;
   if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
-
   let pcm=new Int16Array(e.data);
   const g=parseInt(document.getElementById('rGain').value)/100;
   if(g!==1){const o=new Int16Array(pcm.length);for(let i=0;i<pcm.length;i++)o[i]=Math.max(-32768,Math.min(32767,Math.round(pcm[i]*g)));pcm=o;}
-
-  // Dichiariamo il sample rate reale del mic nel mimeType.
-  // La doc Google dice: "Live API will resample if needed, any sample rate can be sent".
-  // Quindi inviamo a qualsiasi SR il browser usa (tipicamente 48000) e Google resampla.
-  const actualSR = audioCtx ? audioCtx.sampleRate : 48000;
-
-  // VAD locale
   const thrRaw=parseInt(document.getElementById('rThr').value);
   const thrLevel=Math.min(255,Math.pow((thrRaw/6000),0.55)*255);
   if(localVadLevel<thrLevel*0.6)return;
-
-  ws.send(JSON.stringify({
-    realtimeInput: {
-      mediaChunks: [{
-        data: pcmToBase64(pcm),
-        mimeType: 'audio/pcm;rate=' + actualSR
-      }]
-    }
-  }));
+  const actualSR=audioCtx?audioCtx.sampleRate:48000;
+  ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate='+actualSR}]}}));
 }
 
-// ═══════════════════════════════════════════════════════════════
-// WS MESSAGES — Gemini BidiGenerateContent protocol
-// ═══════════════════════════════════════════════════════════════
 function onMsg(e){
-  // Gemini può mandare sia stringhe JSON che ArrayBuffer binari.
-  // ws.binaryType='arraybuffer' fa sì che i binari arrivino come ArrayBuffer —
-  // JSON.parse(ArrayBuffer) → "Unexpected identifier 'object'".
-  // Convertiamo sempre a stringa prima di parsare.
   let raw;
-  if(typeof e.data === 'string'){
-    raw = e.data;
-  } else if(e.data instanceof ArrayBuffer){
-    raw = new TextDecoder().decode(e.data);
-  } else {
-    dbg('⚠️ onMsg: tipo inatteso '+typeof e.data);
-    return;
-  }
-
+  if(typeof e.data==='string'){raw=e.data;}
+  else if(e.data instanceof ArrayBuffer){raw=new TextDecoder().decode(e.data);}
+  else if(e.data instanceof Blob){e.data.text().then(t=>{onMsg({data:t});});return;}
+  else{dbg('⚠️ onMsg tipo: '+typeof e.data);return;}
   let m;
-  try{m=JSON.parse(raw);}catch(ex){
-    dbg('❌ JSON parse: '+ex.message+' | raw: '+raw.slice(0,80));
-    return;
-  }
+  try{m=JSON.parse(raw);}catch(ex){dbg('❌ JSON: '+ex.message+' | '+raw.slice(0,80));return;}
+  const ls=JSON.stringify(m);
+  if(!ls.includes('"data"'))console.log('[RX]',ls.slice(0,200));
 
-  // Log raw per debug (solo prime 200 chars)
-  const raw=JSON.stringify(m);
-  if(!raw.includes('"data"'))  // non loggare i chunk audio base64
-    console.log('[RX]',raw.slice(0,200));
-
-  // Setup completato — Gemini manda {"setupComplete":{}} o {"setupComplete":true}
   if('setupComplete' in m){
     clearTimeout(wsTimeoutTimer);
-    setupReady=true;   // ← ora onChunk può inviare audio
+    setupReady=true;
     connected=true;updBtn();setSt('listening');dot('dAI','on');
     reconnectCount=0;hideReconnBar();
     document.getElementById('btnConn').disabled=false;
     addMsg('✅ Gemini connesso · voce: '+(document.getElementById('selVoice').value||activeVoice),'sys');
     toast('✅ Gemini pronto');
-    dbg('✅ setupComplete — audio abilitato');
+    dbg('✅ setupComplete');
     return;
   }
-
-  // Contenuto server (audio, trascrizioni, fine turno)
   if(m.serverContent){
     const sc=m.serverContent;
-
-    // Segnale che il robot sta per parlare
-    if(sc.generationComplete===false||sc.modelTurn){
-      if(!robotSpeaking)setRobotSpeaking(true);
-    }
-
-    // Audio in uscita dal robot
     if(sc.modelTurn?.parts){
       sc.modelTurn.parts.forEach(part=>{
-        if(part.inlineData&&part.inlineData.mimeType?.startsWith('audio/pcm')){
+        if(part.inlineData?.mimeType?.startsWith('audio/pcm')){
           const bytes=Uint8Array.from(atob(part.inlineData.data),c=>c.charCodeAt(0));
           const pcm=new Int16Array(bytes.buffer);
           if(isRec)recChunks.push(pcm);
           if(audioQ.length>AUDIO_Q_MAX){audioQ=audioQ.slice(-Math.floor(AUDIO_Q_MAX/2));nextPlayTime=0;}
           audioQ.push(pcm);
           if(!playing)drain();
-          // Stima token audio per costo (Gemini: ~25 token/s a 24kHz)
-          tok.ao+=Math.round(pcm.length/OUTPUT_SR*25);
-          renderCost();
+          tok.ao+=Math.round(pcm.length/OUTPUT_SR*25);renderCost();
+          if(!robotSpeaking)setRobotSpeaking(true);
         }
       });
     }
-
-    // Trascrizione output (robot)
-    if(sc.outputTranscription?.text){
-      appendRobotTxt(sc.outputTranscription.text);
-    }
-
-    // Trascrizione input (utente)
+    if(sc.outputTranscription?.text)appendRobotTxt(sc.outputTranscription.text);
     if(sc.inputTranscription?.text){
       addMsg(sc.inputTranscription.text,'user');
-      // Stima token audio input
-      tok.ai+=Math.round(sc.inputTranscription.text.length*1.3);
-      renderCost();
+      tok.ai+=Math.round(sc.inputTranscription.text.length*1.3);renderCost();
     }
-
-    // Fine turno — robot ha finito di parlare
     if(sc.turnComplete){
       finalizeRobot();
-      // Pausa 1 secondo dopo la risposta prima di riabilitare il mic
-      if(audioCtx){
-        audioQ.push(new Int16Array(OUTPUT_SR*1));
-        if(!playing)drain();
-      }
-      setTimeout(()=>{
-        setRobotSpeaking(false);setSt('listening');
-        if(!silStart)silStart=Date.now();
-      },1100);
+      audioQ.push(new Int16Array(OUTPUT_SR));
+      if(!playing)drain();
+      setTimeout(()=>{setRobotSpeaking(false);setSt('listening');if(!silStart)silStart=Date.now();},1100);
     }
-
-    // Interruzione (barge-in da parte dell'utente)
     if(sc.interrupted){
-      dbg('🛑 Risposta interrotta (barge-in)');
-      audioQ=[];playing=false;nextPlayTime=0;
+      dbg('🛑 Barge-in');audioQ=[];playing=false;nextPlayTime=0;
       setRobotSpeaking(false);setSt('talking');dot('dMic','tk');silStart=null;
     }
   }
-
-  // Attività vocale utente rilevata
-  if(m.realtimeInput?.activityStart||m.activityStart){
-    setSt('talking');dot('dMic','tk');silStart=null;
-  }
-  if(m.realtimeInput?.activityEnd||m.activityEnd){
-    setSt('listening');dot('dMic','on');
-  }
-
-  // Errore API
+  if(m.realtimeInput?.activityStart){setSt('talking');dot('dMic','tk');silStart=null;}
+  if(m.realtimeInput?.activityEnd){setSt('listening');dot('dMic','on');}
   if(m.error){
     const msg=m.error.message||'Errore Gemini';
     addMsg('❌ '+msg,'sys');toast('⚠️ '+msg);dbg('❌ API: '+msg);
@@ -923,228 +957,329 @@ function onMsg(e){
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// DISCONNECT
-// ═══════════════════════════════════════════════════════════════
 function disc(){
-  connected=false;clearTimeout(wsTimeoutTimer);
+  connected=false; setupReady=false;
+  clearTimeout(wsTimeoutTimer);
   if(ws){ws.onclose=null;try{ws.close();}catch(e){}ws=null;}
   if(workletNode){try{workletNode.port.postMessage({cmd:'stop'});}catch(e){}workletNode=null;}
-  micStream=null;
-  audioCtx=null;
-  audioQ=[];playing=false;silStart=null;nextPlayTime=0;setupReady=false;
-  robotSpeaking=false;autoMuteSuspended=false;setRobotSpeaking(false);
+  micStream=null; audioCtx=null; analyser=vuAnalyser;
+  audioQ=[]; playing=false; silStart=null; nextPlayTime=0;
+  robotSpeaking=false; autoMuteSuspended=false;
+  setRobotSpeaking(false);
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
-  dot('dAI',null);setSt('idle');updBtn();
+  dot('dAI',null); setSt('idle'); updBtn();
   document.getElementById('btnConn').disabled=false;
 }
 
+
 // ═══════════════════════════════════════════════════════════════
-// DRAIN — identico a openai-v8 (stesso formato PCM16 24kHz output)
+// DRAIN — scheduling preciso, zero gap tra chunk
 // ═══════════════════════════════════════════════════════════════
+// Invece di aspettare onended per accodare il prossimo buffer,
+// pianifichiamo ogni buffer esattamente al momento in cui finisce
+// il precedente usando audioCtx.currentTime + offset.
+// Questo elimina i micro-gap tra chunk che causano audio a scatti.
+// La registrazione avviene al momento della ricezione dalla rete,
+// non al momento della riproduzione — così il WAV è sempre continuo.
+
 async function drain(){
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
   if(!audioCtx||!audioQ.length){playing=false;return;}
+
+  // Assicurati che AudioContext sia running prima di iniziare
   if(audioCtx.state==='suspended'){
-    try{await audioCtx.resume();}catch(e){dbg('❌ drain resume fallito');drainWatchdog=setTimeout(()=>drain(),500);return;}
+    try{await audioCtx.resume();}catch(e){
+      dbg('❌ drain: AudioContext resume fallito — retry tra 500ms');
+      drainWatchdog=setTimeout(()=>drain(), 500);
+      return;
+    }
   }
-  if(audioCtx.state!=='running'){drainWatchdog=setTimeout(()=>drain(),300);return;}
+  if(audioCtx.state!=='running'){
+    drainWatchdog=setTimeout(()=>drain(), 300);
+    return;
+  }
+
   playing=true;
-  while(audioQ.length>0){
-    const pcm=audioQ.shift();
-    const f=new Float32Array(pcm.length);
-    for(let i=0;i<pcm.length;i++)f[i]=pcm[i]/(pcm[i]<0?0x8000:0x7FFF);
+
+  // Svuota tutta la coda in un ciclo sincrono, pianificando ogni buffer
+  // con timestamp preciso — nessun gap, nessuna latenza di callback
+  while(audioQ.length > 0){
+    const pcm = audioQ.shift();
+    const f = new Float32Array(pcm.length);
+    for(let i=0;i<pcm.length;i++) f[i]=pcm[i]/(pcm[i]<0?0x8000:0x7FFF);
+
+    let buf, src;
     try{
-      const buf=audioCtx.createBuffer(1,f.length,OUTPUT_SR);
-      buf.copyToChannel(f,0);
-      const src=audioCtx.createBufferSource();
-      src.buffer=buf;src.connect(audioCtx.destination);
-      const startAt=Math.max(audioCtx.currentTime+0.01,nextPlayTime);
-      src.start(startAt);nextPlayTime=startAt+buf.duration;
-      if(audioQ.length===0){
-        const expectedEnd=(nextPlayTime-audioCtx.currentTime)*1000+DRAIN_WATCHDOG;
-        drainWatchdog=setTimeout(()=>{playing=false;nextPlayTime=0;},expectedEnd);
+      buf=audioCtx.createBuffer(1, f.length, 24000);
+      buf.copyToChannel(f, 0);
+      src=audioCtx.createBufferSource();
+      src.buffer=buf;
+      src.connect(audioCtx.destination);
+
+      // Scheduling: inizia esattamente quando finisce il buffer precedente.
+      // Se nextPlayTime è nel passato (es. dopo una pausa), usa currentTime + 0.01s
+      // di headroom per evitare glitch.
+      const startAt = Math.max(audioCtx.currentTime + 0.01, nextPlayTime);
+      src.start(startAt);
+      nextPlayTime = startAt + buf.duration;
+
+      // Watchdog sull'ultimo buffer pianificato: se dopo la durata attesa
+      // la coda è ancora vuota e playing=true, sblocchiamo lo stato
+      if(audioQ.length === 0){
+        const expectedEnd = (nextPlayTime - audioCtx.currentTime) * 1000 + DRAIN_WATCHDOG;
+        drainWatchdog=setTimeout(()=>{
+          playing=false;
+          nextPlayTime=0;
+          dbg('⏱ drain: riproduzione completata');
+        }, expectedEnd);
       }
-    }catch(ex){dbg('❌ drain chunk: '+ex.message);nextPlayTime=0;}
+    }catch(ex){
+      dbg('❌ drain errore su chunk: '+ex.message);
+      // Salta il chunk difettoso e continua
+      nextPlayTime=0; // reset scheduling dopo errore
+    }
   }
-  playing=false;
+
+  // Se la coda è vuota, polling leggero per nuovi chunk in arrivo dallo stream
+  // (l'API manda delta in modo asincrono — potrebbero arrivare altri chunk)
+  if(audioQ.length === 0){
+    playing=false;
+    // Non serve un loop di polling: onMsg chiamerà drain() se playing===false
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// RECONNECT
-// ═══════════════════════════════════════════════════════════════
-function scheduleReconnect(){
-  if(userDisconnected)return;
-  if(reconnectCount>=RECONNECT_LIMIT){dbg('❌ Limite riconnessioni raggiunto');toast('❌ Impossibile riconnettersi');hideReconnBar();document.getElementById('btnConn').disabled=false;return;}
-  reconnectCount++;
-  const delay=Math.min(RECONNECT_BASE*Math.pow(2,reconnectCount-1),RECONNECT_MAX);
-  const delaySec=Math.round(delay/1000);
-  showReconnBar(reconnectCount,delaySec);
-  let remaining=delaySec;
-  const tick=setInterval(()=>{remaining--;showReconnBar(reconnectCount,remaining);if(remaining<=0)clearInterval(tick);},1000);
-  reconnectTimer=setTimeout(async()=>{clearInterval(tick);reconnectTimer=null;hideReconnBar();if(!userDisconnected)await conn();},delay);
-}
-function cancelReconnect(){if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}reconnectCount=0;hideReconnBar();}
-function showReconnBar(attempt,sec){
-  document.getElementById('reconnMsg').textContent='Riconnessione #'+attempt+'/'+RECONNECT_LIMIT+' tra '+sec+'s...';
-  document.getElementById('reconnBar').classList.add('show');
-  document.getElementById('btnConn').disabled=false;
-  document.getElementById('btnConn').classList.remove('off');
-  document.getElementById('btnConn').textContent='✕  ANNULLA RICONNESSIONE';
-}
-function hideReconnBar(){document.getElementById('reconnBar').classList.remove('show');}
-
-// ═══════════════════════════════════════════════════════════════
-// CAMERA — identica a openai-v8
+// CAMERA
 // ═══════════════════════════════════════════════════════════════
 async function enumCams(){
-  try{const devs=await navigator.mediaDevices.enumerateDevices();const cams=devs.filter(d=>d.kind==='videoinput');const sel=document.getElementById('selCam');sel.innerHTML='';if(!cams.length){sel.innerHTML='<option value="">Nessuna cam</option>';return;}cams.forEach((c,i)=>sel.appendChild(new Option(c.label||'Cam '+(i+1),c.deviceId)));}catch(e){}
+  try{
+    const devs=await navigator.mediaDevices.enumerateDevices();
+    const cams=devs.filter(d=>d.kind==='videoinput');
+    const sel=document.getElementById('selCam'); sel.innerHTML='';
+    if(!cams.length){sel.innerHTML='<option value="">Nessuna cam</option>';return;}
+    cams.forEach((c,i)=>sel.appendChild(new Option(c.label||'Cam '+(i+1),c.deviceId)));
+  }catch(e){}
 }
 async function toggleCam(){
   if(camActive){stopCam();return;}
-  try{const devId=document.getElementById('selCam').value;camStream=await navigator.mediaDevices.getUserMedia({video:devId?{deviceId:{exact:devId}}:true});const v=document.getElementById('camVideo');v.srcObject=camStream;v.style.display='block';document.getElementById('camPh').style.display='none';camActive=true;document.getElementById('btnCamOn').textContent='⏹ Spegni cam';document.getElementById('btnSnap').disabled=false;dot('dCam','on');await enumCams();}catch(e){toast('❌ Cam: '+e.message);}
+  try{
+    const devId=document.getElementById('selCam').value;
+    camStream=await navigator.mediaDevices.getUserMedia({video:devId?{deviceId:{exact:devId}}:true});
+    const v=document.getElementById('camVideo'); v.srcObject=camStream;
+    v.style.display='block'; document.getElementById('camPh').style.display='none';
+    camActive=true; document.getElementById('btnCamOn').textContent='⏹ Spegni cam';
+    document.getElementById('btnSnap').disabled=false; dot('dCam','on');
+    await enumCams();
+  }catch(e){toast('❌ Cam: '+e.message);}
 }
-function stopCam(){if(camStream)camStream.getTracks().forEach(t=>t.stop());camStream=null;camActive=false;document.getElementById('camVideo').style.display='none';document.getElementById('camPh').style.display='flex';document.getElementById('btnCamOn').textContent='📷 Attiva cam';document.getElementById('btnSnap').disabled=true;dot('dCam',null);}
+function stopCam(){
+  if(camStream) camStream.getTracks().forEach(t=>t.stop());
+  camStream=null; camActive=false;
+  document.getElementById('camVideo').style.display='none';
+  document.getElementById('camPh').style.display='flex';
+  document.getElementById('btnCamOn').textContent='📷 Attiva cam';
+  document.getElementById('btnSnap').disabled=true; dot('dCam',null);
+}
 async function switchCam(){if(camActive){stopCam();await toggleCam();}}
-
-// Snap foto → Gemini tramite conversazione di testo con immagine inline
 function doSnap(){
   if(!camActive){toast('❌ Attiva prima la cam');return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connetti prima Gemini');return;}
   const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
-  c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);
+  c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
   const b64=c.toDataURL('image/jpeg',.85).split(',')[1];
-  const fl=document.getElementById('snapFlash');fl.classList.add('go');setTimeout(()=>fl.classList.remove('go'),200);
-  // Gemini Live: immagine via realtimeInput con mediaChunks (camelCase)
-  ws.send(JSON.stringify({
-    realtimeInput:{
-      mediaChunks:[
-        {mimeType:'image/jpeg', data:b64},
-      ]
-    }
-  }));
-  // Testo separato come clientContent
-  ws.send(JSON.stringify({
-    clientContent:{
-      turns:[{role:'user',parts:[{text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}]}],
-      turnComplete:true
-    }
-  }));
+  const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
+  ws.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'user',content:[
+    {type:'input_image',image:b64},{type:'input_text',text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}
+  ]}}));
+  ws.send(JSON.stringify({type:'response.create'}));
   document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
-  addMsg('📸 [foto inviata]','sys');toast('📸 Foto inviata!');
+  addMsg('📸 [foto inviata]','sys'); toast('📸 Foto inviata!');
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CONTROLLI UI
+// SLIDERS
 // ═══════════════════════════════════════════════════════════════
-function oGain(v){document.getElementById('vGain').textContent=v+'%';if(workletNode&&!autoMuteSuspended)workletNode.port.postMessage({cmd:'gain',value:parseInt(v)/100});}
+function oGain(v){
+  document.getElementById('vGain').textContent=v+'%';
+  // Aggiorna gain nel worklet live (solo se mic non è auto-mutato)
+  if(workletNode && !autoMuteSuspended){
+    workletNode.port.postMessage({cmd:'gain', value:parseInt(v)/100});
+  }
+}
 function oThr(v){document.getElementById('vThr').textContent=v;}
-function setSt(s){const m={idle:'● IDLE',connecting:'◌ CONNESSIONE...',listening:'◉ IN ASCOLTO',talking:'▶ PARLA'};document.getElementById('stLbl').textContent=m[s]||s;}
-function dot(id,st){const d=document.getElementById(id);if(!d)return;d.className='dot'+(st==='on'?' on':st==='er'?' er':st==='tk'?' tk':st==='muted'?' muted':'');}
-function updBtn(){const b=document.getElementById('btnConn');if(connected){b.classList.add('off');b.textContent='🔴  DISCONNETTI';}else{b.classList.remove('off');b.textContent='✨  CONNETTI GEMINI';}}
-function toggleMute(){muted=!muted;const b=document.getElementById('btnMute');b.textContent=muted?'🔇 MUTO':'🎙 ATTIVO';b.classList.toggle('on',muted);toast(muted?'🔇 Mic silenziato':'🎙 Mic attivo');}
+function oSil(v){document.getElementById('vSil').textContent=v+' ms';}
+function updVadUI(){
+  const m=document.getElementById('selVad').value;
+  document.getElementById('pSVad').style.display=m==='server_vad'?'':'none';
+  document.getElementById('pSemVad').style.display=m==='semantic_vad'?'':'none';
+}
 
 // ═══════════════════════════════════════════════════════════════
-// PERSONAGGI (condivisi con openai.html — stesso localStorage)
+// STATUS
+// ═══════════════════════════════════════════════════════════════
+function setSt(s){
+  const m={idle:'● IDLE',connecting:'◌ CONNESSIONE...',listening:'◉ IN ASCOLTO',talking:'▶ PARLA'};
+  document.getElementById('stLbl').textContent=m[s]||s;
+}
+function dot(id,st){
+  const d=document.getElementById(id); if(!d)return;
+  d.className='dot'+(st==='on'?' on':st==='er'?' er':st==='tk'?' tk':st==='muted'?' muted':'');
+}
+function updBtn(){
+  const b=document.getElementById('btnConn');
+  if(connected){b.classList.add('off');b.textContent='🔴  DISCONNETTI';}
+  else{b.classList.remove('off');b.textContent='✨  CONNETTI GEMINI';}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MUTE MANUALE
+// ═══════════════════════════════════════════════════════════════
+function toggleMute(){
+  muted=!muted;
+  const b=document.getElementById('btnMute');
+  b.textContent=muted?'🔇 MUTO':'🎙 ATTIVO'; b.classList.toggle('on',muted);
+  toast(muted?'🔇 Mic silenziato':'🎙 Mic attivo');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PERSONAGGI
 // ═══════════════════════════════════════════════════════════════
 function getChars(){try{return JSON.parse(localStorage.getItem(LS_CHARS))||[];}catch{return[];}}
-function saveCharsLS(a){try{localStorage.setItem(LS_CHARS,JSON.stringify(a));}catch(e){toast('⚠️ Salvataggio fallito: '+e.message);}}
+function saveCharsLS(a){
+  try{localStorage.setItem(LS_CHARS,JSON.stringify(a));}
+  catch(e){toast('⚠️ Salvataggio fallito: '+e.message);}
+}
 function renderChars(){
   const sel=document.getElementById('selChar'),chars=getChars();
-  let last='';try{last=localStorage.getItem(LS_LAST)||'';}catch(e){}
+  let last=''; try{last=localStorage.getItem(LS_LAST)||'';}catch(e){}
   sel.innerHTML='';
   if(!chars.length){sel.innerHTML='<option value="">— nessun personaggio —</option>';}
   else{chars.forEach(c=>sel.appendChild(new Option(c.name,c.name)));if(chars.find(c=>c.name===last))sel.value=last;}
   onCharChg();
 }
-const GEMINI_VOICES_LIST=['Puck','Charon','Kore','Fenrir','Aoede','Leda','Orus','Zephyr','Autonoe','Umbriel'];
-const OPENAI_TO_GEMINI={'alloy':'Aoede','ash':'Charon','ballad':'Kore','coral':'Leda','echo':'Fenrir','sage':'Orus','shimmer':'Aoede','verse':'Puck','cedar':'Umbriel','marin':'Zephyr'};
-
-function remapVoice(v){
-  if(!v)return'Aoede';
-  if(GEMINI_VOICES_LIST.includes(v))return v;
-  return OPENAI_TO_GEMINI[v.toLowerCase()]||'Aoede';
-}
-
 function onCharChg(){
   const name=document.getElementById('selChar').value,char=getChars().find(c=>c.name===name),prev=document.getElementById('charPrev');
   if(char){
     prev.style.display='';prev.textContent=char.prompt.slice(0,150)+(char.prompt.length>150?'…':'');
-    const mappedVoice=remapVoice(char.voice);
-    if(char.voice&&mappedVoice!==char.voice)dbg('⚠️ Voce "'+char.voice+'" → mappata a "'+mappedVoice+'" (Gemini)');
-    if(mappedVoice)document.getElementById('selVoice').value=mappedVoice;
+    if(char.voice)document.getElementById('selVoice').value=char.voice;
     try{localStorage.setItem(LS_LAST,name);}catch(e){}
-    activePrompt=char.prompt;activeVoice=mappedVoice||document.getElementById('selVoice').value;
+    activePrompt=char.prompt; activeVoice=char.voice||document.getElementById('selVoice').value;
     document.getElementById('charInfo').textContent='🎭 '+name+'  ·  🔊 '+activeVoice;
   }else{
-    prev.style.display='none';activePrompt='Sei un assistente vocale. Rispondi sempre in italiano.';
+    prev.style.display='none'; activePrompt='Sei un assistente vocale. Rispondi sempre in italiano.';
     activeVoice=document.getElementById('selVoice').value;
     document.getElementById('charInfo').textContent='— nessun personaggio —';
   }
 }
-function openCharEd(name){editingChar=name||null;const char=name?getChars().find(c=>c.name===name):null;document.getElementById('charEdTitle').textContent=char?'✏️ Modifica: '+name:'✏️ Nuovo';document.getElementById('edName').value=char?.name||'';document.getElementById('edPrompt').value=char?.prompt||'';document.getElementById('edVoice').value=char?.voice||'';document.getElementById('btnCharDel').style.display=char?'':'none';document.getElementById('charEd').classList.add('open');setTimeout(()=>document.getElementById('edName').focus(),50);}
+function openCharEd(name){
+  editingChar=name||null;
+  const char=name?getChars().find(c=>c.name===name):null;
+  document.getElementById('charEdTitle').textContent=char?'✏️ Modifica: '+name:'✏️ Nuovo';
+  document.getElementById('edName').value=char?.name||'';
+  document.getElementById('edPrompt').value=char?.prompt||'';
+  document.getElementById('edVoice').value=char?.voice||'';
+  document.getElementById('btnCharDel').style.display=char?'':'none';
+  document.getElementById('charEd').classList.add('open');
+  setTimeout(()=>document.getElementById('edName').focus(),50);
+}
 function closeCharEd(){document.getElementById('charEd').classList.remove('open');editingChar=null;}
 function saveChar(){
   const name=document.getElementById('edName').value.trim(),prompt=document.getElementById('edPrompt').value.trim(),voice=document.getElementById('edVoice').value;
   if(!name||!prompt){toast('⚠️ Nome e istruzioni obbligatori');return;}
-  let chars=getChars();if(editingChar&&editingChar!==name)chars=chars.filter(c=>c.name!==editingChar);
-  const idx=chars.findIndex(c=>c.name===name);if(idx>=0)chars[idx]={name,prompt,voice};else chars.push({name,prompt,voice});
-  saveCharsLS(chars);try{localStorage.setItem(LS_LAST,name);}catch(e){}
-  renderChars();document.getElementById('selChar').value=name;onCharChg();closeCharEd();toast('✅ "'+name+'" salvato');
-  if(connected){sendSetup();addMsg('🔄 Personaggio aggiornato','sys');}
+  let chars=getChars();
+  if(editingChar&&editingChar!==name) chars=chars.filter(c=>c.name!==editingChar);
+  const idx=chars.findIndex(c=>c.name===name);
+  if(idx>=0) chars[idx]={name,prompt,voice}; else chars.push({name,prompt,voice});
+  saveCharsLS(chars);
+  try{localStorage.setItem(LS_LAST,name);}catch(e){}
+  renderChars(); document.getElementById('selChar').value=name; onCharChg(); closeCharEd();
+  toast('✅ "'+name+'" salvato');
+  if(connected){sendSess();addMsg('🔄 Personaggio aggiornato','sys');}
 }
-function delChar(){if(!editingChar)return;saveCharsLS(getChars().filter(c=>c.name!==editingChar));renderChars();closeCharEd();toast('🗑 Eliminato');}
-function exportChar(){const name=document.getElementById('selChar').value;const char=getChars().find(c=>c.name===name);if(!char){toast('⚠️ Nessun personaggio');return;}const txt='NOME='+char.name+'\nVOCE='+(char.voice||'')+'\n'+char.prompt;const url=URL.createObjectURL(new Blob([txt],{type:'text/plain'}));const a=document.createElement('a');a.href=url;a.download=char.name.replace(/\s+/g,'_')+'.txt';a.click();URL.revokeObjectURL(url);toast('📤 Esportato');}
-function importChar(inp){const file=inp.files[0];if(!file)return;const r=new FileReader();r.onload=e=>{const lines=e.target.result.replace(/\r/g,'').split('\n');let name=file.name.replace('.txt',''),voice='',start=0;if(lines[0]?.startsWith('NOME=')){name=lines[0].slice(5).trim();start++;}if(lines[start]?.startsWith('VOCE=')){voice=lines[start].slice(5).trim();start++;}const prompt=lines.slice(start).join('\n').trim();document.getElementById('edName').value=name;document.getElementById('edPrompt').value=prompt;document.getElementById('edVoice').value=voice;document.getElementById('btnCharDel').style.display='none';document.getElementById('charEdTitle').textContent='✏️ Importa';editingChar=null;document.getElementById('charEd').classList.add('open');inp.value='';toast('📂 Caricato — controlla e salva');};r.readAsText(file);}
+function delChar(){
+  if(!editingChar)return;
+  saveCharsLS(getChars().filter(c=>c.name!==editingChar));
+  renderChars(); closeCharEd(); toast('🗑 Eliminato');
+}
+function exportChar(){
+  const name=document.getElementById('selChar').value;
+  const char=getChars().find(c=>c.name===name);
+  if(!char){toast('⚠️ Nessun personaggio selezionato');return;}
+  const txt='NOME='+char.name+'\nVOCE='+( char.voice||'')+'\n'+char.prompt;
+  const url=URL.createObjectURL(new Blob([txt],{type:'text/plain'}));
+  const a=document.createElement('a'); a.href=url; a.download=char.name.replace(/\s+/g,'_')+'.txt'; a.click();
+  URL.revokeObjectURL(url); toast('📤 Esportato');
+}
+function importChar(inp){
+  const file=inp.files[0]; if(!file)return;
+  const r=new FileReader();
+  r.onload=e=>{
+    const lines=e.target.result.replace(/\r/g,'').split('\n');
+    let name=file.name.replace('.txt',''),voice='',start=0;
+    if(lines[0]?.startsWith('NOME=')){name=lines[0].slice(5).trim();start++;}
+    if(lines[start]?.startsWith('VOCE=')){voice=lines[start].slice(5).trim();start++;}
+    const prompt=lines.slice(start).join('\n').trim();
+    document.getElementById('edName').value=name;
+    document.getElementById('edPrompt').value=prompt;
+    document.getElementById('edVoice').value=voice;
+    document.getElementById('btnCharDel').style.display='none';
+    document.getElementById('charEdTitle').textContent='✏️ Importa';
+    editingChar=null; document.getElementById('charEd').classList.add('open');
+    inp.value=''; toast('📂 Caricato — controlla e salva');
+  };
+  r.readAsText(file);
+}
 
 // ═══════════════════════════════════════════════════════════════
-// CONOSCENZA (condivisa con openai.html)
+// CONOSCENZA
 // ═══════════════════════════════════════════════════════════════
 function loadKnowLS(){const s=localStorage.getItem(LS_KNOW);if(s)try{knowledge=JSON.parse(s);}catch{}renderKnowView();}
-function renderKnowView(){const v=document.getElementById('knowView');if(knowledge.text){v.style.color='var(--text)';v.textContent=(knowledge.title?knowledge.title+'\n\n':'')+knowledge.text;}else{v.style.color='var(--muted)';v.textContent='Nessuna conoscenza caricata.';}}
-function toggleKnowEd(){const ed=document.getElementById('knowEd');if(ed.classList.contains('open')){closeKnowEd();}else{document.getElementById('knowTitle').value=knowledge.title||'';document.getElementById('knowText').value=knowledge.text||'';ed.classList.add('open');document.getElementById('btnKnowEd').textContent='✕ Chiudi';setTimeout(()=>document.getElementById('knowText').focus(),50);}}
-function closeKnowEd(){document.getElementById('knowEd').classList.remove('open');document.getElementById('btnKnowEd').textContent='✏️ Modifica';}
-function saveKnow(){knowledge={title:document.getElementById('knowTitle').value.trim(),text:document.getElementById('knowText').value.trim()};try{localStorage.setItem(LS_KNOW,JSON.stringify(knowledge));}catch(e){toast('⚠️ Salvataggio fallito');return;}renderKnowView();closeKnowEd();toast('✅ Conoscenza salvata');if(connected){sendSetup();addMsg('🔄 Conoscenza aggiornata','sys');}}
-function clearKnow(){knowledge={title:'',text:''};try{localStorage.removeItem(LS_KNOW);}catch(e){}renderKnowView();closeKnowEd();toast('🗑 Rimossa');if(connected)sendSetup();}
-function loadKnowFile(inp){const file=inp.files[0];if(!file)return;const r=new FileReader();r.onload=e=>{document.getElementById('knowTitle').value=file.name.replace('.txt','');document.getElementById('knowText').value=e.target.result.replace(/\r/g,'').trim();document.getElementById('knowEd').classList.add('open');document.getElementById('btnKnowEd').textContent='✕ Chiudi';inp.value='';toast('📂 Caricato — premi Salva');};r.readAsText(file);}
-function buildSystemPrompt(){const base=activePrompt;if(!knowledge.text)return base;return base+'\n\n---\nINFORMAZIONI EVENTO'+(knowledge.title?' ('+knowledge.title+')':'')+(':\n')+knowledge.text;}
-
-// ═══════════════════════════════════════════════════════════════
-// COSTO — stima approssimativa token audio Gemini
-// ═══════════════════════════════════════════════════════════════
-function renderCost(){
-  const P=PRICES[document.getElementById('selModel').value]||PRICES['gemini-2.5-flash-native-audio-latest'];
-  const aI=(tok.ai/1e6)*P.ai*EUR,aO=(tok.ao/1e6)*P.ao*EUR;
-  const tot=aI+aO,fmt=v=>v<.0001?'<€0.0001':'€'+v.toFixed(4);
-  document.getElementById('costBox').innerHTML=
-    '🎤 Audio IN:  ~'+tok.ai.toLocaleString()+' tok → '+fmt(aI)+'<br>'+
-    '🔊 Audio OUT: ~'+tok.ao.toLocaleString()+' tok → '+fmt(aO)+'<br>'+
-    '<div style="font-size:.6rem;color:var(--muted);margin-top:4px">⚠️ Stima: Gemini non restituisce token esatti via WS raw</div>'+
-    '<div class="costtot">💶 TOTALE STIMATO: '+fmt(tot)+'</div>';
+function renderKnowView(){
+  const v=document.getElementById('knowView');
+  if(knowledge.text){v.style.color='var(--text)';v.textContent=(knowledge.title?knowledge.title+'\n\n':'')+knowledge.text;}
+  else{v.style.color='var(--muted)';v.textContent='Nessuna conoscenza caricata.';}
 }
-function resetCost(){tok={ai:0,ao:0};document.getElementById('costBox').innerHTML='<span style="color:var(--muted)">Azzerato.</span>';}
-
-// ═══════════════════════════════════════════════════════════════
-// REC — identica a openai-v8
-// ═══════════════════════════════════════════════════════════════
-function toggleRec(){isRec=!isRec;const b=document.getElementById('btnRec');if(isRec){recChunks=[];b.textContent='⏹ STOP REC';b.classList.add('rec');toast('⏺ REC avviata');}else{b.textContent='⏺ AVVIA REC';b.classList.remove('rec');if(recChunks.length)saveWav();else toast('⚠️ Nessun audio');}}
-function cancelRec(){isRec=false;recChunks=[];const b=document.getElementById('btnRec');b.textContent='⏺ AVVIA REC';b.classList.remove('rec');toast('REC annullata');}
-function saveWav(){
-  if(!recChunks.length){toast('⚠️ Nessun audio');return;}
-  const total=recChunks.reduce((a,c)=>a+c.length,0);
-  const pcm=new Int16Array(total);let off=0;
-  recChunks.forEach(c=>{pcm.set(c,off);off+=c.length;});
-  const fadeLen=Math.min(200,pcm.length);
-  for(let i=0;i<fadeLen;i++)pcm[pcm.length-fadeLen+i]=Math.round(pcm[pcm.length-fadeLen+i]*(1-i/fadeLen));
-  const SR=OUTPUT_SR,buf=new ArrayBuffer(44+pcm.length*2),v=new DataView(buf);
-  const w=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
-  w(0,'RIFF');v.setUint32(4,36+pcm.length*2,true);w(8,'WAVE');w(12,'fmt ');
-  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,SR,true);
-  v.setUint32(28,SR*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,pcm.length*2,true);
-  for(let i=0;i<pcm.length;i++)v.setInt16(44+i*2,pcm[i],true);
-  const url=URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
-  const a=document.createElement('a');a.href=url;a.download='robot-gemini-'+Date.now()+'.wav';a.click();URL.revokeObjectURL(url);
-  toast('💾 WAV salvato ('+(pcm.length/SR).toFixed(1)+'s)');
+function toggleKnowEd(){
+  const ed=document.getElementById('knowEd');
+  if(ed.classList.contains('open')){closeKnowEd();}
+  else{
+    document.getElementById('knowTitle').value=knowledge.title||'';
+    document.getElementById('knowText').value=knowledge.text||'';
+    ed.classList.add('open');
+    document.getElementById('btnKnowEd').textContent='✕ Chiudi';
+    setTimeout(()=>document.getElementById('knowText').focus(),50);
+  }
+}
+function closeKnowEd(){document.getElementById('knowEd').classList.remove('open');document.getElementById('btnKnowEd').textContent='✏️ Modifica';}
+function saveKnow(){
+  knowledge={title:document.getElementById('knowTitle').value.trim(),text:document.getElementById('knowText').value.trim()};
+  try{localStorage.setItem(LS_KNOW,JSON.stringify(knowledge));}
+  catch(e){toast('⚠️ Salvataggio fallito: '+e.message); return;}
+  renderKnowView(); closeKnowEd(); toast('✅ Conoscenza salvata');
+  if(connected){sendSess();addMsg('🔄 Conoscenza aggiornata','sys');}
+}
+function clearKnow(){
+  knowledge={title:'',text:''};
+  try{localStorage.removeItem(LS_KNOW);}catch(e){}
+  renderKnowView(); closeKnowEd(); toast('🗑 Rimossa');
+  if(connected) sendSess();
+}
+function loadKnowFile(inp){
+  const file=inp.files[0]; if(!file)return;
+  const r=new FileReader();
+  r.onload=e=>{
+    document.getElementById('knowTitle').value=file.name.replace('.txt','');
+    document.getElementById('knowText').value=e.target.result.replace(/\r/g,'').trim();
+    document.getElementById('knowEd').classList.add('open');
+    document.getElementById('btnKnowEd').textContent='✕ Chiudi';
+    inp.value=''; toast('📂 Caricato — premi Salva');
+  };
+  r.readAsText(file);
+}
+function buildSystemPrompt(){
+  const base=activePrompt;
+  if(!knowledge.text)return base;
+  return base+'\n\n---\nINFORMAZIONI EVENTO'+(knowledge.title?' ('+knowledge.title+')':'')+(':\n')+knowledge.text;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1152,9 +1287,16 @@ function saveWav(){
 // ═══════════════════════════════════════════════════════════════
 async function doSpeed(){
   const btn=document.getElementById('btnSpeed'),res=document.getElementById('spRes');
-  btn.textContent='⌛ Test...';btn.disabled=true;res.style.display='none';
-  try{const t0=Date.now();await fetch('https://speed.cloudflare.com/__down?measId=0&bytes=1000000',{cache:'no-store'});const dt=(Date.now()-t0)/1000,mbps=(8/dt).toFixed(2);const levels=[[1,'⚠️ INSUFFICIENTE','sp0'],[3,'🟡 SUFFICIENTE','sp1'],[10,'🟢 DISCRETO','sp2'],[30,'✅ BUONO','sp3'],[Infinity,'🚀 OTTIMO','sp4']];const[,label,cls]=levels.find(([lim])=>mbps<lim);res.className='spres '+cls;res.textContent=label+'  ·  '+mbps+' Mbps  ·  '+Math.round(dt*1000)+' ms';res.style.display='block';}catch(err){res.className='spres sp0';res.textContent='❌ '+err.message;res.style.display='block';}
-  btn.textContent='⚡  TEST VELOCITÀ';btn.disabled=false;
+  btn.textContent='⌛ Test...'; btn.disabled=true; res.style.display='none';
+  try{
+    const t0=Date.now();
+    await fetch('https://speed.cloudflare.com/__down?measId=0&bytes=1000000',{cache:'no-store'});
+    const dt=(Date.now()-t0)/1000, mbps=(8/dt).toFixed(2);
+    const levels=[[1,'⚠️ INSUFFICIENTE','sp0'],[3,'🟡 SUFFICIENTE','sp1'],[10,'🟢 DISCRETO','sp2'],[30,'✅ BUONO','sp3'],[Infinity,'🚀 OTTIMO','sp4']];
+    const [,label,cls]=levels.find(([lim])=>mbps<lim);
+    res.className='spres '+cls; res.textContent=label+'  ·  '+mbps+' Mbps  ·  '+Math.round(dt*1000)+' ms'; res.style.display='block';
+  }catch(err){res.className='spres sp0'; res.textContent='❌ '+err.message; res.style.display='block';}
+  btn.textContent='⚡  TEST VELOCITÀ'; btn.disabled=false;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1169,11 +1311,86 @@ function tickTimer(){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// NET CHECK  |  TOAST
+// COSTO
 // ═══════════════════════════════════════════════════════════════
-async function netCheck(){try{await fetch('https://www.gstatic.com/generate_204',{mode:'no-cors',cache:'no-store'});dot('dNet','on');}catch{dot('dNet','er');}}
+function addTok(u){
+  const ai=u.input_token_details||{},ao=u.output_token_details||{};
+  // token contati direttamente in onMsg per Gemini
+}
+function renderCost(){
+  const P=PRICES[document.getElementById('selModel').value]||PRICES['gemini-2.5-flash-native-audio-latest'];
+  const aI=(tok.ai/1e6)*P.ai*EUR, aO=(tok.ao/1e6)*P.ao*EUR;
+  const tot=aI+aO, fmt=v=>v<.0001?'<€0.0001':'€'+v.toFixed(4);
+  document.getElementById('costBox').innerHTML=
+    '🎤 Audio IN:  ~'+tok.ai.toLocaleString()+' tok → '+fmt(aI)+'<br>'+
+    '🔊 Audio OUT: ~'+tok.ao.toLocaleString()+' tok → '+fmt(aO)+'<br>'+
+    '<div style="font-size:.6rem;color:var(--muted);margin-top:4px">⚠️ Stima ~25 tok/s</div>'+
+    '<div class="costtot">💶 TOTALE STIMATO: '+fmt(tot)+'</div>';
+}
+function resetCost(){tok={ai:0,ao:0};document.getElementById('costBox').innerHTML='<span style="color:var(--muted)">Azzerato.</span>';}
+
+// ═══════════════════════════════════════════════════════════════
+// REC
+// ═══════════════════════════════════════════════════════════════
+function toggleRec(){
+  isRec=!isRec;const b=document.getElementById('btnRec');
+  if(isRec){recChunks=[];b.textContent='⏹ STOP REC';b.classList.add('rec');toast('⏺ REC avviata');}
+  else{b.textContent='⏺ AVVIA REC';b.classList.remove('rec');if(recChunks.length)saveWav();else toast('⚠️ Nessun audio');}
+}
+function cancelRec(){isRec=false;recChunks=[];const b=document.getElementById('btnRec');b.textContent='⏺ AVVIA REC';b.classList.remove('rec');toast('REC annullata');}
+function saveWav(){
+  if(!recChunks.length){toast('⚠️ Nessun audio da salvare');return;}
+
+  // Concatenazione diretta senza silenzio artificiale tra i chunk.
+  // I chunk sono già in ordine cronologico perché registrati alla ricezione dalla rete.
+  const total = recChunks.reduce((a,c)=>a+c.length, 0);
+  const pcm   = new Int16Array(total);
+  let off=0;
+  recChunks.forEach(c=>{pcm.set(c,off);off+=c.length;});
+
+  // Fade-out sugli ultimi 200 campioni per evitare click di fine registrazione
+  const fadeLen = Math.min(200, pcm.length);
+  for(let i=0;i<fadeLen;i++){
+    pcm[pcm.length-fadeLen+i] = Math.round(pcm[pcm.length-fadeLen+i] * (1 - i/fadeLen));
+  }
+
+  // Header WAV standard PCM16 mono 24000Hz
+  const SR=24000;
+  const buf=new ArrayBuffer(44+pcm.length*2), v=new DataView(buf);
+  const w=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
+  w(0,'RIFF'); v.setUint32(4,36+pcm.length*2,true);
+  w(8,'WAVE'); w(12,'fmt ');
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,SR,true); v.setUint32(28,SR*2,true);
+  v.setUint16(32,2,true);  v.setUint16(34,16,true);
+  w(36,'data'); v.setUint32(40,pcm.length*2,true);
+  for(let i=0;i<pcm.length;i++) v.setInt16(44+i*2,pcm[i],true);
+
+  const url=URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
+  const a=document.createElement('a');
+  a.href=url; a.download='robot-'+Date.now()+'.wav'; a.click();
+  URL.revokeObjectURL(url);
+  const durSec=(pcm.length/SR).toFixed(1);
+  toast('💾 WAV salvato ('+durSec+'s)');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NET CHECK
+// ═══════════════════════════════════════════════════════════════
+async function netCheck(){
+  try{await fetch('https://www.gstatic.com/generate_204',{mode:'no-cors',cache:'no-store'});dot('dNet','on');}
+  catch{dot('dNet','er');}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════════
 let _tt=null;
-function toast(m){const e=document.getElementById('toast');e.textContent=m;e.classList.add('s');clearTimeout(_tt);_tt=setTimeout(()=>e.classList.remove('s'),3000);}
+function toast(m){
+  const e=document.getElementById('toast');
+  e.textContent=m; e.classList.add('s');
+  clearTimeout(_tt); _tt=setTimeout(()=>e.classList.remove('s'),3000);
+}
 
 init();
 </script>
