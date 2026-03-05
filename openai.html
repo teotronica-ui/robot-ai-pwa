@@ -594,6 +594,13 @@ function dbg(msg){
 // ═══════════════════════════════════════════════════════════════
 // MIC — iOS: un solo getUserMedia, dentro user gesture
 // ═══════════════════════════════════════════════════════════════
+// Strategia selezione mic iOS + split jack:
+// iOS nasconde i deviceId reali finché non hai già il permesso.
+// Al primo avvio facciamo getUserMedia senza constraint (ottieni permesso),
+// poi enumeriamo i dispositivi (ora con label visibili), cerchiamo il
+// "Wired Headset" / "Headset Microphone" e se trovato riprendiamo
+// lo stream con il deviceId corretto.
+// ═══════════════════════════════════════════════════════════════
 async function startVuMonitor(forceDeviceId){
   if(sharedMicStream){sharedMicStream.getTracks().forEach(t=>t.stop());sharedMicStream=null;}
   if(vuRaf){cancelAnimationFrame(vuRaf);vuRaf=null;}
@@ -605,24 +612,55 @@ async function startVuMonitor(forceDeviceId){
   try{
     let devId=forceDeviceId||document.getElementById('selMic')?.value||'';
 
-    // iOS + split jack: NON cercare mic "non-default".
-    // Quando lo split è collegato, iOS registra il suo mic come dispositivo default.
-    // Cercarne uno "non default" porta a selezionare il mic sbagliato.
-    // Se l'utente ha selezionato esplicitamente un deviceId dal menu, lo usiamo.
-    // Altrimenti usiamo "default" (= quello collegato fisicamente in quel momento).
+    if(!devId){
+      // FASE 1: apri con default per sbloccare il permesso e rendere visibili le label
+      dbg('🎤 getUserMedia (default — permesso + detect wired)...');
+      const tempStream=await navigator.mediaDevices.getUserMedia({
+        audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}
+      });
+      const tempLabel=tempStream.getAudioTracks()[0]?.label||'';
+      dbg('📋 Mic default: "'+tempLabel+'"');
 
-    const constraint = devId
-      ? {audio:{deviceId:{exact:devId}, echoCancellation:false, noiseSuppression:false, autoGainControl:false}}
-      : {audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}};
+      // FASE 2: ora che abbiamo il permesso, enumera con label visibili
+      const devs=await navigator.mediaDevices.enumerateDevices();
+      const mics=devs.filter(d=>d.kind==='audioinput');
+      dbg('📋 Mic disponibili dopo permesso: '+mics.map(m=>'"'+(m.label||'?')+'"').join(', '));
 
-    dbg('🎤 getUserMedia '+(devId?'id:'+devId.slice(0,10)+'...':'(default — split jack)')+'...');
-    sharedMicStream=await navigator.mediaDevices.getUserMedia(constraint);
+      // Cerca microfono cablato esterno (split jack / wired headset)
+      // Pattern iOS: "Wired Microphone", "Headset Microphone", "iPhone Microphone" (= built-in, da escludere)
+      const wired=mics.find(m=>
+        m.deviceId && m.deviceId!=='' &&
+        /wired|headset|cuffie|external|esterno/i.test(m.label) &&
+        !/built.?in|receiver|interno|iphone\s+micro/i.test(m.label)
+      );
+
+      if(wired && wired.deviceId !== tempStream.getAudioTracks()[0]?.getSettings()?.deviceId){
+        // Trovato mic esterno diverso dal default — chiudi temp e riapri con deviceId esatto
+        tempStream.getTracks().forEach(t=>t.stop());
+        devId=wired.deviceId;
+        dbg('🎯 Wired mic trovato: "'+wired.label+'" — switch a deviceId:'+devId.slice(0,12)+'...');
+      } else {
+        // Default è già quello giusto (su iOS con split jack collegato è già il Wired Headset)
+        // Riutilizziamo lo stream già aperto
+        sharedMicStream=tempStream;
+        devId=''; // segnala che è già aperto
+      }
+    }
+
+    if(!sharedMicStream){
+      // Apri con deviceId specifico (selezionato manualmente o trovato nella fase 2)
+      const constraint=devId
+        ?{audio:{deviceId:{exact:devId}, echoCancellation:false, noiseSuppression:false, autoGainControl:false}}
+        :{audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}};
+      dbg('🎤 getUserMedia '+(devId?'exact:'+devId.slice(0,12)+'...':'(default)')+'...');
+      sharedMicStream=await navigator.mediaDevices.getUserMedia(constraint);
+    }
 
     const track=sharedMicStream.getAudioTracks()[0];
     const settings=track?.getSettings()||{};
     currentMicId=settings.deviceId||devId||'';
     const label=track?.label||'sconosciuto';
-    dbg('✅ MIC: "'+label+'" SR:'+(settings.sampleRate||'?')+'Hz');
+    dbg('✅ MIC attivo: "'+label+'" SR:'+(settings.sampleRate||'?')+'Hz');
     console.log('[MIC]',label,settings);
 
     await pollMics();
@@ -631,7 +669,7 @@ async function startVuMonitor(forceDeviceId){
 
     // Track ended = jack rimosso fisicamente
     track.addEventListener('ended',()=>{
-      dbg('⚠️ Mic disconnesso fisicamente');
+      dbg('⚠️ Mic disconnesso fisicamente — restart...');
       dot('dMic',null);
       setTimeout(()=>startVuMonitor().catch(e=>dbg('❌ Restart mic: '+e.message)), 1500);
     });
@@ -1009,10 +1047,21 @@ function onMsg(e){
       // Non riabilitiamo il mic qui, lo facciamo a response.audio.done
       break;
     case 'response.audio.done':
-      // Tutto l'audio del robot è stato inviato — riabilita mic
-      setRobotSpeaking(false);
-      setSt('listening');
-      if(!silStart) silStart=Date.now();
+      // Accoda 1 secondo di silenzio dopo la risposta prima di riabilitare il mic.
+      // Serve a: (1) dare respiro naturale tra risposte, (2) evitare che il mic
+      // si riattivi troppo presto catturando la coda di riverbero delle casse.
+      if(audioCtx){
+        const SR=24000, pauseSamples=SR*1; // 1 secondo
+        audioQ.push(new Int16Array(pauseSamples)); // silenzio in coda
+        if(!playing) drain();
+      }
+      // Riabilita mic solo dopo che il silenzio è stato riprodotto
+      // Usiamo un timeout basato su nextPlayTime stimato
+      setTimeout(()=>{
+        setRobotSpeaking(false);
+        setSt('listening');
+        if(!silStart) silStart=Date.now();
+      }, 1100); // leggermente > 1s per sicurezza
       break;
     case 'input_audio_buffer.speech_started':
       setSt('talking'); dot('dMic','tk'); silStart=null;
