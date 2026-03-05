@@ -687,7 +687,8 @@ async function conn(){
     const url=GEMINI_WS+'?key='+API_KEY;
     dbg('🌐 WS → '+url.split('?')[0].split('/').pop());
     ws=new WebSocket(url);
-    ws.binaryType='arraybuffer';
+    // NON impostiamo binaryType='arraybuffer' — Gemini manda JSON come testo,
+    // lasciamo il default che converte blob in stringa automaticamente.
 
     wsTimeoutTimer=setTimeout(()=>{
       if(!connected){dbg('⏱ Timeout WS ('+WS_TIMEOUT_MS+'ms)');toast('❌ Timeout');disc();scheduleReconnect();}
@@ -807,8 +808,25 @@ function onChunk(e){
 // WS MESSAGES — Gemini BidiGenerateContent protocol
 // ═══════════════════════════════════════════════════════════════
 function onMsg(e){
+  // Gemini può mandare sia stringhe JSON che ArrayBuffer binari.
+  // ws.binaryType='arraybuffer' fa sì che i binari arrivino come ArrayBuffer —
+  // JSON.parse(ArrayBuffer) → "Unexpected identifier 'object'".
+  // Convertiamo sempre a stringa prima di parsare.
+  let raw;
+  if(typeof e.data === 'string'){
+    raw = e.data;
+  } else if(e.data instanceof ArrayBuffer){
+    raw = new TextDecoder().decode(e.data);
+  } else {
+    dbg('⚠️ onMsg: tipo inatteso '+typeof e.data);
+    return;
+  }
+
   let m;
-  try{m=JSON.parse(e.data);}catch(ex){dbg('❌ JSON parse: '+ex.message);return;}
+  try{m=JSON.parse(raw);}catch(ex){
+    dbg('❌ JSON parse: '+ex.message+' | raw: '+raw.slice(0,80));
+    return;
+  }
 
   // Log raw per debug (solo prime 200 chars)
   const raw=JSON.stringify(m);
