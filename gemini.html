@@ -966,13 +966,15 @@ function disc(){
   connected=false; setupReady=false;
   clearTimeout(wsTimeoutTimer);
   if(ws){ws.onclose=null;try{ws.close();}catch(e){}ws=null;}
-  if(workletNode){try{workletNode.port.postMessage({cmd:'stop'});}catch(e){}workletNode=null;}
-  micStream=null; audioCtx=null; analyser=vuAnalyser;
+  if(workletNode){try{workletNode.disconnect();workletNode.port.postMessage({cmd:'stop'});}catch(e){}workletNode=null;}
+  if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null;}
+  if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch(e){}}
+  audioCtx=null; analyser=vuAnalyser;
   audioQ=[]; playing=false; silStart=null; nextPlayTime=0;
   robotSpeaking=false; autoMuteSuspended=false;
   setRobotSpeaking(false);
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
-  dot('dAI',null); setSt('idle'); updBtn();
+  dot('dAI',null); dot('dMic',null); setSt('idle'); updBtn();
   document.getElementById('btnConn').disabled=false;
 }
 
@@ -1093,10 +1095,9 @@ function doSnap(){
   c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
   const b64=c.toDataURL('image/jpeg',.85).split(',')[1];
   const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
-  ws.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'user',content:[
-    {type:'input_image',image:b64},{type:'input_text',text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}
-  ]}}));
-  ws.send(JSON.stringify({type:'response.create'}));
+  // Protocollo Gemini Live: immagine via realtimeInput + testo via clientContent
+  ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:b64,mimeType:'image/jpeg'}]}}));
+  ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}]}],turnComplete:true}}));
   document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
   addMsg('📸 [foto inviata]','sys'); toast('📸 Foto inviata!');
 }
