@@ -25,9 +25,11 @@
 
 <label>Modello</label>
 <select id="selModel">
-  <option value="gemini-2.0-flash-live-001">gemini-2.0-flash-live-001  (v1alpha)</option>
-  <option value="gemini-live-2.5-flash-preview">gemini-live-2.5-flash-preview  (v1alpha)</option>
-  <option value="gemini-2.5-flash-native-audio-preview-09-2025">gemini-2.5-flash-native-audio-preview-09-2025  (v1beta)</option>
+  <option value="gemini-2.5-flash-native-audio-preview-09-2025">gemini-2.5-flash-native-audio-preview-09-2025 (v1beta)</option>
+  <option value="gemini-2.5-flash-native-audio-preview-12-2025">gemini-2.5-flash-native-audio-preview-12-2025 (v1beta)</option>
+  <option value="gemini-2.0-flash-live-001">gemini-2.0-flash-live-001 (v1beta)</option>
+  <option value="gemini-live-2.0-flash-001">gemini-live-2.0-flash-001 (v1alpha)</option>
+  <option value="gemini-live-2.5-flash-preview">gemini-live-2.5-flash-preview (v1alpha)</option>
 </select>
 
 <button id="btnConn" onclick="toggle()">🔌 CONNETTI</button>
@@ -69,9 +71,8 @@ function connect(){
 
   const model = document.getElementById('selModel').value;
 
-  // URL: 2.0 e live-preview → v1alpha, 2.5 native-audio → v1beta
-  const apiVer = (model.startsWith('gemini-2.0') || model.includes('live-2.5') || model.includes('live-preview'))
-    ? 'v1alpha' : 'v1beta';
+  // "gemini-live-*" → v1alpha, tutto il resto → v1beta
+  const apiVer = model.startsWith('gemini-live-') ? 'v1alpha' : 'v1beta';
 
   const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.${apiVer}.GenerativeService.BidiGenerateContent?key=${key}`;
 
@@ -103,11 +104,18 @@ function connect(){
     document.getElementById('btnConn').classList.add('disc');
   };
 
-  ws.onmessage = (e) => {
-    let raw = typeof e.data === 'string' ? e.data
-            : e.data instanceof ArrayBuffer ? new TextDecoder().decode(e.data)
-            : null;
-    if(!raw){ log('⚠️ Messaggio tipo: ' + typeof e.data, 'er'); return; }
+  ws.onmessage = async (e) => {
+    let raw;
+    if(typeof e.data === 'string'){
+      raw = e.data;
+    } else if(e.data instanceof ArrayBuffer){
+      raw = new TextDecoder().decode(e.data);
+    } else if(e.data instanceof Blob){
+      raw = await e.data.text();  // Safari/iOS restituisce Blob
+    } else {
+      log('⚠️ Messaggio tipo inatteso: ' + e.data?.constructor?.name, 'er');
+      return;
+    }
 
     let m;
     try { m = JSON.parse(raw); } catch(ex) {
