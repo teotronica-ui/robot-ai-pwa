@@ -406,7 +406,7 @@
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
 const LS_KEY='robot_key_gemini', LS_CHARS='robot_characters', LS_LAST='robot_last_char', LS_KNOW='robot_knowledge';
-const GEMINI_WS='wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
+const GEMINI_WS_BASE='wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage';
 const INPUT_SR=16000, OUTPUT_SR=24000;
 const PRICES={
   'gemini-2.0-flash-live-001':{ai:0.5,ao:2.0},
@@ -824,8 +824,12 @@ async function conn(){
     if(analyser)analyser.connect(workletNode);
     dot('dMic','on');
     const model=document.getElementById('selModel').value;
+    // gemini-2.0-flash-live-001 esiste solo su v1alpha
+    // gemini-2.5-flash-native-audio-* esiste su v1beta
+    const apiVer=model.startsWith('gemini-2.0')?'v1alpha':'v1beta';
+    const GEMINI_WS=GEMINI_WS_BASE+'.'+apiVer+'.GenerativeService.BidiGenerateContent';
     const url=GEMINI_WS+'?key='+API_KEY;
-    dbg('🌐 WS → '+model);
+    dbg('🌐 WS → '+apiVer+' · '+model);
     ws=new WebSocket(url);
     wsTimeoutTimer=setTimeout(()=>{
       if(!connected){dbg('⏱ Timeout WS');toast('❌ Timeout');disc();scheduleReconnect();}
