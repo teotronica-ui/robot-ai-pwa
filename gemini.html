@@ -718,7 +718,12 @@ async function startVuMonitor(forceDeviceId){
       let peak=0;
       for(let i=lo;i<=hi;i++){if(d[i]>peak)peak=d[i];}
       const boosted=Math.min(255, Math.pow(peak/255, 0.55)*255);
-      drawVU(boosted);
+      // Ferma il VU meter visivamente se mic è sospeso (auto-mute o mute manuale)
+      if(autoMuteSuspended || muted){
+        drawVU(0);
+      } else {
+        drawVU(boosted);
+      }
       const now=Date.now();
       if(now-vuLogT>3000){vuLogT=now;console.log('[VU] raw peak:'+peak+' boosted:'+Math.round(boosted)+' bins:'+lo+'-'+hi);}
     })();
@@ -944,9 +949,10 @@ function onMsg(e){
     }
     if(sc.turnComplete){
       finalizeRobot();
-      audioQ.push(new Int16Array(OUTPUT_SR));
+      audioQ.push(new Int16Array(OUTPUT_SR)); // padding silenzio finale
       if(!playing)drain();
-      setTimeout(()=>{setRobotSpeaking(false);setSt('listening');if(!silStart)silStart=Date.now();},1100);
+      // Il mic viene sbloccato dal drainWatchdog quando l'audio è davvero finito
+      if(!silStart)silStart=Date.now();
     }
     if(sc.interrupted){
       dbg('🛑 Barge-in');audioQ=[];playing=false;nextPlayTime=0;
@@ -1069,14 +1075,16 @@ async function drain(){
       src.start(startAt);
       nextPlayTime = startAt + buf.duration;
 
-      // Watchdog sull'ultimo buffer pianificato: se dopo la durata attesa
-      // la coda è ancora vuota e playing=true, sblocchiamo lo stato
+      // Watchdog sull'ultimo buffer pianificato: quando l'audio è davvero finito
+      // sbloccchiamo il mic (setRobotSpeaking false) e resettiamo lo stato
       if(audioQ.length === 0){
-        const expectedEnd = (nextPlayTime - audioCtx.currentTime) * 1000 + DRAIN_WATCHDOG;
+        const expectedEnd = (nextPlayTime - audioCtx.currentTime) * 1000 + 200; // 200ms margine
         drainWatchdog=setTimeout(()=>{
           playing=false;
           nextPlayTime=0;
-          dbg('⏱ drain: riproduzione completata');
+          setRobotSpeaking(false);  // ← sblocca mic SOLO quando audio è davvero finito
+          if(connected && !muted) setSt('listening');
+          dbg('⏱ drain: audio completato — mic sbloccato');
         }, expectedEnd);
       }
     }catch(ex){
@@ -1183,6 +1191,16 @@ function toggleMute(){
   muted=!muted;
   const b=document.getElementById('btnMute');
   b.textContent=muted?'🔇 MUTO':'🎙 ATTIVO'; b.classList.toggle('on',muted);
+  // Quando muto: azzera VU visivamente e silenzia il worklet
+  if(muted){
+    drawVU(0);
+    if(workletNode) workletNode.port.postMessage({cmd:'gain', value:0});
+    dot('dMic','muted');
+  } else {
+    if(workletNode && !autoMuteSuspended)
+      workletNode.port.postMessage({cmd:'gain', value: parseInt(document.getElementById('rGain').value)/100});
+    if(connected) dot('dMic','on');
+  }
   toast(muted?'🔇 Mic silenziato':'🎙 Mic attivo');
 }
 
