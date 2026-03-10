@@ -980,7 +980,46 @@ function disc(){
 
 
 // ═══════════════════════════════════════════════════════════════
-// DRAIN — scheduling preciso, zero gap tra chunk
+// RECONNECT
+// ═══════════════════════════════════════════════════════════════
+function scheduleReconnect(){
+  if(userDisconnected) return;
+  if(reconnectCount >= RECONNECT_LIMIT){
+    dbg('❌ Limite riconnessioni raggiunto');
+    toast('❌ Impossibile riconnettersi');
+    hideReconnBar();
+    document.getElementById('btnConn').disabled=false;
+    return;
+  }
+  reconnectCount++;
+  const delay=Math.min(RECONNECT_BASE * Math.pow(2, reconnectCount-1), RECONNECT_MAX);
+  const delaySec=Math.round(delay/1000);
+  dbg('⏳ Riconnessione #'+reconnectCount+' tra '+delaySec+'s...');
+  showReconnBar(reconnectCount, delaySec);
+  let remaining=delaySec;
+  const tick=setInterval(()=>{ remaining--; showReconnBar(reconnectCount, remaining); if(remaining<=0)clearInterval(tick); },1000);
+  reconnectTimer=setTimeout(async()=>{ clearInterval(tick); reconnectTimer=null; hideReconnBar(); if(!userDisconnected)await conn(); }, delay);
+}
+
+function cancelReconnect(){
+  if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+  reconnectCount=0;
+  hideReconnBar();
+}
+
+function showReconnBar(attempt, sec){
+  document.getElementById('reconnMsg').textContent='Riconnessione #'+attempt+'/'+RECONNECT_LIMIT+' tra '+sec+'s...';
+  document.getElementById('reconnBar').classList.add('show');
+  document.getElementById('btnConn').disabled=false;
+  document.getElementById('btnConn').classList.remove('off');
+  document.getElementById('btnConn').textContent='✕  ANNULLA';
+}
+
+function hideReconnBar(){
+  document.getElementById('reconnBar').classList.remove('show');
+}
+
+
 // ═══════════════════════════════════════════════════════════════
 // Invece di aspettare onended per accodare il prossimo buffer,
 // pianifichiamo ogni buffer esattamente al momento in cui finisce
