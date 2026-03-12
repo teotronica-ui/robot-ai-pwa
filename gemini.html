@@ -172,7 +172,10 @@
       <div class="card-hd" style="margin:0">🎤 Input Level</div>
       <div style="font-size:.6rem;color:var(--muted);font-family:var(--mono);margin-top:2px">frequenza vocale · linea rossa = soglia VAD</div>
     </div>
-    <div class="rms-val" id="rmsVal"> 0%</div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button id="btnZero" onclick="calibrateNoise()" style="font-family:var(--mono);font-size:.55rem;padding:5px 9px;background:var(--surf);border:1px solid var(--bord);border-radius:7px;color:var(--muted);cursor:pointer;white-space:nowrap;letter-spacing:1px">LIV.ZERO</button>
+      <div class="rms-val" id="rmsVal"> 0%</div>
+    </div>
   </div>
   <!-- selezione mic -->
   <div class="mic-row">
@@ -469,6 +472,16 @@ let knowledge={title:'',text:''};
 let robotMsgEl=null, robotTxt='';
 // mic/VU
 let sharedMicStream=null, vuCtx=null, vuAnalyser=null, vuRaf=null;
+let vuNoiseFloor=0;   // impostato manualmente con LIV.ZERO
+let vuCalibActive=false, vuCalibFrames=0, vuCalibMax=0;
+
+function calibrateNoise(){
+  // Misura il rumore di fondo per ~1.5 secondi (90 frame a ~60fps)
+  vuCalibActive=true; vuCalibFrames=90; vuCalibMax=0;
+  const btn=document.getElementById('btnZero');
+  if(btn){btn.textContent='⏳ ...';btn.style.borderColor='var(--yellow)';btn.style.color='var(--yellow)';}
+  toast('🎤 Misuro silenzio...');
+}
 let availableMics=[], currentMicId='';
 // auto-mute
 let robotSpeaking=false, autoMuteSuspended=false;
@@ -562,11 +575,12 @@ function buildVU(){
 }
 function drawVU(level){
   localVadLevel=level;  // localVadLevel = valore grezzo peak, usato dal VAD in onChunk
-  // Per il display sottrai il noise floor (~rumore di fondo del mic digitale)
-  // così in silenzio totale mostra 0% invece del 30% fisso
-  const NOISE_FLOOR = 18;  // calibrato empiricamente — abbassa se vuoi più sensibilità
-  const corrected = Math.max(0, level - NOISE_FLOOR);
-  const pct=Math.min(1, corrected / (255 - NOISE_FLOOR));
+  // Noise floor auto-calibrato: aggiornato continuamente in silenzio dal VU loop
+  const corrected = Math.max(0, level - vuNoiseFloor);
+  // Applica gain slider al display: così lo slider ha effetto visivo immediato
+  const gainDisplay = parseInt(document.getElementById('rGain').value) / 100;
+  const withGain = Math.min(255, corrected * gainDisplay);
+  const pct = Math.min(1, withGain / Math.max(1, 255 - vuNoiseFloor));
   const lit=Math.round(pct*N_SEGS);
   const thrRaw=parseInt(document.getElementById('rThr').value);
   const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
@@ -726,6 +740,7 @@ async function startVuMonitor(forceDeviceId){
       setTimeout(()=>startVuMonitor().catch(e=>dbg('❌ Restart mic: '+e.message)), 1500);
     });
 
+    vuNoiseFloor=0; vuCalibActive=false; // reset al cambio mic
     vuCtx=new (window.AudioContext||window.webkitAudioContext)();
     dbg('🔊 AudioContext: '+vuCtx.sampleRate+'Hz state:'+vuCtx.state);
     if(vuCtx.state==='suspended'){try{await vuCtx.resume();}catch(e){}}
@@ -754,9 +769,22 @@ async function startVuMonitor(forceDeviceId){
       let peak=0;
       for(let i=lo;i<=hi;i++){if(d[i]>peak)peak=d[i];}
       const boosted=Math.min(255, Math.pow(peak/255, 0.55)*255);
+      // Se calibrazione manuale attiva, accumula il massimo per N frame
+      if(vuCalibActive){
+        vuCalibMax=Math.max(vuCalibMax, boosted);
+        vuCalibFrames--;
+        if(vuCalibFrames<=0){
+          vuNoiseFloor=vuCalibMax;
+          vuCalibActive=false;
+          const btn=document.getElementById('btnZero');
+          if(btn){btn.textContent='LIV.ZERO';btn.style.borderColor='var(--bord)';btn.style.color='var(--muted)';}
+          dbg('🎤 Noise floor impostato: '+Math.round(vuNoiseFloor));
+          toast('✅ Livello zero: '+Math.round(vuNoiseFloor));
+        }
+      }
       drawVU(boosted);
       const now=Date.now();
-      if(now-vuLogT>3000){vuLogT=now;console.log('[VU] raw peak:'+peak+' boosted:'+Math.round(boosted)+' bins:'+lo+'-'+hi);}
+      if(now-vuLogT>3000){vuLogT=now;console.log('[VU] peak:'+peak+' boosted:'+Math.round(boosted)+' floor:'+Math.round(vuNoiseFloor));}
     })();
 
     // Avvia watchdog AudioContext
