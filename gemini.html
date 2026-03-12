@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Robot AI — Gemini v1</title>
+  <title>Robot AI — Gemini v2</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -187,24 +187,9 @@
   </div>
   <!-- Auto-mute status -->
   <div id="amuteBadge" class="amute-badge">⚪ Auto-mute: standby</div>
-  <div class="chat-box" id="chatBox"><div class="msg sys">— conversazione —</div></div>
 </div>
 
-<!-- CAMERA -->
-<div class="card">
-  <div class="card-hd">📷 Telecamera</div>
-  <div class="cam-ph" id="camPh"><span style="font-size:1.4rem">📷</span><span>Tocca "Attiva cam"</span></div>
-  <video id="camVideo" autoplay playsinline muted></video>
-  <canvas id="camCanvas"></canvas>
-  <div class="brow" style="margin-top:9px">
-    <button class="bs" id="btnCamOn" onclick="toggleCam()">📷 Attiva cam</button>
-    <button class="bs" id="btnSnap" onclick="doSnap()" disabled style="border-color:var(--green);color:var(--green)">📸 SNAP → AI</button>
-  </div>
-  <div class="f" style="margin-top:9px"><label>Videocamera</label><select id="selCam" onchange="switchCam()"></select></div>
-  <div id="snapSt" style="font-size:.63rem;color:var(--muted);font-family:var(--mono);margin-top:4px;min-height:14px"></div>
-</div>
-
-<!-- MIC CONTROLLI -->
+<!-- MIC CONTROLLI — subito dopo VU -->
 <div class="card">
   <div class="card-hd">🎙 Microfono & Controlli</div>
   <div class="sg">
@@ -213,7 +198,7 @@
     <div class="sticks"><span>0%</span><span>◆ 100%</span><span>150%</span></div>
   </div>
   <div class="sg">
-    <div class="sh"><span class="l">Soglia VAD (linea rossa)</span><span class="v" id="vThr">1000</span></div>
+    <div class="sh"><span class="l">Soglia VAD (linea rossa)</span><span class="v" id="vThr">200</span></div>
     <input type="range" id="rThr" min="100" max="6000" step="100" value="200" oninput="oThr(this.value)">
     <div class="sticks"><span>100</span><span>3000</span><span>6000</span></div>
   </div>
@@ -233,6 +218,26 @@
     <div><div class="tlbl">🛑 Barge-in</div><div class="tsub">Puoi interrompere il robot parlando · disabilitato con Auto-mute ON</div></div>
     <label class="tsw"><input type="checkbox" id="chkBarge"><span class="ts"></span></label>
   </div>
+</div>
+
+<!-- CAMERA -->
+<div class="card">
+  <div class="card-hd">📷 Telecamera</div>
+  <div class="cam-ph" id="camPh"><span style="font-size:1.4rem">📷</span><span>Tocca "Attiva cam"</span></div>
+  <video id="camVideo" autoplay playsinline muted></video>
+  <canvas id="camCanvas"></canvas>
+  <div class="brow" style="margin-top:9px">
+    <button class="bs" id="btnCamOn" onclick="toggleCam()">📷 Attiva cam</button>
+    <button class="bs" id="btnSnap" onclick="doSnap()" disabled style="border-color:var(--green);color:var(--green)">📸 SNAP → AI</button>
+  </div>
+  <div class="f" style="margin-top:9px"><label>Videocamera</label><select id="selCam" onchange="switchCam()"></select></div>
+  <div id="snapSt" style="font-size:.63rem;color:var(--muted);font-family:var(--mono);margin-top:4px;min-height:14px"></div>
+</div>
+
+<!-- CHAT — dopo camera -->
+<div class="card">
+  <div class="card-hd">💬 Conversazione</div>
+  <div class="chat-box" id="chatBox"><div class="msg sys">— conversazione —</div></div>
 </div>
 
 <!-- SPEED -->
@@ -390,18 +395,44 @@
   <div class="card-hd">🔑 API Key Google <span style="color:var(--muted);font-size:.57rem">— si inserisce una volta sola</span></div>
   <div class="f">
     <label>Chiave API</label>
-    <input type="password" id="keyIn" placeholder="sk-proj-..." autocomplete="off" spellcheck="false" oninput="onKeyIn()">
+    <input type="password" id="keyIn" placeholder="AIza..." autocomplete="off" spellcheck="false" oninput="onKeyIn()">
     <div class="ks" id="kStat">⚠️ Nessuna chiave salvata</div>
   </div>
   <div class="upl" onclick="document.getElementById('fKeys').click()">
     <input type="file" id="fKeys" accept=".txt" onchange="loadKeysFile(this)">
-    📂 Carica <strong>keys.txt</strong> · <code>OPENAI_KEY=sk-...</code>
+    📂 Carica <strong>keys.txt</strong> · <code>GEMINI_KEY=AIza...</code>
   </div>
 </div>
 
 <div id="toast"></div>
 
 <script>
+const WORKLET_CODE = `
+class PCM16Processor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this._active = true;
+    this.port.onmessage = (e) => {
+      if (e.data.cmd === 'stop') this._active = false;
+      // gain non gestito qui — applicato in onChunk() nel main thread
+    };
+  }
+  process(inputs) {
+    if (!this._active) return false;
+    const ch = inputs[0]?.[0];
+    if (!ch) return true;
+    // Converte float32 -> PCM16 senza modificare il segnale
+    const pcm = new Int16Array(ch.length);
+    for (let i = 0; i < ch.length; i++) {
+      const s = Math.max(-1, Math.min(1, ch[i]));
+      pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    this.port.postMessage(pcm.buffer, [pcm.buffer]);
+    return true;
+  }
+}
+registerProcessor('pcm16-processor', PCM16Processor);
+`;
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
@@ -415,6 +446,7 @@ const PRICES={
   'gemini-2.5-flash-native-audio-latest':{ai:3.0,ao:12.0}
 };
 const EUR=0.92, N_SEGS=36;
+const VU_NOISE_FLOOR=10, VU_SCALE_MAX=190;
 const WS_TIMEOUT_MS   = 15000;  // timeout connessione WS
 const RECONNECT_BASE  = 2000;   // backoff iniziale riconnessione (ms)
 const RECONNECT_MAX   = 30000;  // backoff massimo
@@ -442,7 +474,7 @@ let availableMics=[], currentMicId='';
 // auto-mute
 let robotSpeaking=false, autoMuteSuspended=false;
 // reconnect
-let reconnectCount=0, reconnectTimer=null, wsTimeoutTimer=null;
+let reconnectCount=0, reconnectTimer=null, reconnCountdownInterval=null, wsTimeoutTimer=null;
 let userDisconnected=false; // true = disconnessione volontaria
 // watchdog
 let ctxWatchdogInterval=null, drainWatchdog=null;
@@ -506,8 +538,8 @@ function loadKeysFile(inp){
     let ok=false;
     t.replace(/\r/g,'').split('\n').forEach(ln=>{
       ln=ln.trim();
-      if(ln.startsWith('OPENAI_KEY=')){
-        const k=ln.slice(11).replace(/^["'\s]+|["'\s]+$/g,'');
+      if(ln.startsWith('GEMINI_KEY=')||ln.startsWith('OPENAI_KEY=')){
+        const k=ln.slice(ln.indexOf('=')+1).replace(/^["'\s]+|["'\s]+$/g,'');
         if(k.length>10){
           document.getElementById('keyIn').value=k;
           try{localStorage.setItem(LS_KEY,k);}catch(ex){}
@@ -515,7 +547,7 @@ function loadKeysFile(inp){
         }
       }
     });
-    if(!ok)toast('⚠️ OPENAI_KEY= non trovata nel file');
+    if(!ok)toast('⚠️ GEMINI_KEY= non trovata nel file');
     inp.value='';
   };
   r.readAsArrayBuffer(file);
@@ -531,7 +563,10 @@ function buildVU(){
 }
 function drawVU(level){
   localVadLevel=level;
-  const pct=Math.min(1,level/255), lit=Math.round(pct*N_SEGS);
+  // Sottrai noise floor e rescala: silenzio totale → 0%, voce normale → ~60-80%
+  const corrected=Math.max(0, level-VU_NOISE_FLOOR);
+  const pct=Math.min(1, corrected/VU_SCALE_MAX);
+  const lit=Math.round(pct*N_SEGS);
   const thrRaw=parseInt(document.getElementById('rThr').value);
   const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
   document.getElementById('thrLine').style.left=(thrPct*100)+'%';
@@ -562,7 +597,7 @@ function setRobotSpeaking(speaking){
     overlay.classList.add('show');
     badge.className='amute-badge mic-muted';
     badge.textContent='🔇 Mic sospeso — robot in risposta';
-    if(workletNode) workletNode.port.postMessage({cmd:'gain', value:0});
+    // gain gestito in onChunk — nessun messaggio al worklet
   } else if(speaking && !autoMute){
     // Robot parla ma auto-mute OFF
     overlay.classList.remove('show');
@@ -585,7 +620,9 @@ function setRobotSpeaking(speaking){
 function addMsg(txt,type){
   const box=document.getElementById('chatBox');
   const d=document.createElement('div'); d.className='msg '+type; d.textContent=txt;
-  box.appendChild(d); box.scrollTop=box.scrollHeight;
+  box.appendChild(d);
+  while(box.children.length>80) box.removeChild(box.firstChild);
+  box.scrollTop=box.scrollHeight;
 }
 function appendRobotTxt(delta){
   robotTxt+=delta;
@@ -715,10 +752,18 @@ async function startVuMonitor(forceDeviceId){
       vuAnalyser.getByteFrequencyData(d);
       const binHz=vuCtx.sampleRate/vuAnalyser.fftSize;
       const lo=Math.floor(80/binHz),hi=Math.min(Math.floor(8000/binHz),d.length-1);
+      // Peak su banda vocale → localVadLevel (usato dal VAD in onChunk, scala 0-255)
       let peak=0;
       for(let i=lo;i<=hi;i++){if(d[i]>peak)peak=d[i];}
-      const boosted=Math.min(255, Math.pow(peak/255, 0.55)*255);
-      drawVU(boosted);
+      // RMS per display VU: più stabile visivamente del peak puro
+      let sumSq=0;
+      for(let i=lo;i<=hi;i++) sumSq+=d[i]*d[i];
+      const rms=Math.sqrt(sumSq/(hi-lo+1));
+      // localVadLevel aggiornato con peak (compatibile con soglia VAD in onChunk)
+      localVadLevel=peak;
+      // VU display usa RMS boostato (meno tremolante del peak)
+      const boosted=Math.min(255, rms*1.8);
+      if(autoMuteSuspended||muted){drawVU(0);}else{drawVU(boosted);}
       const now=Date.now();
       if(now-vuLogT>3000){vuLogT=now;console.log('[VU] raw peak:'+peak+' boosted:'+Math.round(boosted)+' bins:'+lo+'-'+hi);}
     })();
@@ -818,7 +863,10 @@ async function conn(){
     audioCtx=vuCtx; analyser=vuAnalyser;
     if(analyser)analyser.smoothingTimeConstant=0.15;
     if(audioCtx.state==='suspended'){try{await audioCtx.resume();}catch(e){}}
-    await audioCtx.audioWorklet.addModule('audio-processor.js');
+    // Worklet inline via Blob URL — nessuna dipendenza da file esterno
+    const _wBlob=new Blob([WORKLET_CODE],{type:'application/javascript'});
+    const _wUrl=URL.createObjectURL(_wBlob);
+    try{ await audioCtx.audioWorklet.addModule(_wUrl); }finally{ URL.revokeObjectURL(_wUrl); }
     workletNode=new AudioWorkletNode(audioCtx,'pcm16-processor');
     workletNode.port.onmessage=onChunk;
     if(analyser)analyser.connect(workletNode);
@@ -889,8 +937,15 @@ function onChunk(e){
   if(autoMuteSuspended)return;
   if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
   let pcm=new Int16Array(e.data);
+  // Gain: unico punto dove viene applicato (worklet passa segnale grezzo)
   const g=parseInt(document.getElementById('rGain').value)/100;
-  if(g!==1){const o=new Int16Array(pcm.length);for(let i=0;i<pcm.length;i++)o[i]=Math.max(-32768,Math.min(32767,Math.round(pcm[i]*g)));pcm=o;}
+  if(g!==1){
+    const o=new Int16Array(pcm.length);
+    for(let i=0;i<pcm.length;i++) o[i]=Math.max(-32768,Math.min(32767,Math.round(pcm[i]*g)));
+    pcm=o;
+  }
+  // VAD client-side: usa localVadLevel aggiornato dal VU loop con valori peak (0-255)
+  // compatibili con la soglia impostata dallo slider. Blocca l'invio se sotto soglia.
   const thrRaw=parseInt(document.getElementById('rThr').value);
   const thrLevel=Math.min(255,Math.pow((thrRaw/6000),0.55)*255);
   if(localVadLevel<thrLevel*0.6)return;
@@ -997,12 +1052,13 @@ function scheduleReconnect(){
   dbg('⏳ Riconnessione #'+reconnectCount+' tra '+delaySec+'s...');
   showReconnBar(reconnectCount, delaySec);
   let remaining=delaySec;
-  const tick=setInterval(()=>{ remaining--; showReconnBar(reconnectCount, remaining); if(remaining<=0)clearInterval(tick); },1000);
-  reconnectTimer=setTimeout(async()=>{ clearInterval(tick); reconnectTimer=null; hideReconnBar(); if(!userDisconnected)await conn(); }, delay);
+  reconnCountdownInterval=setInterval(()=>{ remaining--; showReconnBar(reconnectCount, remaining); if(remaining<=0){clearInterval(reconnCountdownInterval);reconnCountdownInterval=null;} },1000);
+  reconnectTimer=setTimeout(async()=>{ if(reconnCountdownInterval){clearInterval(reconnCountdownInterval);reconnCountdownInterval=null;} reconnectTimer=null; hideReconnBar(); if(!userDisconnected)await conn(); }, delay);
 }
 
 function cancelReconnect(){
   if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+  if(reconnCountdownInterval){clearInterval(reconnCountdownInterval);reconnCountdownInterval=null;}
   reconnectCount=0;
   hideReconnBar();
 }
@@ -1072,7 +1128,7 @@ async function drain(){
       // Watchdog sull'ultimo buffer pianificato: se dopo la durata attesa
       // la coda è ancora vuota e playing=true, sblocchiamo lo stato
       if(audioQ.length === 0){
-        const expectedEnd = (nextPlayTime - audioCtx.currentTime) * 1000 + DRAIN_WATCHDOG;
+        const expectedEnd = Math.max(100, (nextPlayTime - audioCtx.currentTime) * 1000 + DRAIN_WATCHDOG);
         drainWatchdog=setTimeout(()=>{
           playing=false;
           nextPlayTime=0;
@@ -1137,7 +1193,11 @@ function doSnap(){
   // Protocollo Gemini Live: immagine via realtimeInput + testo via clientContent
   ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:b64,mimeType:'image/jpeg'}]}}));
   ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}]}],turnComplete:true}}));
-  document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
+  const _snapSt=document.getElementById('snapSt');
+  _snapSt.style.color='var(--yellow)';
+  _snapSt.textContent='📸 Inviata — '+new Date().toLocaleTimeString()+' · attesa risposta...';
+  clearTimeout(window._snapTimeout);
+  window._snapTimeout=setTimeout(()=>{_snapSt.style.color='var(--red)';_snapSt.textContent='⚠️ Nessuna risposta ricevuta';},15000);
   addMsg('📸 [foto inviata]','sys'); toast('📸 Foto inviata!');
 }
 
@@ -1146,10 +1206,8 @@ function doSnap(){
 // ═══════════════════════════════════════════════════════════════
 function oGain(v){
   document.getElementById('vGain').textContent=v+'%';
-  // Aggiorna gain nel worklet live (solo se mic non è auto-mutato)
-  if(workletNode && !autoMuteSuspended){
-    workletNode.port.postMessage({cmd:'gain', value:parseInt(v)/100});
-  }
+  // Il gain viene letto direttamente dallo slider in onChunk() ad ogni chunk
+  // Nessun messaggio al worklet necessario
 }
 function oThr(v){document.getElementById('vThr').textContent=v;}
 function oSil(v){document.getElementById('vSil').textContent=v+' ms';}
