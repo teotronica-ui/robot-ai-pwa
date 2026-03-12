@@ -473,6 +473,7 @@ let robotMsgEl=null, robotTxt='';
 // mic/VU
 let sharedMicStream=null, vuCtx=null, vuAnalyser=null, vuRaf=null;
 let vuNoiseFloor=0;   // impostato manualmente con LIV.ZERO
+let vuDisplayPct=0;   // livello display corrente (0-1), usato dal VAD gate
 let vuCalibActive=false, vuCalibFrames=0, vuCalibMax=0;
 
 function calibrateNoise(){
@@ -574,14 +575,18 @@ function buildVU(){
   for(let i=0;i<N_SEGS;i++){const d=document.createElement('div');d.className='seg';vuEl.appendChild(d);}
 }
 function drawVU(level){
-  localVadLevel=level;  // localVadLevel = valore grezzo peak, usato dal VAD in onChunk
-  // Noise floor auto-calibrato: aggiornato continuamente in silenzio dal VU loop
+  localVadLevel=level;  // peak grezzo 0-255, aggiornato ogni frame
+  // Calcola il livello display: corretto dal noise floor, scalato col gain
   const corrected = Math.max(0, level - vuNoiseFloor);
-  // Applica gain slider al display: così lo slider ha effetto visivo immediato
   const gainDisplay = parseInt(document.getElementById('rGain').value) / 100;
   const withGain = Math.min(255, corrected * gainDisplay);
-  const pct = Math.min(1, withGain / Math.max(1, 255 - vuNoiseFloor));
+  const scale = Math.max(1, 255 - vuNoiseFloor);
+  const pct = Math.min(1, withGain / scale);
+  // vuDisplayPct: la percentuale effettivamente mostrata — usata dal VAD gate
+  vuDisplayPct = pct;
   const lit=Math.round(pct*N_SEGS);
+  // Barra rossa: posizionata sulla stessa scala del display (0-1)
+  // thrPct rappresenta la soglia come frazione 0-1 del display
   const thrRaw=parseInt(document.getElementById('rThr').value);
   const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
   document.getElementById('thrLine').style.left=(thrPct*100)+'%';
@@ -954,12 +959,14 @@ function onChunk(e){
   if(!setupReady)return;
   if(autoMuteSuspended)return;
   if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
-  let pcm=new Int16Array(e.data);
-  const g=parseInt(document.getElementById('rGain').value)/100;
-  if(g!==1){const o=new Int16Array(pcm.length);for(let i=0;i<pcm.length;i++)o[i]=Math.max(-32768,Math.min(32767,Math.round(pcm[i]*g)));pcm=o;}
+  const pcm=new Int16Array(e.data);
+  // Gain applicato SOLO nel worklet (float32, prima della quantizzazione PCM16)
+  // onChunk riceve già il segnale con gain applicato — non riapplicare
+  // VAD gate: vuDisplayPct è già gain-aware (drawVU lo moltiplica per gainDisplay)
+  // thrPct è sulla stessa scala 0-1 → il confronto è diretto e preciso
   const thrRaw=parseInt(document.getElementById('rThr').value);
-  const thrLevel=Math.min(255,Math.pow((thrRaw/6000),0.55)*255);
-  if(localVadLevel<thrLevel*0.6)return;
+  const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
+  if(vuDisplayPct < thrPct) return;
   const actualSR=audioCtx?audioCtx.sampleRate:48000;
   ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate='+actualSR}]}}));
 }
