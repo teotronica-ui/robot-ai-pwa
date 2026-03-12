@@ -618,6 +618,11 @@ function setRobotSpeaking(speaking){
     badge.className='amute-badge mic-muted';
     badge.textContent='🔇 Mic sospeso — robot in risposta';
     if(workletNode) workletNode.port.postMessage({cmd:'gain', value:0});
+    // Avvisa Gemini che il flusso mic è interrotto (auto-mute)
+    if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
+      ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+    }
+    vadWasActive=false;
   } else if(speaking && !autoMute){
     // Robot parla ma auto-mute OFF
     overlay.classList.remove('show');
@@ -935,12 +940,18 @@ function sendSetup(){
   }
   const instructions=buildSystemPrompt();
   dbg('📋 Setup: '+model+' voce:'+voice);
+  // thinkingBudget:0 — disabilita il "thinking" nei modelli native-audio Dec-2025+
+  // che hanno thinking abilitato di default (causa latenza alta)
+  const isNativeAudio = model.includes('native-audio');
+  const generationConfig = {
+    responseModalities:['AUDIO'],
+    speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:voice}}}
+  };
+  if(isNativeAudio) generationConfig.thinkingConfig = {thinkingBudget:0};
+
   const setup={
     model:'models/'+model,
-    generationConfig:{
-      responseModalities:['AUDIO'],
-      speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:voice}}}
-    },
+    generationConfig:generationConfig,
     systemInstruction:{parts:[{text:instructions}]}
   };
   const msg=JSON.stringify({setup:setup});
@@ -955,18 +966,29 @@ function pcmToBase64(pcm){
   return btoa(binary);
 }
 
+let vadWasActive=false; // traccia se l'ultimo chunk era sopra soglia
+
 function onChunk(e){
   if(!setupReady)return;
   if(autoMuteSuspended)return;
   if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
   const pcm=new Int16Array(e.data);
-  // Gain applicato SOLO nel worklet (float32, prima della quantizzazione PCM16)
-  // onChunk riceve già il segnale con gain applicato — non riapplicare
-  // VAD gate: vuDisplayPct è già gain-aware (drawVU lo moltiplica per gainDisplay)
-  // thrPct è sulla stessa scala 0-1 → il confronto è diretto e preciso
+  // Gain applicato SOLO nel worklet
+  // VAD gate: confronta vuDisplayPct (gain+noisefloor aware) con soglia slider
   const thrRaw=parseInt(document.getElementById('rThr').value);
   const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
-  if(vuDisplayPct < thrPct) return;
+  const aboveVad = (vuDisplayPct >= thrPct);
+  if(!aboveVad){
+    // Se eravamo sopra soglia e ora siamo sotto → fine del parlato
+    // Invia audioStreamEnd per dire a Gemini di processare e rispondere
+    if(vadWasActive){
+      ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+      dbg('🔇 audioStreamEnd inviato (VAD sotto soglia)');
+    }
+    vadWasActive=false;
+    return;
+  }
+  vadWasActive=true;
   const actualSR=audioCtx?audioCtx.sampleRate:48000;
   ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate='+actualSR}]}}));
 }
@@ -1043,7 +1065,7 @@ function disc(){
   if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null;}
   if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch(e){}}
   audioCtx=null; analyser=vuAnalyser;
-  audioQ=[]; playing=false; silStart=null; nextPlayTime=0;
+  audioQ=[]; playing=false; silStart=null; nextPlayTime=0; vadWasActive=false;
   robotSpeaking=false; autoMuteSuspended=false;
   setRobotSpeaking(false);
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
@@ -1257,6 +1279,10 @@ function toggleMute(){
   const b=document.getElementById('btnMute');
   b.textContent=muted?'🔇 MUTO':'🎙 ATTIVO'; b.classList.toggle('on',muted);
   toast(muted?'🔇 Mic silenziato':'🎙 Mic attivo');
+  if(muted && ws&&ws.readyState===WebSocket.OPEN&&setupReady){
+    ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+    vadWasActive=false;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
