@@ -414,13 +414,17 @@
 //      garantisce MIME type corretto via Blob.
 // ═══════════════════════════════════════════════════════════════
 const WORKLET_CODE = `
+// TARGET_SR: Gemini Live accetta SOLO 16000 Hz.
+// Il browser cattura tipicamente a 44100 o 48000 Hz.
+// Questo worklet fa downsampling lineare verso 16000 Hz prima di inviare.
+const TARGET_SR = 16000;
+
 class PCM16Processor extends AudioWorkletProcessor {
   constructor() {
     super();
     this._active = true;
     this._gainValue = 1.0;
-    // Pre-alloca buffer per evitare GC pressure (375 chiamate/sec a 48kHz)
-    this._pcm = new Int16Array(128);
+    this._remainder = []; // campioni residui tra un blocco e l'altro
     this.port.onmessage = (e) => {
       if (e.data.cmd === 'stop') this._active = false;
       if (e.data.cmd === 'gain') this._gainValue = e.data.value;
@@ -430,16 +434,55 @@ class PCM16Processor extends AudioWorkletProcessor {
     if (!this._active) return false;
     const ch = inputs[0]?.[0];
     if (!ch) return true;
-    // Resize solo se necessario (raro)
-    if (this._pcm.length !== ch.length) this._pcm = new Int16Array(ch.length);
+
+    const inputSR = sampleRate; // sampleRate è globale nell'AudioWorklet
     const g = this._gainValue;
+
+    // Applica gain e converti in float normalizzato
+    const gained = new Float32Array(ch.length);
     for (let i = 0; i < ch.length; i++) {
-      const s = Math.max(-1, Math.min(1, ch[i] * g));
-      this._pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      gained[i] = Math.max(-1, Math.min(1, ch[i] * g));
     }
-    // Transferable: zero-copy verso main thread
-    const buf = this._pcm.buffer.slice(0);
-    this.port.postMessage(buf, [buf]);
+
+    if (inputSR === TARGET_SR) {
+      // Nessun resampling necessario (raro ma possibile)
+      const pcm = new Int16Array(gained.length);
+      for (let i = 0; i < gained.length; i++) {
+        pcm[i] = gained[i] < 0 ? gained[i] * 0x8000 : gained[i] * 0x7FFF;
+      }
+      const buf = pcm.buffer.slice(0);
+      this.port.postMessage(buf, [buf]);
+      return true;
+    }
+
+    // Downsampling lineare: prendi un campione ogni ratio
+    // Combina con eventuali campioni residui dal blocco precedente
+    const ratio = inputSR / TARGET_SR; // es. 3.0 per 48000→16000
+    const combined = new Float32Array(this._remainder.length + gained.length);
+    combined.set(this._remainder);
+    combined.set(gained, this._remainder.length);
+
+    const outLen = Math.floor((combined.length) / ratio);
+    const pcm = new Int16Array(outLen);
+    for (let i = 0; i < outLen; i++) {
+      // Interpolazione lineare tra campioni adiacenti
+      const pos = i * ratio;
+      const idx = Math.floor(pos);
+      const frac = pos - idx;
+      const a = combined[idx] || 0;
+      const b = combined[idx + 1] || a;
+      const s = a + frac * (b - a);
+      pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+
+    // Salva i campioni che non entrano nell'ultimo blocco intero
+    const consumed = Math.floor(outLen * ratio);
+    this._remainder = Array.from(combined.slice(consumed));
+
+    if (pcm.length > 0) {
+      const buf = pcm.buffer.slice(0);
+      this.port.postMessage(buf, [buf]);
+    }
     return true;
   }
 }
@@ -995,8 +1038,8 @@ function onChunk(e){
   // FIX: usa il valore corretto già considerando il noise floor
   const correctedRms=Math.max(0, rms - VU_NOISE_FLOOR);
   if(correctedRms < thrLevel*0.5) return;
-  const actualSR=audioCtx?audioCtx.sampleRate:48000;
-  ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate='+actualSR}]}}));
+  // Il worklet ha già fatto il downsampling a 16000 Hz — dichiaramolo esplicitamente
+  ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate=16000'}]}}));
 }
 
 // ═══════════════════════════════════════════════════════════════
