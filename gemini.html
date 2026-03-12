@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Robot AI — Gemini v1</title>
+  <title>Robot AI — Gemini v2</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -165,7 +165,7 @@
   <div class="charinfo" id="charInfo">— nessun personaggio —</div>
 </div>
 
-<!-- VU + CHAT -->
+<!-- VU METER -->
 <div class="card">
   <div class="vu-top">
     <div>
@@ -187,24 +187,9 @@
   </div>
   <!-- Auto-mute status -->
   <div id="amuteBadge" class="amute-badge">⚪ Auto-mute: standby</div>
-  <div class="chat-box" id="chatBox"><div class="msg sys">— conversazione —</div></div>
 </div>
 
-<!-- CAMERA -->
-<div class="card">
-  <div class="card-hd">📷 Telecamera</div>
-  <div class="cam-ph" id="camPh"><span style="font-size:1.4rem">📷</span><span>Tocca "Attiva cam"</span></div>
-  <video id="camVideo" autoplay playsinline muted></video>
-  <canvas id="camCanvas"></canvas>
-  <div class="brow" style="margin-top:9px">
-    <button class="bs" id="btnCamOn" onclick="toggleCam()">📷 Attiva cam</button>
-    <button class="bs" id="btnSnap" onclick="doSnap()" disabled style="border-color:var(--green);color:var(--green)">📸 SNAP → AI</button>
-  </div>
-  <div class="f" style="margin-top:9px"><label>Videocamera</label><select id="selCam" onchange="switchCam()"></select></div>
-  <div id="snapSt" style="font-size:.63rem;color:var(--muted);font-family:var(--mono);margin-top:4px;min-height:14px"></div>
-</div>
-
-<!-- MIC CONTROLLI -->
+<!-- MIC CONTROLLI — spostato subito sotto il VU meter -->
 <div class="card">
   <div class="card-hd">🎙 Microfono & Controlli</div>
   <div class="sg">
@@ -213,7 +198,7 @@
     <div class="sticks"><span>0%</span><span>◆ 100%</span><span>150%</span></div>
   </div>
   <div class="sg">
-    <div class="sh"><span class="l">Soglia VAD (linea rossa)</span><span class="v" id="vThr">1000</span></div>
+    <div class="sh"><span class="l">Soglia VAD (linea rossa)</span><span class="v" id="vThr">200</span></div>
     <input type="range" id="rThr" min="100" max="6000" step="100" value="200" oninput="oThr(this.value)">
     <div class="sticks"><span>100</span><span>3000</span><span>6000</span></div>
   </div>
@@ -233,6 +218,26 @@
     <div><div class="tlbl">🛑 Barge-in</div><div class="tsub">Puoi interrompere il robot parlando · disabilitato con Auto-mute ON</div></div>
     <label class="tsw"><input type="checkbox" id="chkBarge"><span class="ts"></span></label>
   </div>
+</div>
+
+<!-- CAMERA -->
+<div class="card">
+  <div class="card-hd">📷 Telecamera</div>
+  <div class="cam-ph" id="camPh"><span style="font-size:1.4rem">📷</span><span>Tocca "Attiva cam"</span></div>
+  <video id="camVideo" autoplay playsinline muted></video>
+  <canvas id="camCanvas"></canvas>
+  <div class="brow" style="margin-top:9px">
+    <button class="bs" id="btnCamOn" onclick="toggleCam()">📷 Attiva cam</button>
+    <button class="bs" id="btnSnap" onclick="doSnap()" disabled style="border-color:var(--green);color:var(--green)">📸 SNAP → AI</button>
+  </div>
+  <div class="f" style="margin-top:9px"><label>Videocamera</label><select id="selCam" onchange="switchCam()"></select></div>
+  <div id="snapSt" style="font-size:.63rem;color:var(--muted);font-family:var(--mono);margin-top:4px;min-height:14px"></div>
+</div>
+
+<!-- CHAT — spostata sotto la camera -->
+<div class="card">
+  <div class="card-hd">💬 Conversazione</div>
+  <div class="chat-box" id="chatBox"><div class="msg sys">— conversazione —</div></div>
 </div>
 
 <!-- SPEED -->
@@ -390,18 +395,57 @@
   <div class="card-hd">🔑 API Key Google <span style="color:var(--muted);font-size:.57rem">— si inserisce una volta sola</span></div>
   <div class="f">
     <label>Chiave API</label>
-    <input type="password" id="keyIn" placeholder="sk-proj-..." autocomplete="off" spellcheck="false" oninput="onKeyIn()">
+    <input type="password" id="keyIn" placeholder="AIza..." autocomplete="off" spellcheck="false" oninput="onKeyIn()">
     <div class="ks" id="kStat">⚠️ Nessuna chiave salvata</div>
   </div>
   <div class="upl" onclick="document.getElementById('fKeys').click()">
     <input type="file" id="fKeys" accept=".txt" onchange="loadKeysFile(this)">
-    📂 Carica <strong>keys.txt</strong> · <code>OPENAI_KEY=sk-...</code>
+    📂 Carica <strong>keys.txt</strong> · <code>GEMINI_KEY=AIza...</code>
   </div>
 </div>
 
 <div id="toast"></div>
 
 <script>
+// ═══════════════════════════════════════════════════════════════
+// WORKLET INLINE — nessun file esterno, zero dipendenze di rete
+// FIX: elimina la dipendenza da audio-processor.js su GitHub Pages,
+//      risolve il problema iOS Safari AudioContext timing,
+//      garantisce MIME type corretto via Blob.
+// ═══════════════════════════════════════════════════════════════
+const WORKLET_CODE = `
+class PCM16Processor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this._active = true;
+    this._gainValue = 1.0;
+    // Pre-alloca buffer per evitare GC pressure (375 chiamate/sec a 48kHz)
+    this._pcm = new Int16Array(128);
+    this.port.onmessage = (e) => {
+      if (e.data.cmd === 'stop') this._active = false;
+      if (e.data.cmd === 'gain') this._gainValue = e.data.value;
+    };
+  }
+  process(inputs) {
+    if (!this._active) return false;
+    const ch = inputs[0]?.[0];
+    if (!ch) return true;
+    // Resize solo se necessario (raro)
+    if (this._pcm.length !== ch.length) this._pcm = new Int16Array(ch.length);
+    const g = this._gainValue;
+    for (let i = 0; i < ch.length; i++) {
+      const s = Math.max(-1, Math.min(1, ch[i] * g));
+      this._pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    // Transferable: zero-copy verso main thread
+    const buf = this._pcm.buffer.slice(0);
+    this.port.postMessage(buf, [buf]);
+    return true;
+  }
+}
+registerProcessor('pcm16-processor', PCM16Processor);
+`;
+
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
@@ -415,13 +459,13 @@ const PRICES={
   'gemini-2.5-flash-native-audio-latest':{ai:3.0,ao:12.0}
 };
 const EUR=0.92, N_SEGS=36;
-const WS_TIMEOUT_MS   = 15000;  // timeout connessione WS
-const RECONNECT_BASE  = 2000;   // backoff iniziale riconnessione (ms)
-const RECONNECT_MAX   = 30000;  // backoff massimo
-const RECONNECT_LIMIT = 10;     // max tentativi prima di arrendersi
-const AUDIO_Q_MAX     = 60;     // max frame in coda audio
-const DRAIN_WATCHDOG  = 6000;   // ms prima di sbloccare drain() bloccato
-const CTX_WATCHDOG_MS = 2000;   // intervallo check AudioContext
+const WS_TIMEOUT_MS   = 15000;
+const RECONNECT_BASE  = 2000;
+const RECONNECT_MAX   = 30000;
+const RECONNECT_LIMIT = 10;
+const AUDIO_Q_MAX     = 60;
+const CTX_WATCHDOG_MS = 2000;
+const CHAT_MAX_MSGS   = 80;  // FIX: limite messaggi in chat per evitare memory leak
 
 // ═══════════════════════════════════════════════════════════════
 // STATE
@@ -431,7 +475,7 @@ let localVadLevel=0;
 let ws=null, audioCtx=null, workletNode=null, micStream=null;
 let muted=false, connected=false, isRec=false, recChunks=[];
 let audioQ=[], playing=false, analyser=null, silStart=null;
-let nextPlayTime=0;   // scheduling preciso: quando finisce l'ultimo buffer pianificato
+let nextPlayTime=0;
 let tok={ai:0,ao:0};
 let editingChar=null, camStream=null, camActive=false;
 let knowledge={title:'',text:''};
@@ -442,11 +486,14 @@ let availableMics=[], currentMicId='';
 // auto-mute
 let robotSpeaking=false, autoMuteSuspended=false;
 // reconnect
-let reconnectCount=0, reconnectTimer=null, wsTimeoutTimer=null;
-let userDisconnected=false; // true = disconnessione volontaria
+let reconnectCount=0, reconnectTimer=null, reconnCountdownInterval=null; // FIX: track countdown separately
+let wsTimeoutTimer=null;
+let userDisconnected=false;
 // watchdog
 let ctxWatchdogInterval=null, drainWatchdog=null;
 let setupReady=false;
+// FIX: guard contro doppia connessione
+let connecting=false;
 
 // ═══════════════════════════════════════════════════════════════
 // INIT
@@ -456,7 +503,6 @@ function init(){
   setInterval(tickTimer,500); netCheck(); setInterval(netCheck,14000); enumCams();
   try{navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);}catch(e){}
   setInterval(pollMics,4000);
-  // Sincronizza stato barge-in con auto-mute
   document.getElementById('chkAutoMute').addEventListener('change', onAutoMuteChange);
   onAutoMuteChange();
 }
@@ -465,7 +511,6 @@ function onAutoMuteChange(){
   const autoMute = document.getElementById('chkAutoMute').checked;
   const bargeEl  = document.getElementById('chkBarge');
   if(autoMute){
-    // Con auto-mute ON, il barge-in non ha senso (il mic è sospeso)
     bargeEl.checked = false;
     bargeEl.disabled = true;
     bargeEl.closest('.trow').style.opacity = '0.4';
@@ -473,11 +518,11 @@ function onAutoMuteChange(){
     bargeEl.disabled = false;
     bargeEl.closest('.trow').style.opacity = '1';
   }
-  if(connected) sendSess();
+  if(connected && setupReady) sendSess(); // FIX: controlla setupReady
 }
 
 // ═══════════════════════════════════════════════════════════════
-// KEY
+// KEY — FIX: parser cerca GEMINI_KEY= (non OPENAI_KEY=)
 // ═══════════════════════════════════════════════════════════════
 function loadKey(){
   try{
@@ -506,8 +551,9 @@ function loadKeysFile(inp){
     let ok=false;
     t.replace(/\r/g,'').split('\n').forEach(ln=>{
       ln=ln.trim();
-      if(ln.startsWith('OPENAI_KEY=')){
-        const k=ln.slice(11).replace(/^["'\s]+|["'\s]+$/g,'');
+      // FIX: accetta sia GEMINI_KEY= che OPENAI_KEY= per retrocompatibilità
+      if(ln.startsWith('GEMINI_KEY=')||ln.startsWith('OPENAI_KEY=')){
+        const k=ln.slice(ln.indexOf('=')+1).replace(/^["'\s]+|["'\s]+$/g,'');
         if(k.length>10){
           document.getElementById('keyIn').value=k;
           try{localStorage.setItem(LS_KEY,k);}catch(ex){}
@@ -515,7 +561,7 @@ function loadKeysFile(inp){
         }
       }
     });
-    if(!ok)toast('⚠️ OPENAI_KEY= non trovata nel file');
+    if(!ok)toast('⚠️ GEMINI_KEY= non trovata nel file');
     inp.value='';
   };
   r.readAsArrayBuffer(file);
@@ -523,15 +569,27 @@ function loadKeysFile(inp){
 
 // ═══════════════════════════════════════════════════════════════
 // VU METER
+// FIX: scala corretta — applica noise floor per eliminare il 30%
+//      di fondo fisso. Usa RMS invece di solo peak per scala lineare.
 // ═══════════════════════════════════════════════════════════════
 let vuEl=null;
+// Noise floor calibrato: i microfoni digitali hanno sempre un minimo
+// di rumore di quantizzazione + rumore ambiente. Sottraiamo un offset
+// fisso (8/255 ≈ 3%) e poi rescaliamo su 0-100% per usare tutta la barra.
+const VU_NOISE_FLOOR = 10;  // valore raw 0-255 sotto cui consideriamo silenzio
+const VU_SCALE_MAX   = 200; // valore raw che corrisponde al 100% della barra
+
 function buildVU(){
   vuEl=document.getElementById('vuSegs');
   for(let i=0;i<N_SEGS;i++){const d=document.createElement('div');d.className='seg';vuEl.appendChild(d);}
 }
 function drawVU(level){
   localVadLevel=level;
-  const pct=Math.min(1,level/255), lit=Math.round(pct*N_SEGS);
+  // FIX: scala corretta con noise floor sottratto e rescaling
+  const corrected = Math.max(0, level - VU_NOISE_FLOOR);
+  const pct = Math.min(1, corrected / VU_SCALE_MAX);
+  const lit = Math.round(pct * N_SEGS);
+
   const thrRaw=parseInt(document.getElementById('rThr').value);
   const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
   document.getElementById('thrLine').style.left=(thrPct*100)+'%';
@@ -556,7 +614,6 @@ function setRobotSpeaking(speaking){
 
   const overlay   = document.getElementById('vuMuteOverlay');
   const badge     = document.getElementById('amuteBadge');
-  const micDot    = document.getElementById('dMic');
 
   if(autoMuteSuspended){
     overlay.classList.add('show');
@@ -564,7 +621,6 @@ function setRobotSpeaking(speaking){
     badge.textContent='🔇 Mic sospeso — robot in risposta';
     if(workletNode) workletNode.port.postMessage({cmd:'gain', value:0});
   } else if(speaking && !autoMute){
-    // Robot parla ma auto-mute OFF
     overlay.classList.remove('show');
     badge.className='amute-badge robot-speaking';
     badge.textContent='🔊 Robot parla · auto-mute OFF';
@@ -574,22 +630,30 @@ function setRobotSpeaking(speaking){
     badge.className='amute-badge';
     badge.textContent='⚪ Auto-mute: standby';
     if(workletNode) workletNode.port.postMessage({cmd:'gain', value: parseInt(document.getElementById('rGain').value)/100});
-    // Reimposta stato mic dot
     if(connected && !muted) dot('dMic','on');
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CHAT / DEBUG
+// CHAT — FIX: limite massimo messaggi per evitare memory leak
 // ═══════════════════════════════════════════════════════════════
 function addMsg(txt,type){
   const box=document.getElementById('chatBox');
   const d=document.createElement('div'); d.className='msg '+type; d.textContent=txt;
-  box.appendChild(d); box.scrollTop=box.scrollHeight;
+  box.appendChild(d);
+  // FIX: rimuovi i messaggi più vecchi se supera il limite
+  while(box.children.length > CHAT_MAX_MSGS) box.removeChild(box.firstChild);
+  box.scrollTop=box.scrollHeight;
 }
 function appendRobotTxt(delta){
   robotTxt+=delta;
-  if(!robotMsgEl){robotMsgEl=document.createElement('div');robotMsgEl.className='msg robot';document.getElementById('chatBox').appendChild(robotMsgEl);}
+  if(!robotMsgEl){
+    robotMsgEl=document.createElement('div');
+    robotMsgEl.className='msg robot';
+    const box=document.getElementById('chatBox');
+    box.appendChild(robotMsgEl);
+    while(box.children.length > CHAT_MAX_MSGS) box.removeChild(box.firstChild);
+  }
   robotMsgEl.textContent=robotTxt;
   document.getElementById('chatBox').scrollTop=document.getElementById('chatBox').scrollHeight;
 }
@@ -598,18 +662,13 @@ function dbg(msg){
   const box=document.getElementById('chatBox');
   const d=document.createElement('div'); d.className='msg sys'; d.style.fontSize='.6rem'; d.style.color='#2a7a5a';
   d.textContent='['+new Date().toLocaleTimeString()+'] '+msg;
-  box.appendChild(d); box.scrollTop=box.scrollHeight; console.log('[DBG]',msg);
+  box.appendChild(d);
+  while(box.children.length > CHAT_MAX_MSGS) box.removeChild(box.firstChild);
+  box.scrollTop=box.scrollHeight; console.log('[DBG]',msg);
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MIC — iOS: un solo getUserMedia, dentro user gesture
-// ═══════════════════════════════════════════════════════════════
-// Strategia selezione mic iOS + split jack:
-// iOS nasconde i deviceId reali finché non hai già il permesso.
-// Al primo avvio facciamo getUserMedia senza constraint (ottieni permesso),
-// poi enumeriamo i dispositivi (ora con label visibili), cerchiamo il
-// "Wired Headset" / "Headset Microphone" e se trovato riprendiamo
-// lo stream con il deviceId corretto.
+// MIC
 // ═══════════════════════════════════════════════════════════════
 async function startVuMonitor(forceDeviceId){
   if(sharedMicStream){sharedMicStream.getTracks().forEach(t=>t.stop());sharedMicStream=null;}
@@ -623,7 +682,6 @@ async function startVuMonitor(forceDeviceId){
     let devId=forceDeviceId||document.getElementById('selMic')?.value||'';
 
     if(!devId){
-      // FASE 1: apri con default per sbloccare il permesso e rendere visibili le label
       dbg('🎤 getUserMedia (default — permesso + detect wired)...');
       const tempStream=await navigator.mediaDevices.getUserMedia({
         audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}
@@ -631,32 +689,26 @@ async function startVuMonitor(forceDeviceId){
       const tempLabel=tempStream.getAudioTracks()[0]?.label||'';
       dbg('📋 Mic default: "'+tempLabel+'"');
 
-      // FASE 2: ora che abbiamo il permesso, enumera con label visibili
       const devs=await navigator.mediaDevices.enumerateDevices();
       const mics=devs.filter(d=>d.kind==='audioinput');
-      dbg('📋 Mic disponibili dopo permesso: '+mics.map(m=>'"'+(m.label||'?')+'"').join(', '));
+      dbg('📋 Mic disponibili: '+mics.map(m=>'"'+(m.label||'?')+'"').join(', '));
 
-      // Il default era già quello giusto se il suo label NON è built-in
       const defaultLabel=tempLabel.toLowerCase();
       const defaultIsBuiltin=/iphone|built.?in|receiver|interno|microfono\s+iphone/i.test(defaultLabel);
 
-      // Cerca microfono esterno tra tutti i disponibili
-      // Strategia: escludi quelli built-in, prendi il primo rimasto
       const external=mics.find(m=>
         m.deviceId && m.deviceId!=='' &&
         !/iphone|built.?in|receiver|interno|microfono\s+iphone/i.test(m.label) &&
-        m.label // deve avere una label visibile
+        m.label
       );
 
-      dbg('🔍 Default is built-in: '+defaultIsBuiltin+' | External found: '+(external?'"'+external.label+'"':'no'));
+      dbg('🔍 Default is built-in: '+defaultIsBuiltin+' | External: '+(external?'"'+external.label+'"':'no'));
 
       if(defaultIsBuiltin && external){
-        // Default è built-in ma esiste uno esterno → switch
         tempStream.getTracks().forEach(t=>t.stop());
         devId=external.deviceId;
-        dbg('🎯 Switch a mic esterno: "'+external.label+'" deviceId:'+devId.slice(0,12)+'...');
+        dbg('🎯 Switch a mic esterno: "'+external.label+'"');
       } else {
-        // Default è già quello giusto, oppure non c'è alternativa
         sharedMicStream=tempStream;
         devId='';
         dbg(defaultIsBuiltin ? '⚠️ Solo mic built-in disponibile' : '✅ Default già mic esterno: "'+tempLabel+'"');
@@ -664,7 +716,6 @@ async function startVuMonitor(forceDeviceId){
     }
 
     if(!sharedMicStream){
-      // Apri con deviceId specifico (selezionato manualmente o trovato nella fase 2)
       const constraint=devId
         ?{audio:{deviceId:{exact:devId}, echoCancellation:false, noiseSuppression:false, autoGainControl:false}}
         :{audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}};
@@ -677,13 +728,11 @@ async function startVuMonitor(forceDeviceId){
     currentMicId=settings.deviceId||devId||'';
     const label=track?.label||'sconosciuto';
     dbg('✅ MIC attivo: "'+label+'" SR:'+(settings.sampleRate||'?')+'Hz');
-    console.log('[MIC]',label,settings);
 
     await pollMics();
     const sel=document.getElementById('selMic');
     if(sel&&currentMicId){const m=[...sel.options].find(o=>o.value===currentMicId);if(m)sel.value=currentMicId;}
 
-    // Track ended = jack rimosso fisicamente
     track.addEventListener('ended',()=>{
       dbg('⚠️ Mic disconnesso fisicamente — restart...');
       dot('dMic',null);
@@ -694,7 +743,6 @@ async function startVuMonitor(forceDeviceId){
     dbg('🔊 AudioContext: '+vuCtx.sampleRate+'Hz state:'+vuCtx.state);
     if(vuCtx.state==='suspended'){try{await vuCtx.resume();}catch(e){}}
 
-    // Fallback sblocco al prossimo touch (iOS sospende se non in gesture diretta)
     if(vuCtx.state!=='running'){
       dbg('⏳ AudioContext suspended — tocca lo schermo per sbloccare');
       const unlock=async()=>{try{await vuCtx?.resume();dbg('▶ AudioContext sbloccato');}catch(e){}};
@@ -706,7 +754,7 @@ async function startVuMonitor(forceDeviceId){
     vuCtx.createMediaStreamSource(sharedMicStream).connect(vuAnalyser);
     dot('dMic','on');
 
-    // Loop VU
+    // Loop VU — usa RMS su banda vocale invece di solo peak
     let vuLogT=0;
     (function tick(){
       vuRaf=requestAnimationFrame(tick);
@@ -714,21 +762,22 @@ async function startVuMonitor(forceDeviceId){
       const d=new Uint8Array(vuAnalyser.frequencyBinCount);
       vuAnalyser.getByteFrequencyData(d);
       const binHz=vuCtx.sampleRate/vuAnalyser.fftSize;
-      const lo=Math.floor(80/binHz),hi=Math.min(Math.floor(8000/binHz),d.length-1);
-      let peak=0;
-      for(let i=lo;i<=hi;i++){if(d[i]>peak)peak=d[i];}
-      const boosted=Math.min(255, Math.pow(peak/255, 0.55)*255);
-      // Ferma il VU meter visivamente se mic è sospeso (auto-mute o mute manuale)
+      const lo=Math.floor(80/binHz), hi=Math.min(Math.floor(8000/binHz),d.length-1);
+      // FIX: usa RMS invece di peak puro — molto meno sensibile al rumore impulsivo
+      let sumSq=0, count=0;
+      for(let i=lo;i<=hi;i++){sumSq+=d[i]*d[i];count++;}
+      const rms = count>0 ? Math.sqrt(sumSq/count) : 0;
+      // Piccolo boost perché RMS è sempre < peak, ma più stabile
+      const boosted = Math.min(255, rms * 2.0);
       if(autoMuteSuspended || muted){
         drawVU(0);
       } else {
         drawVU(boosted);
       }
       const now=Date.now();
-      if(now-vuLogT>3000){vuLogT=now;console.log('[VU] raw peak:'+peak+' boosted:'+Math.round(boosted)+' bins:'+lo+'-'+hi);}
+      if(now-vuLogT>3000){vuLogT=now;console.log('[VU] rms:'+Math.round(rms)+' boosted:'+Math.round(boosted)+' bins:'+lo+'-'+hi);}
     })();
 
-    // Avvia watchdog AudioContext
     startCtxWatchdog();
 
   }catch(e){
@@ -774,7 +823,7 @@ function onDeviceChange(){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// WATCHDOG AudioContext — risveglia se sospeso da iOS
+// WATCHDOG AudioContext
 // ═══════════════════════════════════════════════════════════════
 function startCtxWatchdog(){
   if(ctxWatchdogInterval) clearInterval(ctxWatchdogInterval);
@@ -792,6 +841,8 @@ function startCtxWatchdog(){
 
 // ═══════════════════════════════════════════════════════════════
 // CONNESSIONE
+// FIX: guard connecting per evitare doppio WebSocket
+// FIX: worklet inline via Blob URL
 // ═══════════════════════════════════════════════════════════════
 async function toggleConn(){
   if(connected || reconnectTimer){
@@ -806,9 +857,17 @@ async function toggleConn(){
 }
 
 async function conn(){
+  // FIX: guard contro doppia connessione
+  if(connecting){dbg('⚠️ Connessione già in corso');return;}
+  connecting=true;
+
   const raw=document.getElementById('keyIn').value;
   API_KEY=raw.replace(/[\x00-\x1F\x7F\u200B-\u200D\uFEFF]/g,'').trim();
-  if(API_KEY.length<20){toast('❌ Chiave troppo corta ('+API_KEY.length+' chars)');return;}
+  if(API_KEY.length<20){
+    toast('❌ Chiave troppo corta ('+API_KEY.length+' chars)');
+    connecting=false;
+    return;
+  }
   onCharChg();
   activeVoice=document.getElementById('selVoice').value||activeVoice;
   setSt('connecting');
@@ -823,11 +882,21 @@ async function conn(){
     audioCtx=vuCtx; analyser=vuAnalyser;
     if(analyser)analyser.smoothingTimeConstant=0.15;
     if(audioCtx.state==='suspended'){try{await audioCtx.resume();}catch(e){}}
-    await audioCtx.audioWorklet.addModule('audio-processor.js');
+
+    // FIX: worklet inline via Blob URL — nessuna dipendenza da file esterno
+    const blob=new Blob([WORKLET_CODE],{type:'application/javascript'});
+    const blobUrl=URL.createObjectURL(blob);
+    try{
+      await audioCtx.audioWorklet.addModule(blobUrl);
+    }finally{
+      URL.revokeObjectURL(blobUrl); // libera subito dopo l'uso
+    }
+
     workletNode=new AudioWorkletNode(audioCtx,'pcm16-processor');
     workletNode.port.onmessage=onChunk;
     if(analyser)analyser.connect(workletNode);
     dot('dMic','on');
+
     const model=document.getElementById('selModel').value;
     const apiVer=model.startsWith('gemini-live-')?'v1alpha':'v1beta';
     const GEMINI_WS=GEMINI_WS_BASE+'.'+apiVer+'.GenerativeService.BidiGenerateContent';
@@ -853,6 +922,8 @@ async function conn(){
     dbg('❌ conn: '+e.name+': '+e.message); toast('❌ '+e.message); setSt('idle');
     document.getElementById('btnConn').disabled=false;
     if(!userDisconnected)scheduleReconnect();
+  }finally{
+    connecting=false; // FIX: sempre resetta il guard
   }
 }
 
@@ -877,11 +948,33 @@ function sendSetup(){
     },
     systemInstruction:{parts:[{text:instructions}]}
   };
-  const msg=JSON.stringify({setup:setup});
-  dbg('📤 '+msg.slice(0,180));
-  ws.send(msg);
+  ws.send(JSON.stringify({setup:setup}));
 }
 
+function sendSess(){
+  if(!ws||ws.readyState!==WebSocket.OPEN||!setupReady)return; // FIX: controlla setupReady
+  const model=document.getElementById('selModel').value;
+  const vadMode=document.getElementById('selVad').value;
+  const temp=parseFloat(document.getElementById('selTemp').value);
+  const bargeIn=document.getElementById('chkBarge').checked&&!document.getElementById('chkAutoMute').checked;
+  const silMs=parseInt(document.getElementById('rSil').value);
+  const eag=document.getElementById('selEag').value;
+  let realtimeInputConfig={};
+  if(vadMode==='server_vad'){
+    realtimeInputConfig={automaticActivityDetection:{disabled:false,startOfSpeechSensitivity:'START_SENSITIVITY_HIGH',endOfSpeechSensitivity:'END_SENSITIVITY_HIGH',prefixPaddingMs:20,silenceDurationMs:silMs}};
+  } else {
+    realtimeInputConfig={automaticActivityDetection:{disabled:false}};
+  }
+  const cfg={generationConfig:{temperature:temp,responseModalities:['AUDIO']}};
+  ws.send(JSON.stringify({sessionConfig:{...cfg,realtimeInputConfig}}));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AUDIO CHUNK → WS
+// FIX: gain applicato UNA SOLA VOLTA, nel worklet.
+//      Rimosso il secondo passaggio di gain qui (era il doppio gain bug).
+//      onChunk ora si limita a filtrare VAD e inviare il PCM grezzo.
+// ═══════════════════════════════════════════════════════════════
 function pcmToBase64(pcm){
   const bytes=new Uint8Array(pcm.buffer);
   let binary='';const chunk=8192;
@@ -893,16 +986,25 @@ function onChunk(e){
   if(!setupReady)return;
   if(autoMuteSuspended)return;
   if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
-  let pcm=new Int16Array(e.data);
-  const g=parseInt(document.getElementById('rGain').value)/100;
-  if(g!==1){const o=new Int16Array(pcm.length);for(let i=0;i<pcm.length;i++)o[i]=Math.max(-32768,Math.min(32767,Math.round(pcm[i]*g)));pcm=o;}
+  const pcm=new Int16Array(e.data);
+  // FIX: il gain è già applicato nel worklet (PCM16Processor._gainValue).
+  //      Non riapplicarlo qui: era il bug del doppio gain.
+  // VAD client-side: calcola RMS sul chunk per coerenza col VU meter
+  let sumSq=0;
+  for(let i=0;i<pcm.length;i++) sumSq+=(pcm[i]/32768)*(pcm[i]/32768);
+  const rms=Math.sqrt(sumSq/pcm.length)*255;
   const thrRaw=parseInt(document.getElementById('rThr').value);
   const thrLevel=Math.min(255,Math.pow((thrRaw/6000),0.55)*255);
-  if(localVadLevel<thrLevel*0.6)return;
+  // FIX: usa il valore corretto già considerando il noise floor
+  const correctedRms=Math.max(0, rms - VU_NOISE_FLOOR);
+  if(correctedRms < thrLevel*0.5) return;
   const actualSR=audioCtx?audioCtx.sampleRate:48000;
   ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate='+actualSR}]}}));
 }
 
+// ═══════════════════════════════════════════════════════════════
+// MESSAGGI IN ARRIVO DA GEMINI
+// ═══════════════════════════════════════════════════════════════
 function onMsg(e){
   let raw;
   if(typeof e.data==='string'){raw=e.data;}
@@ -923,7 +1025,9 @@ function onMsg(e){
     document.getElementById('btnConn').disabled=false;
     addMsg('✅ Gemini connesso · modello: '+document.getElementById('selModel').value+' · voce: '+(document.getElementById('selVoice').value||activeVoice),'sys');
     toast('✅ Gemini pronto');
-    dbg('✅ setupComplete — invio audio abilitato. SR microfono: '+(audioCtx?audioCtx.sampleRate:'?')+'Hz');
+    dbg('✅ setupComplete — SR microfono: '+(audioCtx?audioCtx.sampleRate:'?')+'Hz');
+    // Invia configurazione sessione ora che setupComplete è arrivato
+    sendSess();
     return;
   }
   if(m.serverContent){
@@ -949,9 +1053,8 @@ function onMsg(e){
     }
     if(sc.turnComplete){
       finalizeRobot();
-      audioQ.push(new Int16Array(OUTPUT_SR)); // padding silenzio finale
+      audioQ.push(new Int16Array(OUTPUT_SR));
       if(!playing)drain();
-      // Il mic viene sbloccato dal drainWatchdog quando l'audio è davvero finito
       if(!silStart)silStart=Date.now();
     }
     if(sc.interrupted){
@@ -968,13 +1071,24 @@ function onMsg(e){
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// DISCONNECT
+// FIX: disc() ora resetta anche sharedMicStream in modo sicuro.
+//      Nota: sharedMicStream NON viene stoppato perché è usato dal VU.
+//      Viene solo scollegato dal worklet. Il mic VU rimane attivo.
+// ═══════════════════════════════════════════════════════════════
 function disc(){
-  connected=false; setupReady=false;
+  connected=false; setupReady=false; connecting=false;
   clearTimeout(wsTimeoutTimer);
   if(ws){ws.onclose=null;try{ws.close();}catch(e){}ws=null;}
-  if(workletNode){try{workletNode.disconnect();workletNode.port.postMessage({cmd:'stop'});}catch(e){}workletNode=null;}
-  if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null;}
-  if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch(e){}}
+  if(workletNode){
+    try{workletNode.disconnect();workletNode.port.postMessage({cmd:'stop'});}catch(e){}
+    workletNode=null;
+  }
+  // FIX: micStream punta a sharedMicStream — non stopparlo qui,
+  //      altrimenti perdiamo anche il VU meter. Basta de-referenziare.
+  micStream=null;
+  // audioCtx punta a vuCtx — non chiuderlo, è condiviso col VU
   audioCtx=null; analyser=vuAnalyser;
   audioQ=[]; playing=false; silStart=null; nextPlayTime=0;
   robotSpeaking=false; autoMuteSuspended=false;
@@ -984,9 +1098,10 @@ function disc(){
   document.getElementById('btnConn').disabled=false;
 }
 
-
 // ═══════════════════════════════════════════════════════════════
 // RECONNECT
+// FIX: reconnCountdownInterval tracciato separatamente da reconnectTimer
+//      così cancelReconnect() cancella entrambi correttamente.
 // ═══════════════════════════════════════════════════════════════
 function scheduleReconnect(){
   if(userDisconnected) return;
@@ -1003,12 +1118,24 @@ function scheduleReconnect(){
   dbg('⏳ Riconnessione #'+reconnectCount+' tra '+delaySec+'s...');
   showReconnBar(reconnectCount, delaySec);
   let remaining=delaySec;
-  const tick=setInterval(()=>{ remaining--; showReconnBar(reconnectCount, remaining); if(remaining<=0)clearInterval(tick); },1000);
-  reconnectTimer=setTimeout(async()=>{ clearInterval(tick); reconnectTimer=null; hideReconnBar(); if(!userDisconnected)await conn(); }, delay);
+  // FIX: salva il setInterval separatamente per poterlo cancellare
+  reconnCountdownInterval=setInterval(()=>{
+    remaining--;
+    showReconnBar(reconnectCount, remaining);
+    if(remaining<=0){clearInterval(reconnCountdownInterval);reconnCountdownInterval=null;}
+  },1000);
+  reconnectTimer=setTimeout(async()=>{
+    if(reconnCountdownInterval){clearInterval(reconnCountdownInterval);reconnCountdownInterval=null;}
+    reconnectTimer=null;
+    hideReconnBar();
+    if(!userDisconnected)await conn();
+  }, delay);
 }
 
 function cancelReconnect(){
   if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+  // FIX: cancella anche il countdown interval
+  if(reconnCountdownInterval){clearInterval(reconnCountdownInterval);reconnCountdownInterval=null;}
   reconnectCount=0;
   hideReconnBar();
 }
@@ -1025,20 +1152,14 @@ function hideReconnBar(){
   document.getElementById('reconnBar').classList.remove('show');
 }
 
-
 // ═══════════════════════════════════════════════════════════════
-// Invece di aspettare onended per accodare il prossimo buffer,
-// pianifichiamo ogni buffer esattamente al momento in cui finisce
-// il precedente usando audioCtx.currentTime + offset.
-// Questo elimina i micro-gap tra chunk che causano audio a scatti.
-// La registrazione avviene al momento della ricezione dalla rete,
-// non al momento della riproduzione — così il WAV è sempre continuo.
-
+// AUDIO PLAYBACK — DRAIN
+// FIX: drainWatchdog con guard su expectedEnd negativo (iOS bug)
+// ═══════════════════════════════════════════════════════════════
 async function drain(){
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
   if(!audioCtx||!audioQ.length){playing=false;return;}
 
-  // Assicurati che AudioContext sia running prima di iniziare
   if(audioCtx.state==='suspended'){
     try{await audioCtx.resume();}catch(e){
       dbg('❌ drain: AudioContext resume fallito — retry tra 500ms');
@@ -1053,8 +1174,6 @@ async function drain(){
 
   playing=true;
 
-  // Svuota tutta la coda in un ciclo sincrono, pianificando ogni buffer
-  // con timestamp preciso — nessun gap, nessuna latenza di callback
   while(audioQ.length > 0){
     const pcm = audioQ.shift();
     const f = new Float32Array(pcm.length);
@@ -1068,37 +1187,31 @@ async function drain(){
       src.buffer=buf;
       src.connect(audioCtx.destination);
 
-      // Scheduling: inizia esattamente quando finisce il buffer precedente.
-      // Se nextPlayTime è nel passato (es. dopo una pausa), usa currentTime + 0.01s
-      // di headroom per evitare glitch.
       const startAt = Math.max(audioCtx.currentTime + 0.01, nextPlayTime);
       src.start(startAt);
       nextPlayTime = startAt + buf.duration;
 
-      // Watchdog sull'ultimo buffer pianificato: quando l'audio è davvero finito
-      // sbloccchiamo il mic (setRobotSpeaking false) e resettiamo lo stato
       if(audioQ.length === 0){
-        const expectedEnd = (nextPlayTime - audioCtx.currentTime) * 1000 + 200; // 200ms margine
+        // FIX: clamp expectedEnd a minimo 100ms per evitare watchdog immediato
+        //      quando audioCtx.currentTime è avanzato (es. dopo sospensione iOS)
+        const rawExpected = (nextPlayTime - audioCtx.currentTime) * 1000 + 200;
+        const expectedEnd = Math.max(100, rawExpected);
         drainWatchdog=setTimeout(()=>{
           playing=false;
           nextPlayTime=0;
-          setRobotSpeaking(false);  // ← sblocca mic SOLO quando audio è davvero finito
+          setRobotSpeaking(false);
           if(connected && !muted) setSt('listening');
           dbg('⏱ drain: audio completato — mic sbloccato');
         }, expectedEnd);
       }
     }catch(ex){
       dbg('❌ drain errore su chunk: '+ex.message);
-      // Salta il chunk difettoso e continua
-      nextPlayTime=0; // reset scheduling dopo errore
+      nextPlayTime=0;
     }
   }
 
-  // Se la coda è vuota, polling leggero per nuovi chunk in arrivo dallo stream
-  // (l'API manda delta in modo asincrono — potrebbero arrivare altri chunk)
   if(audioQ.length === 0){
     playing=false;
-    // Non serve un loop di polling: onMsg chiamerà drain() se playing===false
   }
 }
 
@@ -1135,6 +1248,11 @@ function stopCam(){
   document.getElementById('btnSnap').disabled=true; dot('dCam',null);
 }
 async function switchCam(){if(camActive){stopCam();await toggleCam();}}
+
+// ═══════════════════════════════════════════════════════════════
+// SNAP — FIX: timeout se risposta non arriva entro 15s
+// ═══════════════════════════════════════════════════════════════
+let snapTimeout=null;
 function doSnap(){
   if(!camActive){toast('❌ Attiva prima la cam');return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connetti prima Gemini');return;}
@@ -1142,20 +1260,29 @@ function doSnap(){
   c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
   const b64=c.toDataURL('image/jpeg',.85).split(',')[1];
   const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
-  // Protocollo Gemini Live: immagine via realtimeInput + testo via clientContent
   ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:b64,mimeType:'image/jpeg'}]}}));
   ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}]}],turnComplete:true}}));
-  document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
+  const st=document.getElementById('snapSt');
+  st.textContent='📸 Inviata — '+new Date().toLocaleTimeString()+' · in attesa risposta...';
+  st.style.color='var(--yellow)';
   addMsg('📸 [foto inviata]','sys'); toast('📸 Foto inviata!');
+  // FIX: timeout se l'AI non risponde
+  if(snapTimeout)clearTimeout(snapTimeout);
+  snapTimeout=setTimeout(()=>{
+    st.textContent='⚠️ Nessuna risposta alla foto ricevuta';
+    st.style.color='var(--red)';
+  },15000);
 }
 
 // ═══════════════════════════════════════════════════════════════
 // SLIDERS
+// FIX: gain ora agisce SOLO sul worklet (corretto),
+//      rimosso aggiornamento di variabile inutilizzata.
 // ═══════════════════════════════════════════════════════════════
 function oGain(v){
   document.getElementById('vGain').textContent=v+'%';
-  // Aggiorna gain nel worklet live (solo se mic non è auto-mutato)
-  if(workletNode && !autoMuteSuspended){
+  // Invia il gain al worklet — sarà l'unico posto dove il gain viene applicato
+  if(workletNode && !autoMuteSuspended && !muted){
     workletNode.port.postMessage({cmd:'gain', value:parseInt(v)/100});
   }
 }
@@ -1191,7 +1318,6 @@ function toggleMute(){
   muted=!muted;
   const b=document.getElementById('btnMute');
   b.textContent=muted?'🔇 MUTO':'🎙 ATTIVO'; b.classList.toggle('on',muted);
-  // Quando muto: azzera VU visivamente e silenzia il worklet
   if(muted){
     drawVU(0);
     if(workletNode) workletNode.port.postMessage({cmd:'gain', value:0});
@@ -1257,7 +1383,7 @@ function saveChar(){
   try{localStorage.setItem(LS_LAST,name);}catch(e){}
   renderChars(); document.getElementById('selChar').value=name; onCharChg(); closeCharEd();
   toast('✅ "'+name+'" salvato');
-  if(connected){sendSess();addMsg('🔄 Personaggio aggiornato','sys');}
+  if(connected && setupReady){sendSess();addMsg('🔄 Personaggio aggiornato','sys');} // FIX: controlla setupReady
 }
 function delChar(){
   if(!editingChar)return;
@@ -1268,7 +1394,7 @@ function exportChar(){
   const name=document.getElementById('selChar').value;
   const char=getChars().find(c=>c.name===name);
   if(!char){toast('⚠️ Nessun personaggio selezionato');return;}
-  const txt='NOME='+char.name+'\nVOCE='+( char.voice||'')+'\n'+char.prompt;
+  const txt='NOME='+char.name+'\nVOCE='+(char.voice||'')+'\n'+char.prompt;
   const url=URL.createObjectURL(new Blob([txt],{type:'text/plain'}));
   const a=document.createElement('a'); a.href=url; a.download=char.name.replace(/\s+/g,'_')+'.txt'; a.click();
   URL.revokeObjectURL(url); toast('📤 Esportato');
@@ -1319,13 +1445,13 @@ function saveKnow(){
   try{localStorage.setItem(LS_KNOW,JSON.stringify(knowledge));}
   catch(e){toast('⚠️ Salvataggio fallito: '+e.message); return;}
   renderKnowView(); closeKnowEd(); toast('✅ Conoscenza salvata');
-  if(connected){sendSess();addMsg('🔄 Conoscenza aggiornata','sys');}
+  if(connected && setupReady){sendSess();addMsg('🔄 Conoscenza aggiornata','sys');} // FIX: controlla setupReady
 }
 function clearKnow(){
   knowledge={title:'',text:''};
   try{localStorage.removeItem(LS_KNOW);}catch(e){}
   renderKnowView(); closeKnowEd(); toast('🗑 Rimossa');
-  if(connected) sendSess();
+  if(connected && setupReady) sendSess(); // FIX: controlla setupReady
 }
 function loadKnowFile(inp){
   const file=inp.files[0]; if(!file)return;
@@ -1376,10 +1502,6 @@ function tickTimer(){
 // ═══════════════════════════════════════════════════════════════
 // COSTO
 // ═══════════════════════════════════════════════════════════════
-function addTok(u){
-  const ai=u.input_token_details||{},ao=u.output_token_details||{};
-  // token contati direttamente in onMsg per Gemini
-}
 function renderCost(){
   const P=PRICES[document.getElementById('selModel').value]||PRICES['gemini-2.0-flash-live-001'];
   const aI=(tok.ai/1e6)*P.ai*EUR, aO=(tok.ao/1e6)*P.ao*EUR;
@@ -1403,21 +1525,14 @@ function toggleRec(){
 function cancelRec(){isRec=false;recChunks=[];const b=document.getElementById('btnRec');b.textContent='⏺ AVVIA REC';b.classList.remove('rec');toast('REC annullata');}
 function saveWav(){
   if(!recChunks.length){toast('⚠️ Nessun audio da salvare');return;}
-
-  // Concatenazione diretta senza silenzio artificiale tra i chunk.
-  // I chunk sono già in ordine cronologico perché registrati alla ricezione dalla rete.
   const total = recChunks.reduce((a,c)=>a+c.length, 0);
   const pcm   = new Int16Array(total);
   let off=0;
   recChunks.forEach(c=>{pcm.set(c,off);off+=c.length;});
-
-  // Fade-out sugli ultimi 200 campioni per evitare click di fine registrazione
   const fadeLen = Math.min(200, pcm.length);
   for(let i=0;i<fadeLen;i++){
     pcm[pcm.length-fadeLen+i] = Math.round(pcm[pcm.length-fadeLen+i] * (1 - i/fadeLen));
   }
-
-  // Header WAV standard PCM16 mono 24000Hz
   const SR=24000;
   const buf=new ArrayBuffer(44+pcm.length*2), v=new DataView(buf);
   const w=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
@@ -1428,7 +1543,6 @@ function saveWav(){
   v.setUint16(32,2,true);  v.setUint16(34,16,true);
   w(36,'data'); v.setUint32(40,pcm.length*2,true);
   for(let i=0;i<pcm.length;i++) v.setInt16(44+i*2,pcm[i],true);
-
   const url=URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
   const a=document.createElement('a');
   a.href=url; a.download='robot-'+Date.now()+'.wav'; a.click();
