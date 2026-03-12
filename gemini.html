@@ -518,7 +518,7 @@ function onAutoMuteChange(){
     bargeEl.disabled = false;
     bargeEl.closest('.trow').style.opacity = '1';
   }
-  if(connected && setupReady) sendSess(); // FIX: controlla setupReady
+  // Impostazioni VAD/barge-in applicate alla prossima connessione (Gemini non supporta update mid-session)
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -939,35 +939,32 @@ function sendSetup(){
     document.getElementById('selVoice').value=mapped;
   }
   const instructions=buildSystemPrompt();
-  dbg('📋 Setup: '+model+' voce:'+voice);
-  const setup={
-    model:'models/'+model,
-    generationConfig:{
-      responseModalities:['AUDIO'],
-      speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:voice}}}
-    },
-    systemInstruction:{parts:[{text:instructions}]}
-  };
-  ws.send(JSON.stringify({setup:setup}));
-}
-
-function sendSess(){
-  if(!ws||ws.readyState!==WebSocket.OPEN||!setupReady)return; // FIX: controlla setupReady
-  const model=document.getElementById('selModel').value;
-  const vadMode=document.getElementById('selVad').value;
   const temp=parseFloat(document.getElementById('selTemp').value);
-  const bargeIn=document.getElementById('chkBarge').checked&&!document.getElementById('chkAutoMute').checked;
+  const vadMode=document.getElementById('selVad').value;
   const silMs=parseInt(document.getElementById('rSil').value);
-  const eag=document.getElementById('selEag').value;
-  let realtimeInputConfig={};
+  let realtimeInputConfig;
   if(vadMode==='server_vad'){
     realtimeInputConfig={automaticActivityDetection:{disabled:false,startOfSpeechSensitivity:'START_SENSITIVITY_HIGH',endOfSpeechSensitivity:'END_SENSITIVITY_HIGH',prefixPaddingMs:20,silenceDurationMs:silMs}};
   } else {
     realtimeInputConfig={automaticActivityDetection:{disabled:false}};
   }
-  const cfg={generationConfig:{temperature:temp,responseModalities:['AUDIO']}};
-  ws.send(JSON.stringify({sessionConfig:{...cfg,realtimeInputConfig}}));
+  dbg('📋 Setup: '+model+' voce:'+voice+' VAD:'+vadMode+' temp:'+temp);
+  const setup={
+    model:'models/'+model,
+    generationConfig:{
+      responseModalities:['AUDIO'],
+      speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:voice}}},
+      temperature:temp
+    },
+    systemInstruction:{parts:[{text:instructions}]},
+    realtimeInputConfig:realtimeInputConfig
+  };
+  ws.send(JSON.stringify({setup:setup}));
 }
+
+// sendSess() rimossa: Gemini Live non supporta sessionConfig mid-stream.
+// Tutta la configurazione (VAD, temperatura, voce) va nel messaggio setup iniziale.
+// onAutoMuteChange, saveChar, saveKnow non inviano più nulla al WS aperto.
 
 // ═══════════════════════════════════════════════════════════════
 // AUDIO CHUNK → WS
@@ -1026,8 +1023,6 @@ function onMsg(e){
     addMsg('✅ Gemini connesso · modello: '+document.getElementById('selModel').value+' · voce: '+(document.getElementById('selVoice').value||activeVoice),'sys');
     toast('✅ Gemini pronto');
     dbg('✅ setupComplete — SR microfono: '+(audioCtx?audioCtx.sampleRate:'?')+'Hz');
-    // Invia configurazione sessione ora che setupComplete è arrivato
-    sendSess();
     return;
   }
   if(m.serverContent){
@@ -1383,7 +1378,7 @@ function saveChar(){
   try{localStorage.setItem(LS_LAST,name);}catch(e){}
   renderChars(); document.getElementById('selChar').value=name; onCharChg(); closeCharEd();
   toast('✅ "'+name+'" salvato');
-  if(connected && setupReady){sendSess();addMsg('🔄 Personaggio aggiornato','sys');} // FIX: controlla setupReady
+  if(connected){addMsg('🔄 Personaggio aggiornato — riconnetti per applicarlo','sys');}
 }
 function delChar(){
   if(!editingChar)return;
@@ -1445,13 +1440,13 @@ function saveKnow(){
   try{localStorage.setItem(LS_KNOW,JSON.stringify(knowledge));}
   catch(e){toast('⚠️ Salvataggio fallito: '+e.message); return;}
   renderKnowView(); closeKnowEd(); toast('✅ Conoscenza salvata');
-  if(connected && setupReady){sendSess();addMsg('🔄 Conoscenza aggiornata','sys');} // FIX: controlla setupReady
+  if(connected){addMsg('🔄 Conoscenza aggiornata — riconnetti per applicarla','sys');}
 }
 function clearKnow(){
   knowledge={title:'',text:''};
   try{localStorage.removeItem(LS_KNOW);}catch(e){}
   renderKnowView(); closeKnowEd(); toast('🗑 Rimossa');
-  if(connected && setupReady) sendSess(); // FIX: controlla setupReady
+  // impostazioni applicate alla prossima connessione
 }
 function loadKnowFile(inp){
   const file=inp.files[0]; if(!file)return;
