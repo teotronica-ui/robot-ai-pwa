@@ -455,6 +455,7 @@ const RECONNECT_MAX   = 30000;  // backoff massimo
 const RECONNECT_LIMIT = 10;     // max tentativi prima di arrendersi
 const AUDIO_Q_MAX     = 60;     // max frame in coda audio
 const DRAIN_WATCHDOG  = 6000;   // ms prima di sbloccare drain() bloccato
+const PRE_BUFFER_CHUNKS = 4;    // chunk da accumulare prima di iniziare playback (~160ms a 24kHz/chunk)
 const CTX_WATCHDOG_MS = 2000;   // intervallo check AudioContext
 
 // ═══════════════════════════════════════════════════════════════
@@ -966,7 +967,9 @@ function pcmToBase64(pcm){
   return btoa(binary);
 }
 
-let vadWasActive=false; // traccia se l'ultimo chunk era sopra soglia
+let vadWasActive=false;    // true se nell'ultimo chunk eravamo sopra soglia
+let vadSilenceFrames=0;    // frame consecutivi sotto soglia dopo parlato
+const VAD_SILENCE_FRAMES=18; // ~300ms a 60fps prima di inviare audioStreamEnd
 
 function onChunk(e){
   if(!setupReady)return;
@@ -979,16 +982,22 @@ function onChunk(e){
   const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
   const aboveVad = (vuDisplayPct >= thrPct);
   if(!aboveVad){
-    // Se eravamo sopra soglia e ora siamo sotto → fine del parlato
-    // Invia audioStreamEnd per dire a Gemini di processare e rispondere
     if(vadWasActive){
-      ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
-      dbg('🔇 audioStreamEnd inviato (VAD sotto soglia)');
+      vadSilenceFrames++;
+      // Aspetta VAD_SILENCE_FRAMES frame consecutivi di silenzio prima di
+      // dichiarare fine del turno — evita audioStreamEnd su micropauses tra parole
+      if(vadSilenceFrames >= VAD_SILENCE_FRAMES){
+        ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+        dbg('🔇 audioStreamEnd inviato (silenzio '+VAD_SILENCE_FRAMES+' frame)');
+        vadWasActive=false;
+        vadSilenceFrames=0;
+      }
     }
-    vadWasActive=false;
     return;
   }
+  // Sopra soglia: invia audio e resetta contatore silenzio
   vadWasActive=true;
+  vadSilenceFrames=0;
   const actualSR=audioCtx?audioCtx.sampleRate:48000;
   ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate='+actualSR}]}}));
 }
@@ -1026,7 +1035,10 @@ function onMsg(e){
           if(isRec)recChunks.push(pcm);
           if(audioQ.length>AUDIO_Q_MAX){audioQ=audioQ.slice(-Math.floor(AUDIO_Q_MAX/2));nextPlayTime=0;}
           audioQ.push(pcm);
-          if(!playing)drain();
+          // Pre-buffer: aspetta PRE_BUFFER_CHUNKS prima di iniziare playback
+          // per avere margine contro il jitter di rete ed evitare scatti.
+          // Se la coda è già in riproduzione, drain() gestisce il resto.
+          if(!playing && audioQ.length >= PRE_BUFFER_CHUNKS) drain();
           tok.ao+=Math.round(pcm.length/OUTPUT_SR*25);renderCost();
           if(!robotSpeaking)setRobotSpeaking(true);
         }
@@ -1040,7 +1052,9 @@ function onMsg(e){
     if(sc.turnComplete){
       finalizeRobot();
       audioQ.push(new Int16Array(OUTPUT_SR));
-      if(!playing)drain();
+      // turnComplete: forza drain anche se siamo sotto PRE_BUFFER_CHUNKS
+      // (Gemini ha finito — suona quello che c'è)
+      if(!playing) drain();
       setTimeout(()=>{setRobotSpeaking(false);setSt('listening');if(!silStart)silStart=Date.now();},1100);
     }
     if(sc.interrupted){
@@ -1065,7 +1079,7 @@ function disc(){
   if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null;}
   if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch(e){}}
   audioCtx=null; analyser=vuAnalyser;
-  audioQ=[]; playing=false; silStart=null; nextPlayTime=0; vadWasActive=false;
+  audioQ=[]; playing=false; silStart=null; nextPlayTime=0; vadWasActive=false; vadSilenceFrames=0;
   robotSpeaking=false; autoMuteSuspended=false;
   setRobotSpeaking(false);
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
@@ -1160,7 +1174,8 @@ async function drain(){
       // Scheduling: inizia esattamente quando finisce il buffer precedente.
       // Se nextPlayTime è nel passato (es. dopo una pausa), usa currentTime + 0.01s
       // di headroom per evitare glitch.
-      const startAt = Math.max(audioCtx.currentTime + 0.01, nextPlayTime);
+      // 0.06s headroom sul primo chunk per dare tempo all'hardware di prepararsi
+      const startAt = Math.max(audioCtx.currentTime + 0.06, nextPlayTime);
       src.start(startAt);
       nextPlayTime = startAt + buf.duration;
 
