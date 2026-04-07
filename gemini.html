@@ -308,9 +308,8 @@
     </div>
     <div class="f"><label>Modello AI</label>
       <select id="selModel">
-        <option value="gemini-live-2.5-flash-native-audio" selected>Gemini 2.5 Flash Native Audio ✅</option>
-        <option value="gemini-2.5-flash-native-audio-preview-12-2025">Gemini 2.5 Flash NA Dec-2025</option>
-        <option value="gemini-2.5-flash-native-audio-preview-09-2025">Gemini 2.5 Flash NA Sep-2025 ⚠️ deprecato</option>
+        <option value="gemini-2.5-flash-native-audio-preview-12-2025" selected>Gemini 2.5 Flash NA Dec-2025 ✅</option>
+        <option value="gemini-2.5-flash-native-audio-preview-09-2025">Gemini 2.5 Flash NA Sep-2025</option>
         <option value="gemini-2.0-flash-live-001">Gemini 2.0 Flash Live</option>
       </select>
     </div>
@@ -444,7 +443,6 @@ const GEMINI_WS_BASE='wss://generativelanguage.googleapis.com/ws/google.ai.gener
 const INPUT_SR=16000, OUTPUT_SR=24000;
 const PRICES={
   'gemini-2.0-flash-live-001':{ai:0.5,ao:2.0},
-  'gemini-live-2.5-flash-native-audio':{ai:3.0,ao:12.0},
   'gemini-2.5-flash-native-audio-preview-09-2025':{ai:3.0,ao:12.0},
   'gemini-2.5-flash-native-audio-preview-12-2025':{ai:3.0,ao:12.0},
   'gemini-2.5-flash-native-audio-latest':{ai:3.0,ao:12.0}
@@ -903,7 +901,7 @@ async function conn(){
     if(analyser)analyser.connect(workletNode);
     dot('dMic','on');
     const model=document.getElementById('selModel').value;
-    const apiVer='v1beta'; // tutti i modelli correnti usano v1beta
+    const apiVer=model.startsWith('gemini-live-')?'v1alpha':'v1beta';
     const GEMINI_WS=GEMINI_WS_BASE+'.'+apiVer+'.GenerativeService.BidiGenerateContent';
     const url=GEMINI_WS+'?key='+API_KEY;
     dbg('🌐 WS → '+apiVer+' · '+model);
