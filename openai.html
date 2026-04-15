@@ -319,7 +319,7 @@
         <option value="0">Disabilitato</option>
         <option value="30000">30 secondi</option>
         <option value="60000">1 minuto</option>
-        <option value="90000" selected>90 secondi ★</option>
+        <option value="30000" selected>30 secondi ★</option>
         <option value="120000">2 minuti</option>
         <option value="180000">3 minuti</option>
       </select>
@@ -1001,7 +1001,7 @@ function sendSess(){
       create_response:true,
       interrupt_response:bargein,
     };
-    if(idleMs>0) turnDetection.idle_timeout_ms=idleMs;
+    if(idleMs>0) turnDetection.idle_timeout_ms=Math.min(idleMs, 30000);
   } else {
     turnDetection={
       type:'semantic_vad',
