@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Robot AI — OpenAI v8</title>
+  <title>Robot AI — OpenAI v9</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -32,14 +32,10 @@
     @keyframes bl{to{opacity:.25}}
     .state{font-family:var(--mono);font-size:.82rem;color:var(--green);margin-top:7px;letter-spacing:1px;text-align:center;min-height:1.2em}
     .charinfo{font-size:.65rem;color:var(--muted);margin-top:3px;text-align:center;font-family:var(--mono)}
-
-    /* Reconnect counter */
     .reconn-bar{display:none;align-items:center;gap:8px;margin-top:8px;padding:8px 12px;background:#1a0a00;border:1px solid var(--yellow);border-radius:9px;font-family:var(--mono);font-size:.72rem;color:var(--yellow)}
     .reconn-bar.show{display:flex}
     .reconn-spin{animation:spin 1s linear infinite;display:inline-block}
     @keyframes spin{to{transform:rotate(360deg)}}
-
-    /* VU */
     .vu-top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:7px}
     .rms-val{font-family:var(--mono);font-size:2rem;font-weight:700;letter-spacing:4px;color:var(--green);transition:color .08s;line-height:1;min-width:80px;text-align:right}
     .rms-val.y{color:var(--yellow)}.rms-val.r{color:var(--red)}
@@ -52,26 +48,18 @@
     .seg.muted{background:#1a0505!important;box-shadow:none!important}
     .thr{position:absolute;top:0;bottom:0;width:2px;background:var(--red);opacity:.85;pointer-events:none}
     .thr::before{content:'▼';position:absolute;top:-1px;left:50%;transform:translateX(-50%);font-size:.45rem;color:var(--red)}
-
-    /* Auto-mute indicator overlay on VU */
     .vu-mute-overlay{position:absolute;inset:0;background:rgba(255,61,61,.12);border-radius:7px;display:none;align-items:center;justify-content:center;font-family:var(--mono);font-size:.65rem;color:var(--red);letter-spacing:2px;pointer-events:none}
     .vu-mute-overlay.show{display:flex}
-
-    /* Chat */
     .chat-box{height:150px;overflow-y:auto;background:#040c15;border:1px solid var(--bord);border-radius:8px;padding:9px;display:flex;flex-direction:column;gap:5px;margin-top:10px}
     .msg{padding:6px 10px;border-radius:9px;max-width:92%;font-size:.77rem;line-height:1.45;word-break:break-word}
     .msg.robot{background:#0d1e30;align-self:flex-start;border-bottom-left-radius:3px}
     .msg.user{background:#002a18;align-self:flex-end;color:#a7f3d0;border-bottom-right-radius:3px}
     .msg.sys{background:transparent;color:#2a7a5a;font-size:.63rem;align-self:center;font-family:var(--mono)}
-
-    /* Camera */
     .cam-ph{width:100%;aspect-ratio:16/9;background:#040c15;border:2px dashed var(--bord);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:.75rem;font-family:var(--mono);flex-direction:column;gap:6px}
     #camVideo{width:100%;aspect-ratio:16/9;background:#040c15;border-radius:9px;object-fit:cover;display:none;border:1px solid var(--bord)}
     canvas{display:none}
     .snap-flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:9999;transition:opacity .15s}
     .snap-flash.go{opacity:.7}
-
-    /* Controls */
     .sg{margin-top:11px}
     .sh{display:flex;justify-content:space-between;font-size:.68rem;margin-bottom:4px}
     .sh .l{color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px}
@@ -137,8 +125,6 @@
     .mic-row{display:flex;gap:7px;margin-bottom:8px;align-items:center}
     .btn-sm{background:var(--surf);border:1px solid var(--bord);border-radius:8px;color:var(--text);padding:7px 11px;font-size:.8rem;cursor:pointer;white-space:nowrap;font-family:var(--sans);font-weight:700}
     .btn-sm.gr{border-color:var(--green);color:var(--green)}
-
-    /* Auto-mute status badge */
     .amute-badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:.65rem;padding:3px 8px;border-radius:12px;border:1px solid var(--bord);color:var(--muted);margin-top:6px;transition:all .3s}
     .amute-badge.robot-speaking{background:#001810;border-color:var(--green);color:var(--green)}
     .amute-badge.mic-muted{background:#1a0000;border-color:var(--red);color:var(--red)}
@@ -174,7 +160,6 @@
     </div>
     <div class="rms-val" id="rmsVal"> 0%</div>
   </div>
-  <!-- selezione mic -->
   <div class="mic-row">
     <select class="mic-sel" id="selMic"><option value="">🎤 Auto</option></select>
     <button class="btn-sm gr" onclick="startVuMonitor()">▶ MIC</button>
@@ -185,7 +170,6 @@
     <div class="thr" id="thrLine"></div>
     <div class="vu-mute-overlay" id="vuMuteOverlay">🔇 MIC SOSPESO — ROBOT PARLA</div>
   </div>
-  <!-- Auto-mute status -->
   <div id="amuteBadge" class="amute-badge">⚪ Auto-mute: standby</div>
   <div class="chat-box" id="chatBox"><div class="msg sys">— conversazione —</div></div>
 </div>
@@ -277,9 +261,16 @@
     <div><label>Voce preferita</label>
       <select id="edVoice">
         <option value="">— usa quella selezionata —</option>
-        <option value="alloy">Alloy</option><option value="ash">Ash</option><option value="ballad">Ballad</option>
-        <option value="coral">Coral</option><option value="echo">Echo</option><option value="sage">Sage</option>
-        <option value="shimmer">Shimmer</option><option value="verse">Verse</option><option value="cedar">Cedar</option><option value="marin">Marin</option>
+        <optgroup label="── Voci GA (consigliate) ──">
+          <option value="marin">Marin ★ (consigliata)</option>
+          <option value="cedar">Cedar ★ (consigliata)</option>
+        </optgroup>
+        <optgroup label="── Voci Beta ──">
+          <option value="alloy">Alloy</option><option value="ash">Ash</option>
+          <option value="ballad">Ballad</option><option value="coral">Coral</option>
+          <option value="echo">Echo</option><option value="sage">Sage</option>
+          <option value="shimmer">Shimmer</option><option value="verse">Verse</option>
+        </optgroup>
       </select>
     </div>
     <div class="ed-row">
@@ -291,17 +282,28 @@
   <div class="r2" style="margin-top:10px">
     <div class="f"><label>Voce OpenAI</label>
       <select id="selVoice">
-        <option value="alloy">Alloy (Neutro)</option><option value="ash">Ash (Maschile)</option>
-        <option value="ballad">Ballad (Caldo)</option><option value="coral">Coral (Femminile)</option>
-        <option value="echo">Echo (Maschile)</option><option value="sage">Sage (Saggio)</option>
-        <option value="shimmer">Shimmer (F.Dolce)</option><option value="verse">Verse (Espressivo)</option>
-        <option value="cedar">Cedar</option><option value="marin">Marin</option>
+        <optgroup label="── GA (consigliate) ──">
+          <option value="marin">Marin ★</option>
+          <option value="cedar">Cedar ★</option>
+        </optgroup>
+        <optgroup label="── Beta ──">
+          <option value="alloy">Alloy (Neutro)</option><option value="ash">Ash (Maschile)</option>
+          <option value="ballad">Ballad (Caldo)</option><option value="coral">Coral (Femminile)</option>
+          <option value="echo">Echo (Maschile)</option><option value="sage">Sage (Saggio)</option>
+          <option value="shimmer">Shimmer (F.Dolce)</option><option value="verse">Verse (Espressivo)</option>
+        </optgroup>
       </select>
     </div>
     <div class="f"><label>Modello AI</label>
       <select id="selModel">
-        <option value="gpt-4o-realtime-preview">GPT-4o Realtime</option>
-        <option value="gpt-4o-mini-realtime-preview">GPT-4o Mini RT</option>
+        <optgroup label="── GA (nuovi) ──">
+          <option value="gpt-realtime-1.5">gpt-realtime-1.5 ★</option>
+          <option value="gpt-realtime-mini-1.5">gpt-realtime-mini-1.5</option>
+        </optgroup>
+        <optgroup label="── GA base ──">
+          <option value="gpt-realtime">gpt-realtime</option>
+          <option value="gpt-realtime-mini">gpt-realtime-mini</option>
+        </optgroup>
       </select>
     </div>
   </div>
@@ -312,11 +314,14 @@
         <option value="semantic_vad">Semantic VAD</option>
       </select>
     </div>
-    <div class="f"><label>Temperatura</label>
-      <select id="selTemp">
-        <option value="0.6">0.6 – Preciso</option>
-        <option value="0.8" selected>0.8 – Bilanciato</option>
-        <option value="1.0">1.0 – Creativo</option>
+    <div class="f"><label>Idle Timeout (fiera)</label>
+      <select id="selIdle">
+        <option value="0">Disabilitato</option>
+        <option value="30000">30 secondi</option>
+        <option value="60000">1 minuto</option>
+        <option value="90000" selected>90 secondi ★</option>
+        <option value="120000">2 minuti</option>
+        <option value="180000">3 minuti</option>
       </select>
     </div>
   </div>
@@ -404,49 +409,63 @@
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
 const LS_KEY='robot_key_openai', LS_CHARS='robot_characters', LS_LAST='robot_last_char', LS_KNOW='robot_knowledge';
-const PRICES={'gpt-4o-realtime-preview':{ai:32,ao:64,ti:3,to:12,c:.4},'gpt-4o-mini-realtime-preview':{ai:10,ao:20,ti:1.1,to:4.4,c:.3}};
+
+// ── Prezzi GA ($ per milione di token) ──
+// Audio: invariati rispetto alla beta. Testo: leggermente rivisti.
+const PRICES={
+  'gpt-realtime-1.5'        :{ai:32, ao:64, ti:4,   to:16,  c:0.40},
+  'gpt-realtime'            :{ai:32, ao:64, ti:4,   to:16,  c:0.40},
+  'gpt-realtime-mini-1.5'   :{ai:10, ao:20, ti:0.6, to:2.4, c:0.06},
+  'gpt-realtime-mini'       :{ai:10, ao:20, ti:0.6, to:2.4, c:0.06},
+};
 const EUR=0.92, N_SEGS=36;
-const WS_TIMEOUT_MS   = 15000;  // timeout connessione WS
-const RECONNECT_BASE  = 2000;   // backoff iniziale riconnessione (ms)
-const RECONNECT_MAX   = 30000;  // backoff massimo
-const RECONNECT_LIMIT = 10;     // max tentativi prima di arrendersi
-const AUDIO_Q_MAX     = 60;     // max frame in coda audio
-const DRAIN_WATCHDOG  = 6000;   // ms prima di sbloccare drain() bloccato
-const CTX_WATCHDOG_MS = 2000;   // intervallo check AudioContext
+
+// ── Configurazione connessione ──
+// PROXY_URL: punta al tuo Cloudflare Worker.
+// Cambia solo "robot" con il nome che hai scelto e "TUO_ACCOUNT" con il tuo subdomain.
+const PROXY_URL = 'wss://robot.TUO_ACCOUNT.workers.dev';
+
+const WS_TIMEOUT_MS   = 15000;
+const RECONNECT_BASE  = 2000;
+const RECONNECT_MAX   = 30000;
+const RECONNECT_LIMIT = 10;
+const AUDIO_Q_MAX     = 60;
+const DRAIN_WATCHDOG  = 6000;
+const CTX_WATCHDOG_MS = 2000;
+const KEEPALIVE_MS    = 20000;  // intervallo keepalive silenzio → evita disconnessione stand vuoto
 
 // ═══════════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════════
-let API_KEY='', activePrompt='Sei un assistente vocale. Rispondi sempre in italiano.', activeVoice='alloy';
+let API_KEY='', activePrompt='Sei un assistente vocale. Rispondi sempre in italiano.', activeVoice='marin';
 let localVadLevel=0;
 let ws=null, audioCtx=null, workletNode=null, micStream=null;
 let muted=false, connected=false, isRec=false, recChunks=[];
 let audioQ=[], playing=false, analyser=null, silStart=null;
-let nextPlayTime=0;   // scheduling preciso: quando finisce l'ultimo buffer pianificato
+let nextPlayTime=0;
 let tok={ai:0,ao:0,ti:0,to:0,c:0};
 let editingChar=null, camStream=null, camActive=false;
 let knowledge={title:'',text:''};
 let robotMsgEl=null, robotTxt='';
-// mic/VU
 let sharedMicStream=null, vuCtx=null, vuAnalyser=null, vuRaf=null;
 let availableMics=[], currentMicId='';
-// auto-mute
 let robotSpeaking=false, autoMuteSuspended=false;
-// reconnect
 let reconnectCount=0, reconnectTimer=null, wsTimeoutTimer=null;
-let userDisconnected=false; // true = disconnessione volontaria
-// watchdog
+let userDisconnected=false;
 let ctxWatchdogInterval=null, drainWatchdog=null;
+let workletLoaded=false;      // FIX #1: evita addModule doppio sullo stesso AudioContext
+let reconnecting=false;       // FIX #6: evita doppio conn() parallelo
+let keepaliveTimer=null;      // timer keepalive silenzio
+let vuLogT=0;
 
 // ═══════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════
 function init(){
   buildVU(); loadKey(); renderChars(); loadKnowLS(); updVadUI();
-  setInterval(tickTimer,500); netCheck(); setInterval(netCheck,14000); enumCams();
+  setInterval(tickTimer,250); netCheck(); setInterval(netCheck,14000); enumCams();
   try{navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);}catch(e){}
   setInterval(pollMics,4000);
-  // Sincronizza stato barge-in con auto-mute
   document.getElementById('chkAutoMute').addEventListener('change', onAutoMuteChange);
   onAutoMuteChange();
 }
@@ -455,13 +474,11 @@ function onAutoMuteChange(){
   const autoMute = document.getElementById('chkAutoMute').checked;
   const bargeEl  = document.getElementById('chkBarge');
   if(autoMute){
-    // Con auto-mute ON, il barge-in non ha senso (il mic è sospeso)
-    bargeEl.checked = false;
-    bargeEl.disabled = true;
-    bargeEl.closest('.trow').style.opacity = '0.4';
+    bargeEl.checked=false; bargeEl.disabled=true;
+    bargeEl.closest('.trow').style.opacity='0.4';
   } else {
-    bargeEl.disabled = false;
-    bargeEl.closest('.trow').style.opacity = '1';
+    bargeEl.disabled=false;
+    bargeEl.closest('.trow').style.opacity='1';
   }
   if(connected) sendSess();
 }
@@ -537,40 +554,35 @@ function drawVU(level){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// AUTO-MUTE LOGIC
+// AUTO-MUTE
 // ═══════════════════════════════════════════════════════════════
 function setRobotSpeaking(speaking){
-  robotSpeaking = speaking;
-  const autoMute = document.getElementById('chkAutoMute').checked;
-  autoMuteSuspended = speaking && autoMute;
-
-  const overlay   = document.getElementById('vuMuteOverlay');
-  const badge     = document.getElementById('amuteBadge');
-  const micDot    = document.getElementById('dMic');
-
+  robotSpeaking=speaking;
+  const autoMute=document.getElementById('chkAutoMute').checked;
+  autoMuteSuspended=speaking&&autoMute;
+  const overlay=document.getElementById('vuMuteOverlay');
+  const badge=document.getElementById('amuteBadge');
   if(autoMuteSuspended){
     overlay.classList.add('show');
     badge.className='amute-badge mic-muted';
     badge.textContent='🔇 Mic sospeso — robot in risposta';
     if(workletNode) workletNode.port.postMessage({cmd:'gain', value:0});
-  } else if(speaking && !autoMute){
-    // Robot parla ma auto-mute OFF
+  } else if(speaking&&!autoMute){
     overlay.classList.remove('show');
     badge.className='amute-badge robot-speaking';
     badge.textContent='🔊 Robot parla · auto-mute OFF';
-    if(workletNode) workletNode.port.postMessage({cmd:'gain', value: parseInt(document.getElementById('rGain').value)/100});
+    if(workletNode) workletNode.port.postMessage({cmd:'gain', value:parseInt(document.getElementById('rGain').value)/100});
   } else {
     overlay.classList.remove('show');
     badge.className='amute-badge';
     badge.textContent='⚪ Auto-mute: standby';
-    if(workletNode) workletNode.port.postMessage({cmd:'gain', value: parseInt(document.getElementById('rGain').value)/100});
-    // Reimposta stato mic dot
-    if(connected && !muted) dot('dMic','on');
+    if(workletNode) workletNode.port.postMessage({cmd:'gain', value:parseInt(document.getElementById('rGain').value)/100});
+    if(connected&&!muted) dot('dMic','on');
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CHAT / DEBUG
+// CHAT
 // ═══════════════════════════════════════════════════════════════
 function addMsg(txt,type){
   const box=document.getElementById('chatBox');
@@ -592,14 +604,38 @@ function dbg(msg){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MIC — iOS: un solo getUserMedia, dentro user gesture
+// WS SEND — centralizzato con readyState check (FIX #5)
 // ═══════════════════════════════════════════════════════════════
-// Strategia selezione mic iOS + split jack:
-// iOS nasconde i deviceId reali finché non hai già il permesso.
-// Al primo avvio facciamo getUserMedia senza constraint (ottieni permesso),
-// poi enumeriamo i dispositivi (ora con label visibili), cerchiamo il
-// "Wired Headset" / "Headset Microphone" e se trovato riprendiamo
-// lo stream con il deviceId corretto.
+function wsSend(obj){
+  if(ws&&ws.readyState===WebSocket.OPEN){
+    try{ ws.send(JSON.stringify(obj)); }
+    catch(e){ dbg('❌ wsSend errore: '+e.message); }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// KEEPALIVE — evita disconnessione per stand vuoto
+// ═══════════════════════════════════════════════════════════════
+function startKeepalive(){
+  stopKeepalive();
+  keepaliveTimer=setInterval(()=>{
+    if(!connected||!ws||ws.readyState!==WebSocket.OPEN) return;
+    // 100ms di silenzio PCM16 @ 24kHz = 2400 sample
+    const silence=new Int16Array(2400);
+    try{
+      ws.send(JSON.stringify({
+        type:'input_audio_buffer.append',
+        audio: pcmToBase64(silence)
+      }));
+    }catch(e){}
+  }, KEEPALIVE_MS);
+}
+function stopKeepalive(){
+  if(keepaliveTimer){clearInterval(keepaliveTimer);keepaliveTimer=null;}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MIC
 // ═══════════════════════════════════════════════════════════════
 async function startVuMonitor(forceDeviceId){
   if(sharedMicStream){sharedMicStream.getTracks().forEach(t=>t.stop());sharedMicStream=null;}
@@ -607,119 +643,88 @@ async function startVuMonitor(forceDeviceId){
   if(vuCtx&&vuCtx.state!=='closed'){
     try{await vuCtx.close();}catch(e){}
     vuCtx=null; vuAnalyser=null;
+    workletLoaded=false; // FIX #1: reset flag quando il contesto viene distrutto
     await new Promise(r=>setTimeout(r,250));
   }
   try{
     let devId=forceDeviceId||document.getElementById('selMic')?.value||'';
-
     if(!devId){
-      // FASE 1: apri con default per sbloccare il permesso e rendere visibili le label
       dbg('🎤 getUserMedia (default — permesso + detect wired)...');
       const tempStream=await navigator.mediaDevices.getUserMedia({
         audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}
       });
       const tempLabel=tempStream.getAudioTracks()[0]?.label||'';
       dbg('📋 Mic default: "'+tempLabel+'"');
-
-      // FASE 2: ora che abbiamo il permesso, enumera con label visibili
       const devs=await navigator.mediaDevices.enumerateDevices();
       const mics=devs.filter(d=>d.kind==='audioinput');
-      dbg('📋 Mic disponibili dopo permesso: '+mics.map(m=>'"'+(m.label||'?')+'"').join(', '));
-
-      // Il default era già quello giusto se il suo label NON è built-in
+      dbg('📋 Mic disponibili: '+mics.map(m=>'"'+(m.label||'?')+'"').join(', '));
       const defaultLabel=tempLabel.toLowerCase();
       const defaultIsBuiltin=/iphone|built.?in|receiver|interno|microfono\s+iphone/i.test(defaultLabel);
-
-      // Cerca microfono esterno tra tutti i disponibili
-      // Strategia: escludi quelli built-in, prendi il primo rimasto
       const external=mics.find(m=>
-        m.deviceId && m.deviceId!=='' &&
-        !/iphone|built.?in|receiver|interno|microfono\s+iphone/i.test(m.label) &&
-        m.label // deve avere una label visibile
+        m.deviceId&&m.deviceId!==''&&
+        !/iphone|built.?in|receiver|interno|microfono\s+iphone/i.test(m.label)&&
+        m.label
       );
-
-      dbg('🔍 Default is built-in: '+defaultIsBuiltin+' | External found: '+(external?'"'+external.label+'"':'no'));
-
-      if(defaultIsBuiltin && external){
-        // Default è built-in ma esiste uno esterno → switch
+      if(defaultIsBuiltin&&external){
         tempStream.getTracks().forEach(t=>t.stop());
         devId=external.deviceId;
-        dbg('🎯 Switch a mic esterno: "'+external.label+'" deviceId:'+devId.slice(0,12)+'...');
+        dbg('🎯 Switch a mic esterno: "'+external.label+'"');
       } else {
-        // Default è già quello giusto, oppure non c'è alternativa
-        sharedMicStream=tempStream;
-        devId='';
-        dbg(defaultIsBuiltin ? '⚠️ Solo mic built-in disponibile' : '✅ Default già mic esterno: "'+tempLabel+'"');
+        sharedMicStream=tempStream; devId='';
+        dbg(defaultIsBuiltin?'⚠️ Solo mic built-in':'✅ Default già mic esterno: "'+tempLabel+'"');
       }
     }
-
     if(!sharedMicStream){
-      // Apri con deviceId specifico (selezionato manualmente o trovato nella fase 2)
       const constraint=devId
-        ?{audio:{deviceId:{exact:devId}, echoCancellation:false, noiseSuppression:false, autoGainControl:false}}
-        :{audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}};
+        ?{audio:{deviceId:{exact:devId},echoCancellation:false,noiseSuppression:false,autoGainControl:false}}
+        :{audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}};
       dbg('🎤 getUserMedia '+(devId?'exact:'+devId.slice(0,12)+'...':'(default)')+'...');
       sharedMicStream=await navigator.mediaDevices.getUserMedia(constraint);
     }
-
     const track=sharedMicStream.getAudioTracks()[0];
     const settings=track?.getSettings()||{};
     currentMicId=settings.deviceId||devId||'';
     const label=track?.label||'sconosciuto';
     dbg('✅ MIC attivo: "'+label+'" SR:'+(settings.sampleRate||'?')+'Hz');
-    console.log('[MIC]',label,settings);
-
     await pollMics();
     const sel=document.getElementById('selMic');
     if(sel&&currentMicId){const m=[...sel.options].find(o=>o.value===currentMicId);if(m)sel.value=currentMicId;}
-
-    // Track ended = jack rimosso fisicamente
     track.addEventListener('ended',()=>{
-      dbg('⚠️ Mic disconnesso fisicamente — restart...');
+      dbg('⚠️ Mic disconnesso — restart...');
       dot('dMic',null);
-      setTimeout(()=>startVuMonitor().catch(e=>dbg('❌ Restart mic: '+e.message)), 1500);
+      setTimeout(()=>startVuMonitor().catch(e=>dbg('❌ Restart mic: '+e.message)),1500);
     });
-
     vuCtx=new (window.AudioContext||window.webkitAudioContext)();
     dbg('🔊 AudioContext: '+vuCtx.sampleRate+'Hz state:'+vuCtx.state);
     if(vuCtx.state==='suspended'){try{await vuCtx.resume();}catch(e){}}
-
-    // Fallback sblocco al prossimo touch (iOS sospende se non in gesture diretta)
     if(vuCtx.state!=='running'){
       dbg('⏳ AudioContext suspended — tocca lo schermo per sbloccare');
       const unlock=async()=>{try{await vuCtx?.resume();dbg('▶ AudioContext sbloccato');}catch(e){}};
       document.body.addEventListener('touchstart',unlock,{once:true});
       document.body.addEventListener('mousedown',unlock,{once:true});
     }
-
     vuAnalyser=vuCtx.createAnalyser(); vuAnalyser.fftSize=512; vuAnalyser.smoothingTimeConstant=0.3;
     vuCtx.createMediaStreamSource(sharedMicStream).connect(vuAnalyser);
     dot('dMic','on');
-
-    // Loop VU
-    let vuLogT=0;
+    // FIX #7: allocazione Uint8Array fuori dal loop → zero GC nel RAF
+    const vuData=new Uint8Array(vuAnalyser.frequencyBinCount);
     (function tick(){
       vuRaf=requestAnimationFrame(tick);
       if(!vuAnalyser||!vuCtx||vuCtx.state!=='running')return;
-      const d=new Uint8Array(vuAnalyser.frequencyBinCount);
-      vuAnalyser.getByteFrequencyData(d);
+      vuAnalyser.getByteFrequencyData(vuData);
       const binHz=vuCtx.sampleRate/vuAnalyser.fftSize;
-      const lo=Math.floor(80/binHz),hi=Math.min(Math.floor(8000/binHz),d.length-1);
+      const lo=Math.floor(80/binHz),hi=Math.min(Math.floor(8000/binHz),vuData.length-1);
       let peak=0;
-      for(let i=lo;i<=hi;i++){if(d[i]>peak)peak=d[i];}
-      const boosted=Math.min(255, Math.pow(peak/255, 0.55)*255);
+      for(let i=lo;i<=hi;i++){if(vuData[i]>peak)peak=vuData[i];}
+      const boosted=Math.min(255,Math.pow(peak/255,0.55)*255);
       drawVU(boosted);
       const now=Date.now();
-      if(now-vuLogT>3000){vuLogT=now;console.log('[VU] raw peak:'+peak+' boosted:'+Math.round(boosted)+' bins:'+lo+'-'+hi);}
+      if(now-vuLogT>3000){vuLogT=now;console.log('[VU] raw:'+peak+' boosted:'+Math.round(boosted));}
     })();
-
-    // Avvia watchdog AudioContext
     startCtxWatchdog();
-
   }catch(e){
     dbg('❌ Mic errore: '+e.name+': '+e.message);
-    dot('dMic','er');
-    toast('❌ Mic: '+e.name);
+    dot('dMic','er'); toast('❌ Mic: '+e.name);
   }
 }
 
@@ -737,8 +742,7 @@ async function pollMics(){
     const changed=mics.length!==availableMics.length||mics.some((m,i)=>m.deviceId!==availableMics[i]?.deviceId);
     availableMics=mics;
     if(changed){
-      const lbl=mics.map(m=>'"'+(m.label||m.deviceId.slice(0,8))+'"').join(', ');
-      dbg('📋 Mic disponibili ('+mics.length+'): '+lbl);
+      dbg('📋 Mic ('+mics.length+'): '+mics.map(m=>'"'+(m.label||m.deviceId.slice(0,8))+'"').join(', '));
       renderMicSelect();
     }
   }catch(e){}
@@ -759,17 +763,17 @@ function onDeviceChange(){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// WATCHDOG AudioContext — risveglia se sospeso da iOS
+// WATCHDOG AudioContext
 // ═══════════════════════════════════════════════════════════════
 function startCtxWatchdog(){
   if(ctxWatchdogInterval) clearInterval(ctxWatchdogInterval);
   ctxWatchdogInterval=setInterval(async()=>{
     if(!vuCtx)return;
     if(vuCtx.state==='suspended'){
-      dbg('⚠️ AudioContext sospeso — tentativo resume...');
+      dbg('⚠️ AudioContext sospeso — resume...');
       try{
         await vuCtx.resume();
-        if(vuCtx.state==='running') dbg('▶ AudioContext ripristinato dal watchdog');
+        if(vuCtx.state==='running') dbg('▶ AudioContext ripristinato');
       }catch(e){dbg('❌ Resume fallito: '+e.message);}
     }
   }, CTX_WATCHDOG_MS);
@@ -779,7 +783,7 @@ function startCtxWatchdog(){
 // CONNESSIONE
 // ═══════════════════════════════════════════════════════════════
 async function toggleConn(){
-  if(connected || reconnectTimer){
+  if(connected||reconnectTimer){
     userDisconnected=true;
     cancelReconnect();
     disc();
@@ -791,9 +795,15 @@ async function toggleConn(){
 }
 
 async function conn(){
+  if(reconnecting) return; // FIX #6: blocca doppio conn() parallelo
+  reconnecting=true;
+
   const raw=document.getElementById('keyIn').value;
   API_KEY=raw.replace(/[\x00-\x1F\x7F\u200B-\u200D\uFEFF]/g,'').trim();
-  if(API_KEY.length<20){toast('❌ Chiave troppo corta ('+API_KEY.length+' chars)');return;}
+  if(API_KEY.length<20){
+    toast('❌ Chiave troppo corta ('+API_KEY.length+' chars)');
+    reconnecting=false; return;
+  }
   onCharChg();
   activeVoice=document.getElementById('selVoice').value||activeVoice;
   setSt('connecting');
@@ -801,41 +811,41 @@ async function conn(){
   dbg('🔌 Avvio connessione... (tentativo '+(reconnectCount+1)+')');
 
   try{
-    // Assicura mic attivo (siamo in user gesture oppure in riconnessione)
     if(!sharedMicStream||sharedMicStream.getAudioTracks()[0]?.readyState!=='live'){
       dbg('🎤 Avvio mic...');
       await startVuMonitor();
     }
-
-    // UN SOLO stream, senza anti-eco software (inutile con split jack fisico)
     micStream=sharedMicStream;
-
-    // Riusa AudioContext del VU
     audioCtx=vuCtx;
     analyser=vuAnalyser;
     if(analyser) analyser.smoothingTimeConstant=0.15;
 
-    await audioCtx.audioWorklet.addModule('audio-processor.js');
+    // FIX #1: addModule solo se non già caricato su questo AudioContext
+    if(!workletLoaded){
+      dbg('⚙️ Carico AudioWorklet...');
+      await audioCtx.audioWorklet.addModule('audio-processor.js');
+      workletLoaded=true;
+      dbg('✅ AudioWorklet caricato');
+    }
+
     workletNode=new AudioWorkletNode(audioCtx,'pcm16-processor');
     workletNode.port.onmessage=onChunk;
     if(analyser) analyser.connect(workletNode);
     dot('dMic','on');
 
     const model=document.getElementById('selModel').value;
-    dbg('🌐 WebSocket → '+model);
-    ws=new WebSocket(
-      'wss://api.openai.com/v1/realtime?model='+model,
-      ['realtime','openai-insecure-api-key.'+API_KEY,'openai-beta.realtime-v1']
-    );
+    // Il Worker legge il modello dalla querystring e lo passa ad OpenAI
+    const wsUrl=PROXY_URL+'?model='+encodeURIComponent(model);
+    dbg('🌐 WebSocket → '+wsUrl);
+    ws=new WebSocket(wsUrl);
     ws.binaryType='arraybuffer';
 
-    // Timeout: se session.updated non arriva entro WS_TIMEOUT_MS, disconnetti
     wsTimeoutTimer=setTimeout(()=>{
       if(!connected){
-        dbg('⏱ Timeout connessione WS ('+WS_TIMEOUT_MS+'ms)');
+        dbg('⏱ Timeout connessione ('+WS_TIMEOUT_MS+'ms)');
         toast('❌ Timeout connessione');
-        disc();
-        scheduleReconnect();
+        reconnecting=false;
+        disc(); scheduleReconnect();
       }
     }, WS_TIMEOUT_MS);
 
@@ -849,16 +859,14 @@ async function conn(){
       dbg('🔌 WS chiuso: '+e.code+(e.reason?' '+e.reason:''));
       clearTimeout(wsTimeoutTimer);
       const wasConnected=connected;
+      reconnecting=false; // FIX #6
       disc();
-      if(wasConnected && !userDisconnected){
-        scheduleReconnect();
-      } else if(!wasConnected && !userDisconnected && reconnectCount>0){
-        scheduleReconnect();
-      }
+      if(wasConnected&&!userDisconnected){scheduleReconnect();}
+      else if(!wasConnected&&!userDisconnected&&reconnectCount>0){scheduleReconnect();}
     };
-
   }catch(e){
     clearTimeout(wsTimeoutTimer);
+    reconnecting=false; // FIX #6
     dbg('❌ conn errore: '+e.name+': '+e.message);
     toast('❌ '+e.message);
     setSt('idle');
@@ -872,26 +880,24 @@ async function conn(){
 // ═══════════════════════════════════════════════════════════════
 function scheduleReconnect(){
   if(userDisconnected) return;
-  if(reconnectCount >= RECONNECT_LIMIT){
-    dbg('❌ Raggiunto limite riconnessioni ('+RECONNECT_LIMIT+'). Premi Connetti manualmente.');
+  if(reconnectCount>=RECONNECT_LIMIT){
+    dbg('❌ Limite riconnessioni ('+RECONNECT_LIMIT+'). Premi Connetti manualmente.');
     toast('❌ Impossibile riconnettersi');
     hideReconnBar();
     document.getElementById('btnConn').disabled=false;
     return;
   }
   reconnectCount++;
-  const delay=Math.min(RECONNECT_BASE * Math.pow(2, reconnectCount-1), RECONNECT_MAX);
+  const delay=Math.min(RECONNECT_BASE*Math.pow(2,reconnectCount-1),RECONNECT_MAX);
   const delaySec=Math.round(delay/1000);
   dbg('⏳ Riconnessione #'+reconnectCount+' tra '+delaySec+'s...');
-  showReconnBar(reconnectCount, delaySec);
-
+  showReconnBar(reconnectCount,delaySec);
   let remaining=delaySec;
   const tick=setInterval(()=>{
     remaining--;
-    showReconnBar(reconnectCount, remaining);
+    showReconnBar(reconnectCount,remaining);
     if(remaining<=0) clearInterval(tick);
   },1000);
-
   reconnectTimer=setTimeout(async()=>{
     clearInterval(tick);
     reconnectTimer=null;
@@ -902,57 +908,83 @@ function scheduleReconnect(){
 
 function cancelReconnect(){
   if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
-  reconnectCount=0;
-  hideReconnBar();
+  reconnectCount=0; hideReconnBar();
 }
 
-function showReconnBar(attempt, sec){
-  const bar=document.getElementById('reconnBar');
-  document.getElementById('reconnMsg').textContent=
-    'Riconnessione #'+attempt+'/'+RECONNECT_LIMIT+' tra '+sec+'s...';
-  bar.classList.add('show');
+function showReconnBar(attempt,sec){
+  document.getElementById('reconnMsg').textContent='Riconnessione #'+attempt+'/'+RECONNECT_LIMIT+' tra '+sec+'s...';
+  document.getElementById('reconnBar').classList.add('show');
   document.getElementById('btnConn').disabled=false;
   document.getElementById('btnConn').classList.remove('off');
   document.getElementById('btnConn').textContent='✕  ANNULLA RICONNESSIONE';
 }
-
-function hideReconnBar(){
-  document.getElementById('reconnBar').classList.remove('show');
-}
+function hideReconnBar(){document.getElementById('reconnBar').classList.remove('show');}
 
 // ═══════════════════════════════════════════════════════════════
-// SESSION
+// SESSION — GA API format
 // ═══════════════════════════════════════════════════════════════
 function sendSess(){
   const voice=document.getElementById('selVoice').value||activeVoice;
   const instructions=buildSystemPrompt();
-  const temp=parseFloat(document.getElementById('selTemp').value);
   const vadMode=document.getElementById('selVad').value;
   const silMs=parseInt(document.getElementById('rSil').value);
   const eagerness=document.getElementById('selEag').value;
-  // Con auto-mute ON, il barge-in è disabilitato
   const autoMute=document.getElementById('chkAutoMute').checked;
-  const bargein=autoMute ? false : document.getElementById('chkBarge').checked;
+  const bargein=autoMute?false:document.getElementById('chkBarge').checked;
+  const idleMs=parseInt(document.getElementById('selIdle').value)||0;
 
-  dbg('📋 session.update voice:'+voice+' silMs:'+silMs+' autoMute:'+autoMute+' bargein:'+bargein);
+  dbg('📋 session.update voice:'+voice+' vad:'+vadMode+' autoMute:'+autoMute+' idle:'+idleMs+'ms');
 
-  const td=vadMode==='server_vad'
-    ?{type:'server_vad',threshold:0.5,silence_duration_ms:silMs,prefix_padding_ms:300,create_response:true,interrupt_response:bargein}
-    :{type:'semantic_vad',eagerness,create_response:true,interrupt_response:bargein};
+  // ── Turn detection: struttura GA ──
+  let turnDetection;
+  if(vadMode==='server_vad'){
+    turnDetection={
+      type:'server_vad',
+      threshold:0.5,
+      silence_duration_ms:silMs,
+      prefix_padding_ms:300,
+      create_response:true,
+      interrupt_response:bargein,
+    };
+    if(idleMs>0) turnDetection.idle_timeout_ms=idleMs;
+  } else {
+    turnDetection={
+      type:'semantic_vad',
+      eagerness,
+      create_response:true,
+      interrupt_response:bargein,
+    };
+    if(idleMs>0) turnDetection.idle_timeout_ms=idleMs;
+  }
 
-  ws.send(JSON.stringify({type:'session.update',session:{
-    modalities:['text','audio'],instructions,voice,
-    input_audio_format:'pcm16',output_audio_format:'pcm16',
-    input_audio_transcription:{model:'whisper-1'},
-    turn_detection:td,temperature:temp,max_response_output_tokens:4096
-  }}));
+  // ── Struttura sessione GA ──
+  // Nota: temperature rimosso (non supportato dalla GA API)
+  wsSend({
+    type:'session.update',
+    session:{
+      type:'realtime',
+      output_modalities:['audio'],
+      instructions,
+      input_audio_transcription:{model:'whisper-1'},
+      max_response_output_tokens:4096,
+      audio:{
+        input:{
+          format:{type:'audio/pcm', rate:24000},
+          turn_detection:turnDetection,
+        },
+        output:{
+          format:{type:'audio/pcm'},
+          voice,
+        }
+      }
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
 // AUDIO CHUNK (dal worklet)
 // ═══════════════════════════════════════════════════════════════
 function pcmToBase64(pcm){
-  // Loop sicuro — evita stack overflow di spread su array grandi
   const bytes=new Uint8Array(pcm.buffer);
   let binary='';
   const chunk=8192;
@@ -963,26 +995,22 @@ function pcmToBase64(pcm){
 }
 
 function onChunk(e){
-  // Se auto-mute sospeso: non inviare nulla, il gain è già 0 nel worklet
   if(autoMuteSuspended) return;
-
-  let pcm=new Int16Array(e.data);
-  const g=parseInt(document.getElementById('rGain').value)/100;
-  if(g!==1){
-    const o=new Int16Array(pcm.length);
-    for(let i=0;i<pcm.length;i++) o[i]=Math.max(-32768,Math.min(32767,Math.round(pcm[i]*g)));
-    pcm=o;
-  }
+  // FIX #8: il gain viene applicato SOLO nel worklet (audio-processor.js).
+  // Rimosso il secondo passaggio gain qui che causava clipping a 150%
+  // e doppia applicazione.
+  const pcm=new Int16Array(e.data);
   const ctxSR=audioCtx?audioCtx.sampleRate:24000;
   if(ctxSR!==24000) pcm=resample(pcm,ctxSR,24000);
   if(!ws||ws.readyState!==WebSocket.OPEN||muted) return;
-
-  // VAD locale: isteresi per evitare cut bruschi
   const thrRaw=parseInt(document.getElementById('rThr').value);
-  const thrLevel=Math.min(255, Math.pow((thrRaw/6000), 0.55)*255);
-  if(localVadLevel < thrLevel * 0.6) return;
-
-  ws.send(JSON.stringify({type:'input_audio_buffer.append', audio:pcmToBase64(pcm)}));
+  const thrLevel=Math.min(255,Math.pow((thrRaw/6000),0.55)*255);
+  if(localVadLevel<thrLevel*0.6) return;
+  // FIX #5: usa wsSend invece di ws.send diretto
+  if(ws&&ws.readyState===WebSocket.OPEN){
+    try{ ws.send(JSON.stringify({type:'input_audio_buffer.append', audio:pcmToBase64(pcm)})); }
+    catch(e){}
+  }
 }
 
 function resample(pcm,from,to){
@@ -995,67 +1023,72 @@ function resample(pcm,from,to){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// WS MESSAGES
+// WS MESSAGES — nomi eventi aggiornati alla GA API
 // ═══════════════════════════════════════════════════════════════
 function onMsg(e){
   let m; try{m=JSON.parse(e.data);}catch{return;}
   const t=m.type||'';
-  if(t!=='response.audio.delta') console.log('[RX]',t);
+  // Non loggare i delta audio (troppo frequenti)
+  if(t!=='response.output_audio.delta') console.log('[RX]',t);
+
   switch(t){
     case 'session.created':
       dbg('📋 session.created → sendSess');
       sendSess();
       break;
+
     case 'session.updated':
       clearTimeout(wsTimeoutTimer);
       connected=true; updBtn(); setSt('listening'); dot('dAI','on');
-      reconnectCount=0; // reset contatore: connessione stabile
+      reconnectCount=0;
       hideReconnBar();
       document.getElementById('btnConn').disabled=false;
-      addMsg('✅ Connesso · voce: '+(m.session?.voice||activeVoice),'sys');
-      toast('✅ '+(m.session?.voice||activeVoice));
+      addMsg('✅ Connesso · voce: '+(m.session?.audio?.output?.voice||activeVoice),'sys');
+      toast('✅ '+(m.session?.audio?.output?.voice||activeVoice));
+      startKeepalive(); // avvia keepalive dopo connessione stabile
       break;
-    case 'response.audio.delta':
+
+    // ── EVENTO RINOMINATO: response.audio.delta → response.output_audio.delta ──
+    case 'response.output_audio.delta':
       if(m.delta){
         const b=Uint8Array.from(atob(m.delta),c=>c.charCodeAt(0));
         const pcm=new Int16Array(b.buffer);
-        // Registra al momento della ricezione dalla rete, non della riproduzione.
-        // Così il WAV è sempre continuo indipendentemente dal timing del drain.
         if(isRec) recChunks.push(pcm);
-        // Limite coda audio: evita accumulo incontrollato
         if(audioQ.length>AUDIO_Q_MAX){
           dbg('⚠️ Coda audio piena ('+audioQ.length+') — scarico vecchi frame');
           audioQ=audioQ.slice(-Math.floor(AUDIO_Q_MAX/2));
-          nextPlayTime=0; // reset scheduling dopo il taglio
+          nextPlayTime=0;
         }
         audioQ.push(pcm);
         if(!playing) drain();
       }
       break;
-    case 'response.audio_transcript.delta':
+
+    // ── EVENTO RINOMINATO: response.audio_transcript.delta → response.output_audio_transcript.delta ──
+    case 'response.output_audio_transcript.delta':
       if(m.delta) appendRobotTxt(m.delta);
       break;
-    case 'response.audio_transcript.done':
+
+    // ── EVENTO RINOMINATO: response.audio_transcript.done → response.output_audio_transcript.done ──
+    case 'response.output_audio_transcript.done':
       finalizeRobot();
       break;
+
     case 'conversation.item.input_audio_transcription.completed':
       if(m.transcript) addMsg(m.transcript,'user');
       break;
+
     case 'response.created':
-      // Il robot sta per iniziare a parlare
       setRobotSpeaking(true);
       break;
+
     case 'response.done':
       if(m.response?.usage) addTok(m.response.usage);
       silStart=Date.now();
       setSt('listening');
-      // Il robot ha finito di elaborare — l'audio potrebbe ancora essere in coda
-      // Non riabilitiamo il mic qui, lo facciamo a response.audio.done
       break;
-    case 'response.audio.done':
-      // Accoda 0.5s di silenzio dopo la risposta — serve da respiro naturale
-      // e svuota il riverbero delle casse prima che il mic si riattivi.
-      // Il mic viene sbloccato dal drainWatchdog quando l'audio è davvero finito.
+
+    case 'response.audio.done':   // questo evento mantiene il nome originale
       if(audioCtx){
         const SR=24000, pauseSamples=SR*0.5;
         audioQ.push(new Int16Array(pauseSamples));
@@ -1063,18 +1096,26 @@ function onMsg(e){
       }
       if(!silStart) silStart=Date.now();
       break;
+
     case 'input_audio_buffer.speech_started':
       setSt('talking'); dot('dMic','tk'); silStart=null;
       break;
+
     case 'input_audio_buffer.speech_stopped':
       setSt('listening'); dot('dMic','on');
       break;
+
+    // ── Idle timeout: il robot si sveglia da solo in fiera ──
+    case 'input_audio_buffer.timeout_triggered':
+      dbg('⏰ Idle timeout — il robot si sveglia');
+      setSt('listening');
+      break;
+
     case 'error':
       const errMsg=m.error?.message||'Errore API';
       addMsg('❌ '+errMsg,'sys');
       toast('⚠️ '+errMsg);
-      dbg('❌ API error: '+errMsg);
-      // Alcuni errori non chiudono il WS — gestiamo esplicitamente
+      dbg('❌ API error: '+JSON.stringify(m.error));
       if(m.error?.code==='session_expired'||m.error?.type==='server_error'){
         disc(); if(!userDisconnected) scheduleReconnect();
       }
@@ -1087,9 +1128,10 @@ function onMsg(e){
 // ═══════════════════════════════════════════════════════════════
 function disc(){
   connected=false;
+  stopKeepalive();
   clearTimeout(wsTimeoutTimer);
   if(ws){
-    ws.onclose=null; // evita doppio trigger
+    ws.onclose=null;
     try{ws.close();}catch(e){}
     ws=null;
   }
@@ -1101,7 +1143,7 @@ function disc(){
   audioCtx=null; analyser=vuAnalyser;
   audioQ=[]; playing=false; silStart=null; nextPlayTime=0;
   robotSpeaking=false; autoMuteSuspended=false;
-  setRobotSpeaking(false); // reset UI
+  setRobotSpeaking(false);
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
   dot('dAI',null); setSt('idle'); updBtn();
   document.getElementById('btnConn').disabled=false;
@@ -1110,79 +1152,58 @@ function disc(){
 // ═══════════════════════════════════════════════════════════════
 // DRAIN — scheduling preciso, zero gap tra chunk
 // ═══════════════════════════════════════════════════════════════
-// Invece di aspettare onended per accodare il prossimo buffer,
-// pianifichiamo ogni buffer esattamente al momento in cui finisce
-// il precedente usando audioCtx.currentTime + offset.
-// Questo elimina i micro-gap tra chunk che causano audio a scatti.
-// La registrazione avviene al momento della ricezione dalla rete,
-// non al momento della riproduzione — così il WAV è sempre continuo.
-
 async function drain(){
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
   if(!audioCtx||!audioQ.length){playing=false;return;}
 
-  // Assicurati che AudioContext sia running prima di iniziare
   if(audioCtx.state==='suspended'){
     try{await audioCtx.resume();}catch(e){
-      dbg('❌ drain: AudioContext resume fallito — retry tra 500ms');
-      drainWatchdog=setTimeout(()=>drain(), 500);
+      dbg('❌ drain: AudioContext resume fallito — retry 500ms');
+      drainWatchdog=setTimeout(()=>drain(),500);
       return;
     }
   }
   if(audioCtx.state!=='running'){
-    drainWatchdog=setTimeout(()=>drain(), 300);
+    drainWatchdog=setTimeout(()=>drain(),300);
     return;
   }
 
   playing=true;
 
-  // Svuota tutta la coda in un ciclo sincrono, pianificando ogni buffer
-  // con timestamp preciso — nessun gap, nessuna latenza di callback
-  while(audioQ.length > 0){
-    const pcm = audioQ.shift();
-    const f = new Float32Array(pcm.length);
+  while(audioQ.length>0){
+    const pcm=audioQ.shift();
+    const f=new Float32Array(pcm.length);
     for(let i=0;i<pcm.length;i++) f[i]=pcm[i]/(pcm[i]<0?0x8000:0x7FFF);
-
-    let buf, src;
+    let buf,src;
     try{
-      buf=audioCtx.createBuffer(1, f.length, 24000);
-      buf.copyToChannel(f, 0);
+      buf=audioCtx.createBuffer(1,f.length,24000);
+      buf.copyToChannel(f,0);
       src=audioCtx.createBufferSource();
       src.buffer=buf;
       src.connect(audioCtx.destination);
-
-      // Scheduling: inizia esattamente quando finisce il buffer precedente.
-      // Se nextPlayTime è nel passato (es. dopo una pausa), usa currentTime + 0.01s
-      // di headroom per evitare glitch.
-      const startAt = Math.max(audioCtx.currentTime + 0.01, nextPlayTime);
+      const startAt=Math.max(audioCtx.currentTime+0.01,nextPlayTime);
       src.start(startAt);
-      nextPlayTime = startAt + buf.duration;
-
-      // Watchdog sull'ultimo buffer pianificato: sblocca il mic SOLO quando
-      // l'audio è davvero finito di riprodursi (non un timeout fisso)
-      if(audioQ.length === 0){
-        const expectedEnd = (nextPlayTime - audioCtx.currentTime) * 1000 + 200; // 200ms margine
+      nextPlayTime=startAt+buf.duration;
+      if(audioQ.length===0){
+        // FIX #3: minimo assoluto 500ms per evitare che expectedEnd sia negativo
+        const expectedEnd=Math.max(500,(nextPlayTime-audioCtx.currentTime)*1000+200);
         drainWatchdog=setTimeout(()=>{
           playing=false;
           nextPlayTime=0;
           setRobotSpeaking(false);
-          if(connected && !muted) setSt('listening');
+          if(connected&&!muted) setSt('listening');
           dbg('⏱ drain: audio completato — mic sbloccato');
         }, expectedEnd);
       }
     }catch(ex){
       dbg('❌ drain errore su chunk: '+ex.message);
-      // Salta il chunk difettoso e continua
-      nextPlayTime=0; // reset scheduling dopo errore
+      nextPlayTime=0;
     }
   }
 
-  // Se la coda è vuota, polling leggero per nuovi chunk in arrivo dallo stream
-  // (l'API manda delta in modo asincrono — potrebbero arrivare altri chunk)
-  if(audioQ.length === 0){
-    playing=false;
-    // Non serve un loop di polling: onMsg chiamerà drain() se playing===false
-  }
+  // FIX #2: dopo svuotamento, controlla se nel frattempo sono arrivati nuovi chunk
+  playing=false;
+  if(audioQ.length>0) drain();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1218,17 +1239,21 @@ function stopCam(){
   document.getElementById('btnSnap').disabled=true; dot('dCam',null);
 }
 async function switchCam(){if(camActive){stopCam();await toggleCam();}}
+
 function doSnap(){
   if(!camActive){toast('❌ Attiva prima la cam');return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connetti prima OpenAI');return;}
   const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
-  c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
+  // FIX: verifica che il frame video sia disponibile
+  if(!v.videoWidth||!v.videoHeight){toast('⚠️ Video non ancora pronto');return;}
+  c.width=v.videoWidth; c.height=v.videoHeight;
+  c.getContext('2d').drawImage(v,0,0);
   const b64=c.toDataURL('image/jpeg',.85).split(',')[1];
   const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
-  ws.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'user',content:[
+  wsSend({type:'conversation.item.create',item:{type:'message',role:'user',content:[
     {type:'input_image',image:b64},{type:'input_text',text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}
-  ]}}));
-  ws.send(JSON.stringify({type:'response.create'}));
+  ]}});
+  wsSend({type:'response.create'});
   document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
   addMsg('📸 [foto inviata]','sys'); toast('📸 Foto inviata!');
 }
@@ -1238,8 +1263,8 @@ function doSnap(){
 // ═══════════════════════════════════════════════════════════════
 function oGain(v){
   document.getElementById('vGain').textContent=v+'%';
-  // Aggiorna gain nel worklet live (solo se mic non è auto-mutato)
-  if(workletNode && !autoMuteSuspended){
+  // Il gain va solo al worklet (FIX #8: rimosso il passaggio doppio in onChunk)
+  if(workletNode&&!autoMuteSuspended){
     workletNode.port.postMessage({cmd:'gain', value:parseInt(v)/100});
   }
 }
@@ -1280,8 +1305,8 @@ function toggleMute(){
     if(workletNode) workletNode.port.postMessage({cmd:'gain', value:0});
     dot('dMic','muted');
   } else {
-    if(workletNode && !autoMuteSuspended)
-      workletNode.port.postMessage({cmd:'gain', value: parseInt(document.getElementById('rGain').value)/100});
+    if(workletNode&&!autoMuteSuspended)
+      workletNode.port.postMessage({cmd:'gain', value:parseInt(document.getElementById('rGain').value)/100});
     if(connected) dot('dMic','on');
   }
   toast(muted?'🔇 Mic silenziato':'🎙 Mic attivo');
@@ -1351,7 +1376,7 @@ function exportChar(){
   const name=document.getElementById('selChar').value;
   const char=getChars().find(c=>c.name===name);
   if(!char){toast('⚠️ Nessun personaggio selezionato');return;}
-  const txt='NOME='+char.name+'\nVOCE='+( char.voice||'')+'\n'+char.prompt;
+  const txt='NOME='+char.name+'\nVOCE='+(char.voice||'')+'\n'+char.prompt;
   const url=URL.createObjectURL(new Blob([txt],{type:'text/plain'}));
   const a=document.createElement('a'); a.href=url; a.download=char.name.replace(/\s+/g,'_')+'.txt'; a.click();
   URL.revokeObjectURL(url); toast('📤 Esportato');
@@ -1382,8 +1407,18 @@ function importChar(inp){
 function loadKnowLS(){const s=localStorage.getItem(LS_KNOW);if(s)try{knowledge=JSON.parse(s);}catch{}renderKnowView();}
 function renderKnowView(){
   const v=document.getElementById('knowView');
-  if(knowledge.text){v.style.color='var(--text)';v.textContent=(knowledge.title?knowledge.title+'\n\n':'')+knowledge.text;}
-  else{v.style.color='var(--muted)';v.textContent='Nessuna conoscenza caricata.';}
+  if(knowledge.text){
+    // Warning se testo troppo lungo
+    if(knowledge.text.length>8000){
+      v.style.color='var(--yellow)';
+      v.textContent='⚠️ Testo molto lungo ('+knowledge.text.length+' chars) — potrebbe superare i token limit\n\n'+(knowledge.title?knowledge.title+'\n\n':'')+knowledge.text;
+    } else {
+      v.style.color='var(--text)';
+      v.textContent=(knowledge.title?knowledge.title+'\n\n':'')+knowledge.text;
+    }
+  } else {
+    v.style.color='var(--muted)';v.textContent='Nessuna conoscenza caricata.';
+  }
 }
 function toggleKnowEd(){
   const ed=document.getElementById('knowEd');
@@ -1467,7 +1502,8 @@ function addTok(u){
   tok.c+=(ai.cached_tokens||0); renderCost();
 }
 function renderCost(){
-  const P=PRICES[document.getElementById('selModel').value]||PRICES['gpt-4o-realtime-preview'];
+  const model=document.getElementById('selModel').value;
+  const P=PRICES[model]||PRICES['gpt-realtime-1.5'];
   const aI=(tok.ai/1e6)*P.ai*EUR,aO=(tok.ao/1e6)*P.ao*EUR,tI=(tok.ti/1e6)*P.ti*EUR,tO=(tok.to/1e6)*P.to*EUR,ca=(tok.c/1e6)*P.c*EUR;
   const tot=aI+aO+tI+tO-ca, fmt=v=>v<.0001?'<€0.0001':'€'+v.toFixed(4);
   document.getElementById('costBox').innerHTML=
@@ -1491,23 +1527,16 @@ function toggleRec(){
 function cancelRec(){isRec=false;recChunks=[];const b=document.getElementById('btnRec');b.textContent='⏺ AVVIA REC';b.classList.remove('rec');toast('REC annullata');}
 function saveWav(){
   if(!recChunks.length){toast('⚠️ Nessun audio da salvare');return;}
-
-  // Concatenazione diretta senza silenzio artificiale tra i chunk.
-  // I chunk sono già in ordine cronologico perché registrati alla ricezione dalla rete.
-  const total = recChunks.reduce((a,c)=>a+c.length, 0);
-  const pcm   = new Int16Array(total);
+  const total=recChunks.reduce((a,c)=>a+c.length,0);
+  const pcm=new Int16Array(total);
   let off=0;
   recChunks.forEach(c=>{pcm.set(c,off);off+=c.length;});
-
-  // Fade-out sugli ultimi 200 campioni per evitare click di fine registrazione
-  const fadeLen = Math.min(200, pcm.length);
+  const fadeLen=Math.min(200,pcm.length);
   for(let i=0;i<fadeLen;i++){
-    pcm[pcm.length-fadeLen+i] = Math.round(pcm[pcm.length-fadeLen+i] * (1 - i/fadeLen));
+    pcm[pcm.length-fadeLen+i]=Math.round(pcm[pcm.length-fadeLen+i]*(1-i/fadeLen));
   }
-
-  // Header WAV standard PCM16 mono 24000Hz
   const SR=24000;
-  const buf=new ArrayBuffer(44+pcm.length*2), v=new DataView(buf);
+  const buf=new ArrayBuffer(44+pcm.length*2),v=new DataView(buf);
   const w=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
   w(0,'RIFF'); v.setUint32(4,36+pcm.length*2,true);
   w(8,'WAVE'); w(12,'fmt ');
@@ -1516,13 +1545,11 @@ function saveWav(){
   v.setUint16(32,2,true);  v.setUint16(34,16,true);
   w(36,'data'); v.setUint32(40,pcm.length*2,true);
   for(let i=0;i<pcm.length;i++) v.setInt16(44+i*2,pcm[i],true);
-
   const url=URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
   const a=document.createElement('a');
   a.href=url; a.download='robot-'+Date.now()+'.wav'; a.click();
   URL.revokeObjectURL(url);
-  const durSec=(pcm.length/SR).toFixed(1);
-  toast('💾 WAV salvato ('+durSec+'s)');
+  toast('💾 WAV salvato ('+(pcm.length/SR).toFixed(1)+'s)');
 }
 
 // ═══════════════════════════════════════════════════════════════
