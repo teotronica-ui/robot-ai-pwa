@@ -319,7 +319,7 @@
         <option value="0">Disabilitato</option>
         <option value="30000">30 secondi</option>
         <option value="60000">1 minuto</option>
-        <option value="30000" selected>30 secondi ★</option>
+        <option value="90000" selected>90 secondi ★</option>
         <option value="120000">2 minuti</option>
         <option value="180000">3 minuti</option>
       </select>
@@ -423,7 +423,7 @@ const EUR=0.92, N_SEGS=36;
 // ── Configurazione connessione ──
 // PROXY_URL: punta al tuo Cloudflare Worker.
 // Cambia solo "robot" con il nome che hai scelto e "TUO_ACCOUNT" con il tuo subdomain.
-const PROXY_URL = 'wss://robot.teotronica.workers.dev';
+const PROXY_URL = 'wss://robot.TUO_ACCOUNT.workers.dev';
 
 const WS_TIMEOUT_MS   = 15000;
 const RECONNECT_BASE  = 2000;
@@ -1001,7 +1001,7 @@ function sendSess(){
       create_response:true,
       interrupt_response:bargein,
     };
-    if(idleMs>0) turnDetection.idle_timeout_ms=Math.min(idleMs, 30000);
+    if(idleMs>0) turnDetection.idle_timeout_ms=idleMs;
   } else {
     turnDetection={
       type:'semantic_vad',
@@ -1013,19 +1013,21 @@ function sendSess(){
   }
 
   // ── Struttura sessione GA ──
-  // Nota: temperature rimosso (non supportato dalla GA API)
-  // Nota: input_audio_transcription va dentro audio.input (non al livello radice)
-  // Nota: voice va dentro audio.output (non al livello radice)
+  // - temperature: rimosso (non supportato)
+  // - turn_detection: al livello RADICE della sessione (non dentro audio.input)
+  // - transcription: dentro audio.input
+  // - voice: dentro audio.output
+  // - rate obbligatorio sia in input che in output
   wsSend({
     type:'session.update',
     session:{
       type:'realtime',
       output_modalities:['audio'],
       instructions,
+      turn_detection:turnDetection,
       audio:{
         input:{
           format:{type:'audio/pcm', rate:24000},
-          turn_detection:turnDetection,
           transcription:{model:'whisper-1'},
         },
         output:{
