@@ -785,10 +785,12 @@ function startCtxWatchdog(){
 async function toggleConn(){
   if(connected||reconnectTimer){
     userDisconnected=true;
+    reconnecting=false; // reset flag per permettere nuova connessione
     cancelReconnect();
     disc();
   } else {
     userDisconnected=false;
+    reconnecting=false; // reset flag per sicurezza
     reconnectCount=0;
     await conn();
   }
