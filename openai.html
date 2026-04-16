@@ -1055,17 +1055,14 @@ function pcmToBase64(pcm){
 
 function onChunk(e){
   if(autoMuteSuspended) return;
-  // FIX #8: il gain viene applicato SOLO nel worklet (audio-processor.js).
-  // Rimosso il secondo passaggio gain qui che causava clipping a 150%
-  // e doppia applicazione.
-  const pcm=new Int16Array(e.data);
+  // FIX: usare let, non const, perché pcm viene riassegnato dopo il resample
+  let pcm=new Int16Array(e.data);
   const ctxSR=audioCtx?audioCtx.sampleRate:24000;
   if(ctxSR!==24000) pcm=resample(pcm,ctxSR,24000);
   if(!ws||ws.readyState!==WebSocket.OPEN||muted) return;
   const thrRaw=parseInt(document.getElementById('rThr').value);
   const thrLevel=Math.min(255,Math.pow((thrRaw/6000),0.55)*255);
   if(localVadLevel<thrLevel*0.6) return;
-  // FIX #5: usa wsSend invece di ws.send diretto
   if(ws&&ws.readyState===WebSocket.OPEN){
     try{ ws.send(JSON.stringify({type:'input_audio_buffer.append', audio:pcmToBase64(pcm)})); }
     catch(e){}
