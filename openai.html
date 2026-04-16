@@ -314,14 +314,12 @@
         <option value="semantic_vad">Semantic VAD</option>
       </select>
     </div>
-    <div class="f"><label>Idle Timeout (fiera)</label>
+    <div><label>Idle Timeout (fiera)</label>
       <select id="selIdle">
         <option value="0">Disabilitato</option>
-        <option value="30000">30 secondi</option>
-        <option value="60000">1 minuto</option>
-        <option value="90000" selected>90 secondi ★</option>
-        <option value="120000">2 minuti</option>
-        <option value="180000">3 minuti</option>
+        <option value="10000">10 secondi</option>
+        <option value="20000">20 secondi</option>
+        <option value="30000" selected>30 secondi ★ (max)</option>
       </select>
     </div>
   </div>
@@ -430,7 +428,6 @@ const RECONNECT_BASE  = 2000;
 const RECONNECT_MAX   = 30000;
 const RECONNECT_LIMIT = 10;
 const AUDIO_Q_MAX     = 60;
-const DRAIN_WATCHDOG  = 6000;
 const CTX_WATCHDOG_MS = 2000;
 const KEEPALIVE_MS    = 20000;  // intervallo keepalive silenzio → evita disconnessione stand vuoto
 
@@ -439,7 +436,7 @@ const KEEPALIVE_MS    = 20000;  // intervallo keepalive silenzio → evita disco
 // ═══════════════════════════════════════════════════════════════
 let API_KEY='', activePrompt='Sei un assistente vocale. Rispondi sempre in italiano.', activeVoice='marin';
 let localVadLevel=0;
-let ws=null, audioCtx=null, workletNode=null, micStream=null;
+let ws=null, audioCtx=null, workletNode=null;
 let muted=false, connected=false, isRec=false, recChunks=[];
 let audioQ=[], playing=false, analyser=null, silStart=null;
 let nextPlayTime=0;
@@ -453,10 +450,9 @@ let robotSpeaking=false, autoMuteSuspended=false;
 let reconnectCount=0, reconnectTimer=null, wsTimeoutTimer=null;
 let userDisconnected=false;
 let ctxWatchdogInterval=null, drainWatchdog=null;
-let workletLoaded=false;      // FIX #1: evita addModule doppio sullo stesso AudioContext
-let reconnecting=false;       // FIX #6: evita doppio conn() parallelo
-let keepaliveTimer=null;      // timer keepalive silenzio
-let vuLogT=0;
+let workletLoaded=false;
+let reconnecting=false;
+let keepaliveTimer=null;
 
 // ═══════════════════════════════════════════════════════════════
 // INIT
@@ -600,7 +596,7 @@ function dbg(msg){
   const box=document.getElementById('chatBox');
   const d=document.createElement('div'); d.className='msg sys'; d.style.fontSize='.6rem'; d.style.color='#2a7a5a';
   d.textContent='['+new Date().toLocaleTimeString()+'] '+msg;
-  box.appendChild(d); box.scrollTop=box.scrollHeight; console.log('[DBG]',msg);
+  box.appendChild(d); box.scrollTop=box.scrollHeight;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -608,8 +604,7 @@ function dbg(msg){
 // ═══════════════════════════════════════════════════════════════
 function wsSend(obj){
   if(ws&&ws.readyState===WebSocket.OPEN){
-    try{ ws.send(JSON.stringify(obj)); }
-    catch(e){ dbg('❌ wsSend errore: '+e.message); }
+    try{ ws.send(JSON.stringify(obj)); }catch(e){}
   }
 }
 
@@ -649,15 +644,12 @@ async function startVuMonitor(forceDeviceId){
   try{
     let devId=forceDeviceId||document.getElementById('selMic')?.value||'';
     if(!devId){
-      dbg('🎤 getUserMedia (default — permesso + detect wired)...');
       const tempStream=await navigator.mediaDevices.getUserMedia({
         audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}
       });
       const tempLabel=tempStream.getAudioTracks()[0]?.label||'';
-      dbg('📋 Mic default: "'+tempLabel+'"');
       const devs=await navigator.mediaDevices.enumerateDevices();
       const mics=devs.filter(d=>d.kind==='audioinput');
-      dbg('📋 Mic disponibili: '+mics.map(m=>'"'+(m.label||'?')+'"').join(', '));
       const defaultLabel=tempLabel.toLowerCase();
       const defaultIsBuiltin=/iphone|built.?in|receiver|interno|microfono\s+iphone/i.test(defaultLabel);
       const external=mics.find(m=>
@@ -668,45 +660,39 @@ async function startVuMonitor(forceDeviceId){
       if(defaultIsBuiltin&&external){
         tempStream.getTracks().forEach(t=>t.stop());
         devId=external.deviceId;
-        dbg('🎯 Switch a mic esterno: "'+external.label+'"');
+        dbg('🎯 Mic esterno: "'+external.label+'"');
       } else {
         sharedMicStream=tempStream; devId='';
-        dbg(defaultIsBuiltin?'⚠️ Solo mic built-in':'✅ Default già mic esterno: "'+tempLabel+'"');
       }
     }
     if(!sharedMicStream){
       const constraint=devId
         ?{audio:{deviceId:{exact:devId},echoCancellation:false,noiseSuppression:false,autoGainControl:false}}
         :{audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}};
-      dbg('🎤 getUserMedia '+(devId?'exact:'+devId.slice(0,12)+'...':'(default)')+'...');
       sharedMicStream=await navigator.mediaDevices.getUserMedia(constraint);
     }
     const track=sharedMicStream.getAudioTracks()[0];
     const settings=track?.getSettings()||{};
     currentMicId=settings.deviceId||devId||'';
     const label=track?.label||'sconosciuto';
-    dbg('✅ MIC attivo: "'+label+'" SR:'+(settings.sampleRate||'?')+'Hz');
+    dbg('✅ MIC: "'+label+'" '+( settings.sampleRate||'?')+'Hz');
     await pollMics();
     const sel=document.getElementById('selMic');
     if(sel&&currentMicId){const m=[...sel.options].find(o=>o.value===currentMicId);if(m)sel.value=currentMicId;}
     track.addEventListener('ended',()=>{
-      dbg('⚠️ Mic disconnesso — restart...');
       dot('dMic',null);
-      setTimeout(()=>startVuMonitor().catch(e=>dbg('❌ Restart mic: '+e.message)),1500);
+      setTimeout(()=>startVuMonitor().catch(()=>{}),1500);
     });
     vuCtx=new (window.AudioContext||window.webkitAudioContext)();
-    dbg('🔊 AudioContext: '+vuCtx.sampleRate+'Hz state:'+vuCtx.state);
     if(vuCtx.state==='suspended'){try{await vuCtx.resume();}catch(e){}}
     if(vuCtx.state!=='running'){
-      dbg('⏳ AudioContext suspended — tocca lo schermo per sbloccare');
-      const unlock=async()=>{try{await vuCtx?.resume();dbg('▶ AudioContext sbloccato');}catch(e){}};
+      const unlock=async()=>{try{await vuCtx?.resume();}catch(e){}};
       document.body.addEventListener('touchstart',unlock,{once:true});
       document.body.addEventListener('mousedown',unlock,{once:true});
     }
     vuAnalyser=vuCtx.createAnalyser(); vuAnalyser.fftSize=512; vuAnalyser.smoothingTimeConstant=0.3;
     vuCtx.createMediaStreamSource(sharedMicStream).connect(vuAnalyser);
     dot('dMic','on');
-    // FIX #7: allocazione Uint8Array fuori dal loop → zero GC nel RAF
     const vuData=new Uint8Array(vuAnalyser.frequencyBinCount);
     (function tick(){
       vuRaf=requestAnimationFrame(tick);
@@ -716,21 +702,17 @@ async function startVuMonitor(forceDeviceId){
       const lo=Math.floor(80/binHz),hi=Math.min(Math.floor(8000/binHz),vuData.length-1);
       let peak=0;
       for(let i=lo;i<=hi;i++){if(vuData[i]>peak)peak=vuData[i];}
-      const boosted=Math.min(255,Math.pow(peak/255,0.55)*255);
-      drawVU(boosted);
-      const now=Date.now();
-      if(now-vuLogT>3000){vuLogT=now;console.log('[VU] raw:'+peak+' boosted:'+Math.round(boosted));}
+      drawVU(Math.min(255,Math.pow(peak/255,0.55)*255));
     })();
     startCtxWatchdog();
   }catch(e){
-    dbg('❌ Mic errore: '+e.name+': '+e.message);
-    dot('dMic','er'); toast('❌ Mic: '+e.name);
+    dot('dMic','er');
+    toast('❌ Mic: '+e.name);
   }
 }
 
 async function switchMic(){
   const devId=document.getElementById('selMic')?.value||'';
-  dbg('🔄 Cambio mic '+(devId?devId.slice(0,10)+'...':'auto/default'));
   await startVuMonitor(devId||undefined);
   if(connected){toast('🎤 Riconnetti per applicare il nuovo mic');}
 }
@@ -741,10 +723,7 @@ async function pollMics(){
     const mics=devs.filter(d=>d.kind==='audioinput');
     const changed=mics.length!==availableMics.length||mics.some((m,i)=>m.deviceId!==availableMics[i]?.deviceId);
     availableMics=mics;
-    if(changed){
-      dbg('📋 Mic ('+mics.length+'): '+mics.map(m=>'"'+(m.label||m.deviceId.slice(0,8))+'"').join(', '));
-      renderMicSelect();
-    }
+    if(changed) renderMicSelect();
   }catch(e){}
 }
 
@@ -759,7 +738,7 @@ function renderMicSelect(){
 let dcT=null;
 function onDeviceChange(){
   clearTimeout(dcT);
-  dcT=setTimeout(()=>{dbg('🔌 Dispositivo audio cambiato');pollMics();},600);
+  dcT=setTimeout(()=>pollMics(),600);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -770,11 +749,7 @@ function startCtxWatchdog(){
   ctxWatchdogInterval=setInterval(async()=>{
     if(!vuCtx)return;
     if(vuCtx.state==='suspended'){
-      dbg('⚠️ AudioContext sospeso — resume...');
-      try{
-        await vuCtx.resume();
-        if(vuCtx.state==='running') dbg('▶ AudioContext ripristinato');
-      }catch(e){dbg('❌ Resume fallito: '+e.message);}
+      try{await vuCtx.resume();}catch(e){}
     }
   }, CTX_WATCHDOG_MS);
 }
@@ -810,24 +785,19 @@ async function conn(){
   activeVoice=document.getElementById('selVoice').value||activeVoice;
   setSt('connecting');
   document.getElementById('btnConn').disabled=true;
-  dbg('🔌 Avvio connessione... (tentativo '+(reconnectCount+1)+')');
+  dbg('🔌 Connessione... (tentativo '+(reconnectCount+1)+')');
 
   try{
     if(!sharedMicStream||sharedMicStream.getAudioTracks()[0]?.readyState!=='live'){
-      dbg('🎤 Avvio mic...');
       await startVuMonitor();
     }
-    micStream=sharedMicStream;
     audioCtx=vuCtx;
     analyser=vuAnalyser;
     if(analyser) analyser.smoothingTimeConstant=0.15;
 
-    // FIX #1: addModule solo se non già caricato su questo AudioContext
     if(!workletLoaded){
-      dbg('⚙️ Carico AudioWorklet...');
       await audioCtx.audioWorklet.addModule('audio-processor.js');
       workletLoaded=true;
-      dbg('✅ AudioWorklet caricato');
     }
 
     workletNode=new AudioWorkletNode(audioCtx,'pcm16-processor');
@@ -837,83 +807,23 @@ async function conn(){
 
     const model=document.getElementById('selModel').value;
     const wsUrl=PROXY_URL+'?model='+encodeURIComponent(model);
-
-    // ── DEBUG DETTAGLIATO ──
-    dbg('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    dbg('🔍 PROXY_URL configurato: '+PROXY_URL);
-    dbg('🔍 URL completo WS: '+wsUrl);
-    dbg('🔍 Modello selezionato: '+model);
-    dbg('🔍 Chiave API presente: '+(API_KEY.length>10?'✅ ('+API_KEY.length+' chars, inizia con '+API_KEY.slice(0,7)+'...)':'❌ MANCANTE'));
-    dbg('🔍 AudioContext state: '+(audioCtx?.state||'null'));
-    dbg('🔍 WorkletNode: '+(workletNode?'✅':'❌ null'));
-    dbg('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
-    // Test HTTP prima del WS — verifica che il Worker risponda
-    dbg('🔍 Test HTTP Worker (health check)...');
-    try{
-      const httpUrl=PROXY_URL.replace('wss://','https://').replace('ws://','http://').split('?')[0];
-      dbg('🔍 HTTP URL: '+httpUrl);
-      const r=await fetch(httpUrl,{method:'GET',mode:'cors'});
-      dbg('🔍 Worker HTTP risposta: '+r.status+' '+r.statusText);
-      let body='';
-      try{body=await r.text();dbg('🔍 Worker body: '+body.slice(0,100));}catch(e){}
-    }catch(err){
-      dbg('❌ Worker HTTP irraggiungibile: '+err.message);
-      dbg('⚠️ Possibile causa: URL sbagliato o Worker non deployato');
-    }
-
-    dbg('🌐 Apertura WebSocket → '+wsUrl);
+    dbg('🌐 Connessione → '+model);
     ws=new WebSocket(wsUrl);
     ws.binaryType='arraybuffer';
-    dbg('🔍 WS creato, readyState: '+ws.readyState+' (0=CONNECTING)');
 
     wsTimeoutTimer=setTimeout(()=>{
       if(!connected){
-        dbg('⏱ Timeout connessione ('+WS_TIMEOUT_MS+'ms)');
-        dbg('🔍 WS readyState al timeout: '+ws?.readyState+' (0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)');
         toast('❌ Timeout connessione');
         reconnecting=false;
         disc(); scheduleReconnect();
       }
     }, WS_TIMEOUT_MS);
 
-    ws.onopen=()=>{
-      console.log('[WS] open');
-      dbg('✅ WS APERTO — connessione al Worker stabilita');
-      dbg('🔍 WS readyState: '+ws.readyState+' (deve essere 1=OPEN)');
-      dbg('⏳ Attendo session.created da OpenAI...');
-    };
-    ws.onmessage=e=>{
-      // Log del primo messaggio in arrivo — poi passa al handler normale
-      try{
-        const m=JSON.parse(e.data);
-        if(m.type&&m.type!=='response.output_audio.delta'){
-          dbg('📨 Messaggio ricevuto: '+m.type);
-        }
-      }catch(ex){}
-      onMsg(e);
-    };
-    ws.onerror=e=>{
-      console.error('[WS] error',e);
-      dbg('❌ WS ERRORE — readyState: '+ws?.readyState);
-      dbg('🔍 Tipo errore: '+(e?.type||'sconosciuto'));
-      dbg('🔍 Cause comuni errore 1006:');
-      dbg('   1) URL Worker sbagliato → controlla PROXY_URL');
-      dbg('   2) Worker non deployato o in errore → controlla Cloudflare dashboard');
-      dbg('   3) Secret OPENAI_KEY mancante → controlla Settings → Variables');
-      dbg('   4) CORS bloccato → controlla ALLOWED_ORIGINS in worker.js');
-    };
+    ws.onopen=()=>{ dbg('🔗 WS aperto...'); };
+    ws.onmessage=onMsg;
+    ws.onerror=()=>{ dbg('❌ Errore WS'); };
     ws.onclose=e=>{
-      dbg('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      dbg('🔌 WS CHIUSO — code: '+e.code+' clean: '+e.wasClean);
-      dbg('🔍 Reason: '+(e.reason||'(nessuna reason)'));
-      dbg('🔍 Codici WS: 1000=normale, 1001=server away, 1006=anomalo/no-server, 1011=errore server');
-      if(e.code===1006){
-        dbg('⚠️ Codice 1006 = connessione mai stabilita o caduta senza handshake');
-        dbg('⚠️ Il Worker probabilmente non ha risposto alla connessione WS');
-        dbg('⚠️ Verifica: Cloudflare dashboard → Worker → Logs in tempo reale');
-      }
-      dbg('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      dbg('🔌 WS chiuso: '+e.code);
       clearTimeout(wsTimeoutTimer);
       const wasConnected=connected;
       reconnecting=false;
@@ -923,8 +833,7 @@ async function conn(){
     };
   }catch(e){
     clearTimeout(wsTimeoutTimer);
-    reconnecting=false; // FIX #6
-    dbg('❌ conn errore: '+e.name+': '+e.message);
+    reconnecting=false;
     toast('❌ '+e.message);
     setSt('idle');
     document.getElementById('btnConn').disabled=false;
@@ -938,8 +847,7 @@ async function conn(){
 function scheduleReconnect(){
   if(userDisconnected) return;
   if(reconnectCount>=RECONNECT_LIMIT){
-    dbg('❌ Limite riconnessioni ('+RECONNECT_LIMIT+'). Premi Connetti manualmente.');
-    toast('❌ Impossibile riconnettersi');
+    toast('❌ Impossibile riconnettersi — premi Connetti');
     hideReconnBar();
     document.getElementById('btnConn').disabled=false;
     return;
@@ -947,7 +855,6 @@ function scheduleReconnect(){
   reconnectCount++;
   const delay=Math.min(RECONNECT_BASE*Math.pow(2,reconnectCount-1),RECONNECT_MAX);
   const delaySec=Math.round(delay/1000);
-  dbg('⏳ Riconnessione #'+reconnectCount+' tra '+delaySec+'s...');
   showReconnBar(reconnectCount,delaySec);
   let remaining=delaySec;
   const tick=setInterval(()=>{
@@ -988,38 +895,14 @@ function sendSess(){
   const eagerness=document.getElementById('selEag').value;
   const autoMute=document.getElementById('chkAutoMute').checked;
   const bargein=autoMute?false:document.getElementById('chkBarge').checked;
-  const idleMs=parseInt(document.getElementById('selIdle').value)||0;
+  const idleMs=Math.min(parseInt(document.getElementById('selIdle').value)||0, 30000);
 
-  dbg('📋 session.update voice:'+voice+' vad:'+vadMode+' autoMute:'+autoMute+' idle:'+idleMs+'ms');
+  dbg('📋 session.update voice:'+voice+' vad:'+vadMode+' idle:'+idleMs+'ms');
 
-  // ── Turn detection: struttura GA ──
-  let turnDetection;
-  if(vadMode==='server_vad'){
-    turnDetection={
-      type:'server_vad',
-      threshold:0.5,
-      silence_duration_ms:silMs,
-      prefix_padding_ms:300,
-      create_response:true,
-      interrupt_response:bargein,
-    };
-    if(idleMs>0) turnDetection.idle_timeout_ms=idleMs;
-  } else {
-    turnDetection={
-      type:'semantic_vad',
-      eagerness,
-      create_response:true,
-      interrupt_response:bargein,
-    };
-    if(idleMs>0) turnDetection.idle_timeout_ms=idleMs;
-  }
-
-  // ── Struttura sessione GA ──
-  // turn_detection va dentro audio.input (confermato dalla doc ufficiale)
-  // Parametri semplificati: solo type e silence_duration_ms
-  const tdSimple = vadMode==='server_vad'
+  const turnDetection = vadMode==='server_vad'
     ? { type:'server_vad', silence_duration_ms:silMs }
     : { type:'semantic_vad', eagerness };
+  if(idleMs>0) turnDetection.idle_timeout_ms=idleMs;
 
   wsSend({
     type:'session.update',
@@ -1030,7 +913,7 @@ function sendSess(){
       audio:{
         input:{
           format:{type:'audio/pcm', rate:24000},
-          turn_detection: tdSimple,
+          turn_detection:turnDetection,
           transcription:{model:'whisper-1'},
         },
         output:{
@@ -1086,12 +969,9 @@ function resample(pcm,from,to){
 function onMsg(e){
   let m; try{m=JSON.parse(e.data);}catch{return;}
   const t=m.type||'';
-  // Non loggare i delta audio (troppo frequenti)
-  if(t!=='response.output_audio.delta') console.log('[RX]',t);
 
   switch(t){
     case 'session.created':
-      dbg('📋 session.created → sendSess');
       sendSess();
       break;
 
@@ -1113,7 +993,6 @@ function onMsg(e){
         const pcm=new Int16Array(b.buffer);
         if(isRec) recChunks.push(pcm);
         if(audioQ.length>AUDIO_Q_MAX){
-          dbg('⚠️ Coda audio piena ('+audioQ.length+') — scarico vecchi frame');
           audioQ=audioQ.slice(-Math.floor(AUDIO_Q_MAX/2));
           nextPlayTime=0;
         }
@@ -1146,7 +1025,7 @@ function onMsg(e){
       setSt('listening');
       break;
 
-    case 'response.audio.done':   // questo evento mantiene il nome originale
+    case 'response.output_audio.done':
       if(audioCtx){
         const SR=24000, pauseSamples=SR*0.5;
         audioQ.push(new Int16Array(pauseSamples));
@@ -1163,9 +1042,7 @@ function onMsg(e){
       setSt('listening'); dot('dMic','on');
       break;
 
-    // ── Idle timeout: il robot si sveglia da solo in fiera ──
     case 'input_audio_buffer.timeout_triggered':
-      dbg('⏰ Idle timeout — il robot si sveglia');
       setSt('listening');
       break;
 
@@ -1173,7 +1050,6 @@ function onMsg(e){
       const errMsg=m.error?.message||'Errore API';
       addMsg('❌ '+errMsg,'sys');
       toast('⚠️ '+errMsg);
-      dbg('❌ API error: '+JSON.stringify(m.error));
       if(m.error?.code==='session_expired'||m.error?.type==='server_error'){
         disc(); if(!userDisconnected) scheduleReconnect();
       }
@@ -1197,12 +1073,12 @@ function disc(){
     try{workletNode.port.postMessage({cmd:'stop'});}catch(e){}
     workletNode=null;
   }
-  micStream=null;
-  audioCtx=null; analyser=vuAnalyser;
+  audioCtx=null; analyser=null;
   audioQ=[]; playing=false; silStart=null; nextPlayTime=0;
   robotSpeaking=false; autoMuteSuspended=false;
   setRobotSpeaking(false);
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
+  if(ctxWatchdogInterval){clearInterval(ctxWatchdogInterval);ctxWatchdogInterval=null;}
   dot('dAI',null); setSt('idle'); updBtn();
   document.getElementById('btnConn').disabled=false;
 }
@@ -1216,7 +1092,6 @@ async function drain(){
 
   if(audioCtx.state==='suspended'){
     try{await audioCtx.resume();}catch(e){
-      dbg('❌ drain: AudioContext resume fallito — retry 500ms');
       drainWatchdog=setTimeout(()=>drain(),500);
       return;
     }
@@ -1250,11 +1125,9 @@ async function drain(){
           nextPlayTime=0;
           setRobotSpeaking(false);
           if(connected&&!muted) setSt('listening');
-          dbg('⏱ drain: audio completato — mic sbloccato');
         }, expectedEnd);
       }
     }catch(ex){
-      dbg('❌ drain errore su chunk: '+ex.message);
       nextPlayTime=0;
     }
   }
