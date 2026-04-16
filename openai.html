@@ -423,7 +423,7 @@ const EUR=0.92, N_SEGS=36;
 // ── Configurazione connessione ──
 // PROXY_URL: punta al tuo Cloudflare Worker.
 // Cambia solo "robot" con il nome che hai scelto e "TUO_ACCOUNT" con il tuo subdomain.
-const PROXY_URL = 'wss://robot.teotronica.workers.dev'
+const PROXY_URL = 'wss://robot.teotronica.workers.dev';
 
 const WS_TIMEOUT_MS   = 15000;
 const RECONNECT_BASE  = 2000;
@@ -1013,21 +1013,22 @@ function sendSess(){
   }
 
   // ── Struttura sessione GA ──
-  // - temperature: rimosso (non supportato)
-  // - turn_detection: al livello RADICE della sessione (non dentro audio.input)
-  // - transcription: dentro audio.input
-  // - voice: dentro audio.output
-  // - rate obbligatorio sia in input che in output
+  // turn_detection va dentro audio.input (confermato dalla doc ufficiale)
+  // Parametri semplificati: solo type e silence_duration_ms
+  const tdSimple = vadMode==='server_vad'
+    ? { type:'server_vad', silence_duration_ms:silMs }
+    : { type:'semantic_vad', eagerness };
+
   wsSend({
     type:'session.update',
     session:{
       type:'realtime',
       output_modalities:['audio'],
       instructions,
-      turn_detection:turnDetection,
       audio:{
         input:{
           format:{type:'audio/pcm', rate:24000},
+          turn_detection: tdSimple,
           transcription:{model:'whisper-1'},
         },
         output:{
