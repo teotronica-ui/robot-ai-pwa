@@ -1179,10 +1179,11 @@ function doSnap(){
   if(!v.videoWidth||!v.videoHeight){toast('⚠️ Video non ancora pronto');return;}
   c.width=v.videoWidth; c.height=v.videoHeight;
   c.getContext('2d').drawImage(v,0,0);
-  const b64=c.toDataURL('image/jpeg',.85).split(',')[1];
+  const b64=c.toDataURL('image/jpeg',.85);
   const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
   wsSend({type:'conversation.item.create',item:{type:'message',role:'user',content:[
-    {type:'input_image',image:b64},{type:'input_text',text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}
+    {type:'input_image',image_url:b64},
+    {type:'input_text',text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}
   ]}});
   wsSend({type:'response.create'});
   document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
