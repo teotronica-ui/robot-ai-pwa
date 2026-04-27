@@ -335,9 +335,9 @@
     <select id="selVoice"></select>
   </div>
   <div class="sg">
-    <div class="sh"><span class="l">Silenzio VAD (fine parlato)</span><span class="v" id="vSil">1200 ms</span></div>
-    <input type="range" id="rSil" min="400" max="3000" step="100" value="1200" oninput="oSil(this.value)">
-    <div class="sticks"><span>400ms</span><span>1200ms</span><span>3s</span></div>
+    <div class="sh"><span class="l">Silenzio VAD (fine parlato)</span><span class="v" id="vSil">1800 ms</span></div>
+    <input type="range" id="rSil" min="400" max="5000" step="100" value="1800" oninput="oSil(this.value)">
+    <div class="sticks"><span>400ms</span><span>1800ms</span><span>5s</span></div>
   </div>
 </div>
 
@@ -428,7 +428,7 @@ const N_SEGS=36;
 const EUR=0.92; // USD → EUR (approssimazione)
 const RECONNECT_BASE=2000, RECONNECT_MAX=30000, RECONNECT_LIMIT=10;
 const FETCH_TIMEOUT_MS=30000;
-const FETCH_RETRY=2;
+const FETCH_RETRY=1; // max 2 tentativi totali (1 originale + 1 retry). MAI di più: amplificherebbe i rate limit.
 const CTX_WATCHDOG_MS=2000;
 const TARGET_SR_STT=16000; // Whisper e Gemini accettano 16kHz
 const TTS_OUT_SR=24000;    // tutti i TTS qui producono ~24kHz mono
@@ -476,6 +476,7 @@ let ctxWatchdogInterval=null;
 let workletLoaded=false;
 let history=[]; // [{role,content}]
 let pendingSnap=null; // dataURL pronta per essere allegata al prossimo turno
+let pipelineActive=false; // LOCK CRITICO: una sola pipeline in volo alla volta — impedisce 429 da chiamate concorrenti
 
 // VAD state
 let voiceActive=false;
@@ -1229,6 +1230,7 @@ function disc(){
   // VAD reset
   voiceActive=false; captureBuffers=[]; captureSinceMs=0;
   llmActive=false; llmStreamBuf=''; llmStreamSent='';
+  pipelineActive=false; // sblocca il lock anche su disconnect
   audioCtx=null; analyser=null;
   silStart=null;
   robotSpeaking=false; autoMuteSuspended=false;
@@ -1291,6 +1293,11 @@ function onChunk(e){
   // se il mic è in mute o auto-mute → ignora completamente
   if(muted || autoMuteSuspended) return;
 
+  // LOCK CRITICO: se una pipeline è già in volo (STT/LLM/TTS in elaborazione),
+  // ignora completamente l'audio. Questo previene chiamate API concorrenti
+  // sullo stesso turno e i conseguenti 429 a cascata.
+  if(pipelineActive) return;
+
   // ─── VAD autonomo basato sul PCM del chunk (NON dipende dal VU meter) ───
   // Calcolo peak + RMS sul chunk: il peak cattura le sillabe, l'RMS dà stabilità.
   let sumSq=0, peak=0;
@@ -1312,9 +1319,11 @@ function onChunk(e){
   // soglia VAD configurata dall'utente: la mappiamo con la stessa curva
   const thrRaw = parseInt(document.getElementById('rThr').value);
   const thrLevel = Math.min(255, Math.pow((thrRaw/6000),0.55)*255);
-  // isteresi: per attivare ci vuole 70% della soglia, per disattivare basta 50%
+  // ISTERESI AMPIA: per attivare ci vuole 70% della soglia, ma per disattivare basta 30%
+  // → le pause tra parole (anche con livello che cala parecchio) non chiudono il turno
+  // → solo il silenzio vero (sotto il 30% della soglia) per N ms chiude
   const onThr = thrLevel * 0.7;
-  const offThr = thrLevel * 0.5;
+  const offThr = thrLevel * 0.3;
   const isVoice = voiceActive ? (vadLevel >= offThr) : (vadLevel >= onThr);
 
   // se il robot sta parlando con barge-in disattivo, ignora
@@ -1381,6 +1390,27 @@ function onChunk(e){
 // PIPELINE: STT → LLM → TTS
 // ═══════════════════════════════════════════════════════════════
 async function runPipeline(pcm16, sr){
+  if(!connected) return;
+  if(pipelineActive){
+    dbg('⚠️ pipeline già attiva — frase scartata');
+    return;
+  }
+  pipelineActive = true;
+  try {
+    await runPipelineInner(pcm16, sr);
+    // Aspetta drenaggio TTS prima di rilasciare il lock — impedisce nuove chiamate
+    // API mentre il robot sta ancora sintetizzando o riproducendo
+    try{ await ttsPipeline; }catch(e){}
+    const waitStart=Date.now();
+    while((ttsPlaying || ttsQueue.length>0) && Date.now()-waitStart<30000){
+      await new Promise(r=>setTimeout(r,150));
+    }
+  } finally {
+    pipelineActive = false;
+  }
+}
+
+async function runPipelineInner(pcm16, sr){
   if(!connected) return;
   // se REC è attiva, salviamo anche l'audio utente (al sample rate di registrazione 24kHz)
   if(isRec){
@@ -1501,6 +1531,7 @@ async function runPipeline(pcm16, sr){
 
   renderCost();
   // il setRobotSpeaking(false) e setSt('listening') verranno chiamati al termine della coda TTS
+  // (il lock pipelineActive viene rilasciato nel wrapper esterno, dopo drenaggio TTS)
 }
 
 // ─── flushTtsChunks: estrae frasi complete dal buffer streaming ───
@@ -2124,9 +2155,10 @@ async function fetchRetry(url, opts, isStream){
         const txt = await r.text().catch(()=>'');
         const err = new Error('HTTP '+r.status+' '+(txt.slice(0,200)));
         err.status = r.status;
-        // retry solo su 5xx o 429
-        if(i<tries-1 && (r.status>=500 || r.status===429)){
-          await new Promise(rs=>setTimeout(rs, 500*(i+1)));
+        // CRITICO: NON ritentare mai sui 429 (rate limit) — ritentare amplifica il problema
+        // e consuma altre richieste contro la quota. Ritentare SOLO su errori server transitori (5xx).
+        if(i<tries-1 && r.status>=500 && r.status!==501){
+          await new Promise(rs=>setTimeout(rs, 1000*(i+1)));
           continue;
         }
         throw err;
