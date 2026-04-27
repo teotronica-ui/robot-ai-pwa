@@ -1291,17 +1291,31 @@ function onChunk(e){
   // se il mic è in mute o auto-mute → ignora completamente
   if(muted || autoMuteSuspended) return;
 
-  // calcola RMS sul chunk per VAD locale
-  let sumSq=0;
-  for(let i=0;i<pcm.length;i++){const v=pcm[i]; sumSq += v*v;}
+  // ─── VAD autonomo basato sul PCM del chunk (NON dipende dal VU meter) ───
+  // Calcolo peak + RMS sul chunk: il peak cattura le sillabe, l'RMS dà stabilità.
+  let sumSq=0, peak=0;
+  for(let i=0;i<pcm.length;i++){
+    const v=pcm[i];
+    sumSq += v*v;
+    const a = v<0 ? -v : v;
+    if(a>peak) peak=a;
+  }
   const rms = Math.sqrt(sumSq/pcm.length); // 0..32767
-  const rmsLevel = Math.min(255, (rms/32767)*255*2.5); // mappa approssimativa per coerenza con VU
+  // Combiniamo peak (60%) + RMS (40%) per un livello vocale robusto
+  // Mappa approssimativa su 0..255 con la stessa curva del VU (pow 0.55)
+  const mixed = (peak*0.6 + rms*0.4) / 32767;
+  const vadLevel = Math.min(255, Math.pow(mixed, 0.55) * 255 * 1.6);
 
-  // soglia VAD: stessa logica dell'originale
+  // Aggiorna anche il VU meter visivo come fallback (in caso il vuAnalyser non aggiorni più)
+  drawVU(vadLevel);
+
+  // soglia VAD configurata dall'utente: la mappiamo con la stessa curva
   const thrRaw = parseInt(document.getElementById('rThr').value);
   const thrLevel = Math.min(255, Math.pow((thrRaw/6000),0.55)*255);
-  // usiamo localVadLevel (FFT, più stabile) con isteresi al 60%
-  const isVoice = localVadLevel >= thrLevel*0.6;
+  // isteresi: per attivare ci vuole 70% della soglia, per disattivare basta 50%
+  const onThr = thrLevel * 0.7;
+  const offThr = thrLevel * 0.5;
+  const isVoice = voiceActive ? (vadLevel >= offThr) : (vadLevel >= onThr);
 
   // se il robot sta parlando con barge-in disattivo, ignora
   if(robotSpeaking && !document.getElementById('chkBarge').checked) return;
@@ -1318,6 +1332,7 @@ function onChunk(e){
       setSt('talking');
       dot('dMic','tk');
       silStart = null;
+      dbg('🎙 VAD ON (livello '+Math.round(vadLevel)+' ≥ soglia '+Math.round(onThr)+')');
       // se c'è un TTS in corso e barge-in attivo, interrompi
       if(robotSpeaking && document.getElementById('chkBarge').checked){
         stopTTSPlayback();
@@ -1340,6 +1355,7 @@ function onChunk(e){
       captureBuffers = [];
       setSt('listening');
       dot('dMic','on');
+      dbg('🛑 VAD OFF dopo '+Math.round(totalMs)+'ms · invio a STT…');
       // soglia minima durata utile
       if(totalMs < 400){
         dbg('🛑 frase troppo breve ('+Math.round(totalMs)+'ms) — scartata');
