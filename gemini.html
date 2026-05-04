@@ -1090,8 +1090,17 @@ function onMsg(e){
       finalizeRobot();
       audioQ.push(new Int16Array(OUTPUT_SR));
       // turnComplete: forza drain anche se siamo sotto PRE_BUFFER_CHUNKS
-      // (Gemini ha finito — suona quello che c'è)
       if(!playing) drain();
+      // Azzera timeout snap se era in attesa
+      if(window._snapTimeout){
+        clearTimeout(window._snapTimeout);
+        window._snapTimeout=null;
+        const st=document.getElementById('snapSt');
+        if(st&&st.style.color==='var(--yellow)'){
+          st.style.color='var(--green)';
+          st.textContent='✅ '+new Date().toLocaleTimeString()+' — risposta ricevuta';
+        }
+      }
       setTimeout(()=>{setRobotSpeaking(false);setSt('listening');if(!silStart)silStart=Date.now();},1100);
     }
     if(sc.interrupted){
@@ -1299,14 +1308,36 @@ function doSnap(){
   if(!camActive){toast('❌ Attiva prima la cam');return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connetti prima Gemini');return;}
   const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
-  c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
+  c.width=v.videoWidth||640; c.height=v.videoHeight||480;
+  c.getContext('2d').drawImage(v,0,0);
   const b64=c.toDataURL('image/jpeg',.85).split(',')[1];
+  if(!b64||b64.length<100){toast('❌ Frame cam vuoto, riprova');return;}
+
+  // Flash visivo
   const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
-  // Protocollo Gemini Live: immagine via realtimeInput + testo via clientContent
-  ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:b64,mimeType:'image/jpeg'}]}}));
-  ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}]}],turnComplete:true}}));
-  document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
-  addMsg('📸 [foto inviata]','sys'); toast('📸 Foto inviata!');
+
+  // Formato corretto da doc ufficiale Google:
+  // 1. Invia il frame come video via realtimeInput
+  ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
+
+  // 2. Invia il testo come activityEnd + clientContent per chiudere il turno
+  //    e far sì che Gemini elabori l'immagine prima di rispondere
+  ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+  ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Guarda attentamente questa immagine e descrivi esattamente cosa vedi.'}]}],turnComplete:true}}));
+
+  // Feedback visivo chiaro
+  const st=document.getElementById('snapSt');
+  st.style.color='var(--yellow)';
+  st.textContent='📸 '+new Date().toLocaleTimeString()+' — foto inviata, elaborazione...';
+  clearTimeout(window._snapTimeout);
+  window._snapTimeout=setTimeout(()=>{
+    st.style.color='var(--red)';
+    st.textContent='⚠️ Nessuna risposta ricevuta dopo 15s';
+  },15000);
+
+  addMsg('📸 [foto inviata — attendo descrizione]','sys');
+  dbg('📸 Snap inviato: '+Math.round(b64.length*0.75/1024)+'KB JPEG');
+  toast('📸 Foto inviata!');
 }
 
 // Comando vocale snap: parole chiave in italiano e inglese
