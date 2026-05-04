@@ -527,11 +527,32 @@ function onAutoMuteChange(){
 // KEY
 // ═══════════════════════════════════════════════════════════════
 function loadKey(){
+  // 1. URL hash: apri gemini.html#key=AIzaXXX — funziona sempre, anche senza localStorage
+  try{
+    const hash=window.location.hash;
+    if(hash.includes('key=')){
+      const k=decodeURIComponent(hash.split('key=')[1].split('&')[0]);
+      if(k&&k.length>10){
+        document.getElementById('keyIn').value=k;
+        try{localStorage.setItem(LS_KEY,k);}catch(e){}
+        try{sessionStorage.setItem(LS_KEY,k);}catch(e){}
+        setKS(true,k.length);
+        history.replaceState(null,'',window.location.pathname+window.location.search);
+        return;
+      }
+    }
+  }catch(e){}
+  // 2. localStorage (normale)
   try{
     const k=localStorage.getItem(LS_KEY);
-    if(k&&k.length>10){document.getElementById('keyIn').value=k; setKS(true,k.length);}
-    else setKS(false,0);
-  }catch(e){setKS(false,0);}
+    if(k&&k.length>10){document.getElementById('keyIn').value=k; setKS(true,k.length); return;}
+  }catch(e){}
+  // 3. sessionStorage (fallback iOS Safari con localStorage bloccato)
+  try{
+    const k=sessionStorage.getItem(LS_KEY);
+    if(k&&k.length>10){document.getElementById('keyIn').value=k; setKS(true,k.length); return;}
+  }catch(e){}
+  setKS(false,0);
 }
 function setKS(ok,len){
   const e=document.getElementById('kStat');
@@ -540,7 +561,11 @@ function setKS(ok,len){
 }
 function onKeyIn(){
   const k=document.getElementById('keyIn').value.replace(/[\u200B-\u200D\uFEFF\r\n\t]/g,'').trim();
-  if(k.length>10){try{localStorage.setItem(LS_KEY,k);}catch(e){} setKS(true,k.length);}
+  if(k.length>10){
+    try{localStorage.setItem(LS_KEY,k);}catch(e){}
+    try{sessionStorage.setItem(LS_KEY,k);}catch(e){}
+    setKS(true,k.length);
+  }
 }
 function loadKeysFile(inp){
   const file=inp.files[0]; if(!file)return;
@@ -558,6 +583,7 @@ function loadKeysFile(inp){
         if(k.length>10){
           document.getElementById('keyIn').value=k;
           try{localStorage.setItem(LS_KEY,k);}catch(ex){}
+          try{sessionStorage.setItem(LS_KEY,k);}catch(ex){}
           setKS(true,k.length); ok=true; toast('✅ Chiave caricata ('+k.length+' chars)');
         }
       }
@@ -1284,7 +1310,7 @@ function doSnap(){
 // Comando vocale snap: parole chiave in italiano e inglese
 const SNAP_KEYWORDS = [
   'scatta','scatta una foto','scatta foto','fai una foto','fai foto',
-  'guarda','guardami','dai un'occhiata','cosa vedi','cosa vedi?',
+  'guarda','guardami','dai un\'occhiata','cosa vedi','cosa vedi?',
   'descrivi','descrivimi','take a photo','take photo','look','snapshot'
 ];
 function checkVoiceSnapCommand(text){
