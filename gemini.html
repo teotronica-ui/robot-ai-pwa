@@ -980,7 +980,9 @@ function sendSetup(){
   const setup={
     model:'models/'+model,
     generationConfig:generationConfig,
-    systemInstruction:{parts:[{text:instructions}]}
+    systemInstruction:{parts:[{text:instructions}]},
+    inputAudioTranscription:{},  // abilita trascrizione voce utente → inputTranscription in onMsg
+    outputAudioTranscription:{}  // abilita trascrizione risposta Gemini → outputTranscription in onMsg
   };
   // Session resumption: se abbiamo un handle da una sessione precedente,
   // lo passiamo per riprendere la conversazione senza perdere il contesto.
@@ -1314,7 +1316,13 @@ const SNAP_KEYWORDS = [
   'descrivi','descrivimi','take a photo','take photo','look','snapshot'
 ];
 function checkVoiceSnapCommand(text){
-  if(!camActive){return;} // cam non attiva, ignora
+  if(!camActive){
+    // Cam non attiva ma ha usato una keyword snap — avvisalo
+    const t=text.toLowerCase();
+    const isSnap=SNAP_KEYWORDS.some(kw=>t.includes(kw));
+    if(isSnap) toast('📷 Attiva prima la cam per scattare foto');
+    return;
+  }
   if(!ws||ws.readyState!==WebSocket.OPEN){return;}
   const t = text.toLowerCase().trim();
   const triggered = SNAP_KEYWORDS.some(kw => t.includes(kw));
