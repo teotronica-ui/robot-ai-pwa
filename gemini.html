@@ -398,12 +398,12 @@
   <div class="card-hd">🔑 API Key Google <span style="color:var(--muted);font-size:.57rem">— si inserisce una volta sola</span></div>
   <div class="f">
     <label>Chiave API</label>
-    <input type="password" id="keyIn" placeholder="sk-proj-..." autocomplete="off" spellcheck="false" oninput="onKeyIn()">
+    <input type="password" id="keyIn" placeholder="AIza..." autocomplete="off" spellcheck="false" oninput="onKeyIn()">
     <div class="ks" id="kStat">⚠️ Nessuna chiave salvata</div>
   </div>
   <div class="upl" onclick="document.getElementById('fKeys').click()">
     <input type="file" id="fKeys" accept=".txt" onchange="loadKeysFile(this)">
-    📂 Carica <strong>keys.txt</strong> · <code>OPENAI_KEY=sk-...</code>
+    📂 Carica <strong>keys.txt</strong> · <code>GEMINI_KEY=AIza...</code>
   </div>
 </div>
 
@@ -553,8 +553,8 @@ function loadKeysFile(inp){
     let ok=false;
     t.replace(/\r/g,'').split('\n').forEach(ln=>{
       ln=ln.trim();
-      if(ln.startsWith('OPENAI_KEY=')){
-        const k=ln.slice(11).replace(/^["'\s]+|["'\s]+$/g,'');
+      if(ln.startsWith('GEMINI_KEY=')||ln.startsWith('OPENAI_KEY=')){
+        const k=ln.slice(ln.indexOf('=')+1).replace(/^["'\s]+|["'\s]+$/g,'');
         if(k.length>10){
           document.getElementById('keyIn').value=k;
           try{localStorage.setItem(LS_KEY,k);}catch(ex){}
@@ -562,7 +562,7 @@ function loadKeysFile(inp){
         }
       }
     });
-    if(!ok)toast('⚠️ OPENAI_KEY= non trovata nel file');
+    if(!ok)toast('⚠️ GEMINI_KEY= non trovata nel file');
     inp.value='';
   };
   r.readAsArrayBuffer(file);
