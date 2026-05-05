@@ -1316,27 +1316,36 @@ function doSnap(){
   // Flash visivo
   const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
 
-  // Formato corretto da doc ufficiale Google:
-  // 1. Invia il frame come video via realtimeInput
-  ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
-
-  // 2. Invia il testo come activityEnd + clientContent per chiudere il turno
-  //    e far sì che Gemini elabori l'immagine prima di rispondere
-  ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
-  ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Guarda attentamente questa immagine e descrivi esattamente cosa vedi.'}]}],turnComplete:true}}));
-
-  // Feedback visivo chiaro
+  // Aggiorna feedback subito
   const st=document.getElementById('snapSt');
   st.style.color='var(--yellow)';
-  st.textContent='📸 '+new Date().toLocaleTimeString()+' — foto inviata, elaborazione...';
-  clearTimeout(window._snapTimeout);
-  window._snapTimeout=setTimeout(()=>{
-    st.style.color='var(--red)';
-    st.textContent='⚠️ Nessuna risposta ricevuta dopo 15s';
-  },15000);
+  st.textContent='⏳ '+new Date().toLocaleTimeString()+' — svuoto buffer audio...';
+
+  // STEP 1: ferma il VAD e svuota il buffer audio pendente
+  // Senza questo Gemini elabora prima l'audio in coda e ignora l'immagine
+  vadWasActive=false; vadSilenceFrames=0;
+  ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+
+  // STEP 2: aspetta 400ms che Gemini svuoti il buffer audio, poi invia l'immagine
+  setTimeout(()=>{
+    if(!ws||ws.readyState!==WebSocket.OPEN) return;
+    st.textContent='📸 '+new Date().toLocaleTimeString()+' — foto inviata, elaborazione...';
+    dbg('📸 Snap inviato: '+Math.round(b64.length*0.75/1024)+'KB JPEG');
+
+    // Invia immagine nel formato ufficiale
+    ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
+
+    // Chiudi il turno con la richiesta testuale
+    ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Guarda attentamente questa immagine e descrivi esattamente cosa vedi.'}]}],turnComplete:true}}));
+
+    clearTimeout(window._snapTimeout);
+    window._snapTimeout=setTimeout(()=>{
+      st.style.color='var(--red)';
+      st.textContent='⚠️ Nessuna risposta ricevuta dopo 15s';
+    },15000);
+  }, 400);
 
   addMsg('📸 [foto inviata — attendo descrizione]','sys');
-  dbg('📸 Snap inviato: '+Math.round(b64.length*0.75/1024)+'KB JPEG');
   toast('📸 Foto inviata!');
 }
 
