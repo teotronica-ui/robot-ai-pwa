@@ -1316,27 +1316,26 @@ function doSnap(){
   // Flash visivo
   const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
 
-  // Aggiorna feedback subito
   const st=document.getElementById('snapSt');
   st.style.color='var(--yellow)';
   st.textContent='⏳ '+new Date().toLocaleTimeString()+' — svuoto buffer audio...';
 
-  // STEP 1: ferma il VAD e svuota il buffer audio pendente
-  // Senza questo Gemini elabora prima l'audio in coda e ignora l'immagine
+  // STEP 1: reset VAD e chiudi stream audio corrente
   vadWasActive=false; vadSilenceFrames=0;
   ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
 
-  // STEP 2: aspetta 400ms che Gemini svuoti il buffer audio, poi invia l'immagine
+  // STEP 2: aspetta che Gemini svuoti il buffer audio (400ms)
   setTimeout(()=>{
     if(!ws||ws.readyState!==WebSocket.OPEN) return;
-    st.textContent='📸 '+new Date().toLocaleTimeString()+' — foto inviata, elaborazione...';
-    dbg('📸 Snap inviato: '+Math.round(b64.length*0.75/1024)+'KB JPEG');
 
-    // Invia immagine nel formato ufficiale
+    // Invia immagine + testo ENTRAMBI via realtimeInput (ordine garantito)
+    // Dalla doc ufficiale: usare realtimeInput.text per testo durante conversazione,
+    // NON clientContent (che non ha garanzie di ordine con realtimeInput)
     ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
+    ws.send(JSON.stringify({realtimeInput:{text:'Descrivi esattamente cosa vedi in questa immagine.'}}));
 
-    // Chiudi il turno con la richiesta testuale
-    ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Guarda attentamente questa immagine e descrivi esattamente cosa vedi.'}]}],turnComplete:true}}));
+    st.textContent='📸 '+new Date().toLocaleTimeString()+' — foto inviata, elaborazione...';
+    dbg('📸 Snap: '+Math.round(b64.length*0.75/1024)+'KB — realtimeInput.video + realtimeInput.text');
 
     clearTimeout(window._snapTimeout);
     window._snapTimeout=setTimeout(()=>{
