@@ -550,10 +550,7 @@ function saveMemoItem(text){
 function renderMemoBox(list){
   const box=document.getElementById('memoBox');
   if(!list||list.length===0){box.textContent='— nessuna memo salvata —';return;}
-  box.textContent=list.map(e=>`[${e.n}] ${e.t}
-    ${e.m}`).join('
-
-');
+  box.textContent=list.map(e=>'['+e.n+'] '+e.t+'\n    '+e.m).join('\n\n');
   box.scrollTop=box.scrollHeight;
 }
 
@@ -567,12 +564,7 @@ function clearMemo(){
 function exportMemo(){
   const list=getMemoList();
   if(!list||list.length===0){toast('⚠️ Nessuna memo da esportare');return;}
-  const txt=list.map(e=>`[${e.n}] ${e.t}
-${e.m}`).join('
-
----
-
-');
+    const txt=list.map(e=>'['+e.n+'] '+e.t+'\n'+e.m).join('\n\n---\n\n');
   const blob=new Blob([txt],{type:'text/plain'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
@@ -594,7 +586,7 @@ function checkMemoCommand(text){
         ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Non hai ancora salvato nessuna memo.'}]}],turnComplete:true}}));
       }
     } else {
-      const memoTxt=list.map(e=>`Memo ${e.n} del ${e.t}: ${e.m}`).join('. ');
+      const memoTxt=list.map(e=>'Memo '+e.n+' del '+e.t+': '+e.m).join('. ');
       // Invia le memo a Gemini perché le legga
       if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
         ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Leggi queste memo salvate: '+memoTxt}]}],turnComplete:true}}));
