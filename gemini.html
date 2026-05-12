@@ -224,6 +224,16 @@
   </div>
 </div>
 
+<!-- MEMO -->
+<div class="card">
+  <div class="card-hd" style="margin-bottom:8px">📝 Memo vocali
+    <button onclick="exportMemo()" style="font-family:var(--mono);font-size:.55rem;padding:4px 8px;background:var(--surf);border:1px solid var(--bord);border-radius:7px;color:var(--muted);cursor:pointer;float:right">⬇ ESPORTA</button>
+    <button onclick="clearMemo()" style="font-family:var(--mono);font-size:.55rem;padding:4px 8px;background:var(--surf);border:1px solid var(--bord);border-radius:7px;color:var(--muted);cursor:pointer;float:right;margin-right:6px">🗑 SVUOTA</button>
+  </div>
+  <div id="memoBox" style="font-family:var(--mono);font-size:.68rem;color:var(--fg);background:var(--bg);border:1px solid var(--bord);border-radius:8px;padding:10px;min-height:60px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.6">— nessuna memo salvata —</div>
+  <div style="font-size:.6rem;color:var(--muted);margin-top:5px;font-family:var(--mono)">💡 Di' "ricordati che..." oppure "memo: ..." per salvare · "leggi le memo" per richiamarle</div>
+</div>
+
 <!-- CHAT -->
 <div class="card">
   <div class="card-hd" style="margin-bottom:8px">💬 Conversazione</div>
@@ -440,6 +450,12 @@ registerProcessor('pcm16-processor', PCM16Processor);
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
 const LS_KEY='robot_key_gemini', LS_CHARS='robot_characters', LS_LAST='robot_last_char', LS_KNOW='robot_knowledge';
+const LS_MEMO='robot_memo'; // chiave localStorage per le memo vocali
+
+// Parole chiave per salvare una memo
+const MEMO_SAVE_KW = ['ricordati che','ricordati questo','ricordati:','memo:','nota:','salva questo','tieni a mente'];
+// Parole chiave per leggere le memo
+const MEMO_READ_KW = ['leggi le memo','leggi memo','cosa hai memorizzato','cosa ricordi','mostra le memo','mostra memo','ricordami le memo'];
 const GEMINI_WS_BASE='wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage';
 const INPUT_SR=16000, OUTPUT_SR=24000;
 const PRICES={
@@ -498,8 +514,116 @@ let sessionHandle=null; // handle per session resumption (ricevuto da Gemini)
 // ═══════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// MEMO — salvataggio e lettura di note vocali persistenti
+// ═══════════════════════════════════════════════════════════════
+function loadMemo(){
+  try{
+    const saved=localStorage.getItem(LS_MEMO);
+    const box=document.getElementById('memoBox');
+    if(saved&&JSON.parse(saved).length>0){
+      renderMemoBox(JSON.parse(saved));
+    }
+  }catch(e){}
+}
+
+function getMemoList(){
+  try{
+    const saved=localStorage.getItem(LS_MEMO);
+    return saved?JSON.parse(saved):[];
+  }catch(e){return [];}
+}
+
+function saveMemoItem(text){
+  const list=getMemoList();
+  const entry={
+    n: list.length+1,
+    t: new Date().toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}),
+    m: text.trim()
+  };
+  list.push(entry);
+  try{localStorage.setItem(LS_MEMO,JSON.stringify(list));}catch(e){}
+  renderMemoBox(list);
+  return entry.n;
+}
+
+function renderMemoBox(list){
+  const box=document.getElementById('memoBox');
+  if(!list||list.length===0){box.textContent='— nessuna memo salvata —';return;}
+  box.textContent=list.map(e=>`[${e.n}] ${e.t}
+    ${e.m}`).join('
+
+');
+  box.scrollTop=box.scrollHeight;
+}
+
+function clearMemo(){
+  if(!confirm('Cancellare tutte le memo?'))return;
+  try{localStorage.removeItem(LS_MEMO);}catch(e){}
+  document.getElementById('memoBox').textContent='— nessuna memo salvata —';
+  toast('🗑 Memo cancellate');
+}
+
+function exportMemo(){
+  const list=getMemoList();
+  if(!list||list.length===0){toast('⚠️ Nessuna memo da esportare');return;}
+  const txt=list.map(e=>`[${e.n}] ${e.t}
+${e.m}`).join('
+
+---
+
+');
+  const blob=new Blob([txt],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='memo_robot_'+new Date().toISOString().slice(0,10)+'.txt';
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('⬇ Memo esportate');
+}
+
+function checkMemoCommand(text){
+  const t=text.toLowerCase().trim();
+
+  // Comando LEGGI memo
+  const isRead=MEMO_READ_KW.some(kw=>t.includes(kw));
+  if(isRead){
+    const list=getMemoList();
+    if(!list||list.length===0){
+      // Invia a Gemini: nessuna memo
+      if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
+        ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Non hai ancora salvato nessuna memo.'}]}],turnComplete:true}}));
+      }
+    } else {
+      const memoTxt=list.map(e=>`Memo ${e.n} del ${e.t}: ${e.m}`).join('. ');
+      // Invia le memo a Gemini perché le legga
+      if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
+        ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Leggi queste memo salvate: '+memoTxt}]}],turnComplete:true}}));
+      }
+      dbg('📝 Memo inviate a Gemini per lettura');
+    }
+    return;
+  }
+
+  // Comando SALVA memo
+  const kw=MEMO_SAVE_KW.find(k=>t.includes(k));
+  if(kw){
+    // Estrai il testo dopo la keyword
+    const idx=t.indexOf(kw);
+    const memoText=text.slice(idx+kw.length).trim();
+    if(memoText.length<2) return; // troppo corto, ignora
+    const n=saveMemoItem(memoText);
+    toast('📝 Memo '+n+' salvata');
+    dbg('📝 Memo '+n+' salvata: "'+memoText+'"');
+    addMsg('📝 [memo '+n+' salvata: "'+memoText+'"]','sys');
+    // Conferma vocale da Gemini
+    if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
+      ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Hai appena salvato questa memo numero '+n+': "'+memoText+'". Confermalo brevemente.'}]}],turnComplete:true}}));
+    }
+  }
+}
+
 function init(){
-  buildVU(); loadKey(); renderChars(); loadKnowLS(); updVadUI();
+  buildVU(); loadKey(); renderChars(); loadKnowLS(); updVadUI(); loadMemo();
   setInterval(tickTimer,500); netCheck(); setInterval(netCheck,14000); enumCams();
   try{navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);}catch(e){}
   setInterval(pollMics,4000);
@@ -1083,8 +1207,9 @@ function onMsg(e){
       const userText = sc.inputTranscription.text;
       addMsg(userText,'user');
       tok.ai+=Math.round(userText.length*1.3);renderCost();
-      // Comando vocale scatta foto: rileva parole chiave nella trascrizione
+      // Comandi vocali: snap foto e memo
       checkVoiceSnapCommand(userText);
+      checkMemoCommand(userText);
     }
     if(sc.turnComplete){
       finalizeRobot();
