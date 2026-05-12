@@ -1308,44 +1308,14 @@ function doSnap(){
   if(!camActive){toast('❌ Attiva prima la cam');return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connetti prima Gemini');return;}
   const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
-  c.width=v.videoWidth||640; c.height=v.videoHeight||480;
-  c.getContext('2d').drawImage(v,0,0);
+  c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
   const b64=c.toDataURL('image/jpeg',.85).split(',')[1];
-  if(!b64||b64.length<100){toast('❌ Frame cam vuoto, riprova');return;}
-
-  // Flash visivo
   const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
-
-  const st=document.getElementById('snapSt');
-  st.style.color='var(--yellow)';
-  st.textContent='⏳ '+new Date().toLocaleTimeString()+' — svuoto buffer audio...';
-
-  // STEP 1: reset VAD e chiudi stream audio corrente
-  vadWasActive=false; vadSilenceFrames=0;
-  ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
-
-  // STEP 2: aspetta che Gemini svuoti il buffer audio (400ms)
-  setTimeout(()=>{
-    if(!ws||ws.readyState!==WebSocket.OPEN) return;
-
-    // Invia immagine + testo ENTRAMBI via realtimeInput (ordine garantito)
-    // Dalla doc ufficiale: usare realtimeInput.text per testo durante conversazione,
-    // NON clientContent (che non ha garanzie di ordine con realtimeInput)
-    ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
-    ws.send(JSON.stringify({realtimeInput:{text:'Descrivi esattamente cosa vedi in questa immagine.'}}));
-
-    st.textContent='📸 '+new Date().toLocaleTimeString()+' — foto inviata, elaborazione...';
-    dbg('📸 Snap: '+Math.round(b64.length*0.75/1024)+'KB — realtimeInput.video + realtimeInput.text');
-
-    clearTimeout(window._snapTimeout);
-    window._snapTimeout=setTimeout(()=>{
-      st.style.color='var(--red)';
-      st.textContent='⚠️ Nessuna risposta ricevuta dopo 15s';
-    },15000);
-  }, 400);
-
-  addMsg('📸 [foto inviata — attendo descrizione]','sys');
-  toast('📸 Foto inviata!');
+  // Protocollo Gemini Live: immagine via realtimeInput + testo via clientContent
+  ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:b64,mimeType:'image/jpeg'}]}}));
+  ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}]}],turnComplete:true}}));
+  document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
+  addMsg('📸 [foto inviata]','sys'); toast('📸 Foto inviata!');
 }
 
 // Comando vocale snap: parole chiave in italiano e inglese
