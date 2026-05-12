@@ -1338,8 +1338,16 @@ function checkVoiceSnapCommand(text){
   if(triggered){
     dbg('📸 Comando vocale rilevato: "'+text+'" → snap automatico');
     toast('📸 Comando vocale: scatto!');
-    // Piccolo ritardo per non sovrapporre l'audio della richiesta allo snap
-    setTimeout(()=>doSnap(), 400);
+    // Interrompi subito qualsiasi risposta Gemini già avviata prima di scattare.
+    // Senza questo, Gemini risponde alla domanda vocale ("cosa vedi?") inventando,
+    // perché ha già iniziato a generare prima che la foto arrivi.
+    if(ws&&ws.readyState===WebSocket.OPEN){
+      ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+    }
+    audioQ=[]; playing=false;
+    if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
+    // Aspetta 500ms che Gemini si fermi, poi scatta
+    setTimeout(()=>doSnap(), 500);
   }
 }
 
