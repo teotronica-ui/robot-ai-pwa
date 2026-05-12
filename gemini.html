@@ -3,6 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Robot AI">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0d1117">
   <title>Robot AI — Gemini v2</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
@@ -453,7 +458,7 @@ const LS_KEY='robot_key_gemini', LS_CHARS='robot_characters', LS_LAST='robot_las
 const LS_MEMO='robot_memo'; // chiave localStorage per le memo vocali
 
 // Parole chiave per salvare una memo
-const MEMO_SAVE_KW = ['ricordati che','ricordati questo','ricordati:','memo:','nota:','salva questo','tieni a mente'];
+const MEMO_SAVE_KW = ['ricordati che','ricordati questo','ricordati:','ricordati il','ricordati la','ricordati i ','ricordati le ','ricordati un','ricordati una','memo:','nota:','salva questo','tieni a mente','annotati che','segna che'];
 // Parole chiave per leggere le memo
 const MEMO_READ_KW = ['leggi le memo','leggi memo','cosa hai memorizzato','cosa ricordi','mostra le memo','mostra memo','ricordami le memo'];
 const GEMINI_WS_BASE='wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage';
@@ -601,8 +606,8 @@ function checkMemoCommand(text){
   if(kw){
     // Estrai il testo dopo la keyword
     const idx=t.indexOf(kw);
-    const memoText=text.slice(idx+kw.length).trim();
-    if(memoText.length<2) return; // troppo corto, ignora
+    let memoText=text.slice(idx+kw.length).replace(/^[:;,\.\s]+/,'').trim();
+    if(memoText.length<2) memoText=text.trim(); // usa tutta la frase se testo troppo corto
     const n=saveMemoItem(memoText);
     toast('📝 Memo '+n+' salvata');
     dbg('📝 Memo '+n+' salvata: "'+memoText+'"');
@@ -1654,8 +1659,13 @@ function loadKnowFile(inp){
 }
 function buildSystemPrompt(){
   const base=activePrompt;
-  if(!knowledge.text)return base;
-  return base+'\n\n---\nINFORMAZIONI EVENTO'+(knowledge.title?' ('+knowledge.title+')':'')+(':\n')+knowledge.text;
+  let prompt=knowledge.text?base+'\n\n---\nINFORMAZIONI EVENTO'+(knowledge.title?' ('+knowledge.title+')':'')+(':\n')+knowledge.text:base;
+  const list=getMemoList();
+  if(list&&list.length>0){
+    const last10=list.slice(-10);
+    prompt+='\n\n---\nMemo salvate (ultime '+last10.length+'):\n'+last10.map(e=>'- ['+e.t+'] '+e.m).join('\n')+'\nSe ti viene chiesto cosa ricordi, riferisciti a queste memo.';
+  }
+  return prompt;
 }
 
 // ═══════════════════════════════════════════════════════════════
