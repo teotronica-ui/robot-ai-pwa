@@ -539,6 +539,17 @@ function getMemoList(){
   }catch(e){return [];}
 }
 
+function showMemoFeedback(msg, color){
+  const lastEl=document.getElementById('memoLast');
+  if(!lastEl) return;
+  lastEl.style.display='block';
+  lastEl.style.color=color||'var(--green)';
+  lastEl.textContent=msg;
+  lastEl.style.border='1px solid '+(color||'var(--green)');
+  clearTimeout(lastEl._ft);
+  lastEl._ft=setTimeout(()=>{if(lastEl)lastEl.style.border='1px solid var(--bord)';},4000);
+}
+
 function saveMemoItem(text){
   const list=getMemoList();
   const entry={
