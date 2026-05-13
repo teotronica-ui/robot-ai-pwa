@@ -815,7 +815,9 @@ async function startVuMonitor(forceDeviceId){
       // FASE 1: apri con default per sbloccare il permesso e rendere visibili le label
       dbg('🎤 getUserMedia (default — permesso + detect wired)...');
       const tempStream=await navigator.mediaDevices.getUserMedia({
-        audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}
+        // iOS: echoCancellation:true è fondamentale per mic interno iPhone
+        // senza AEC il mic cattura l'audio delle casse causando eco e blocchi
+        audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}
       });
       const tempLabel=tempStream.getAudioTracks()[0]?.label||'';
       dbg('📋 Mic default: "'+tempLabel+'"');
@@ -1148,7 +1150,8 @@ function onChunk(e){
   vadWasActive=true;
   vadSilenceFrames=0;
   const actualSR=audioCtx?audioCtx.sampleRate:48000;
-  ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate='+actualSR}]}}));
+  // Formato ufficiale doc Google (maggio 2026): realtimeInput.audio
+  ws.send(JSON.stringify({realtimeInput:{audio:{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate='+actualSR}}}));
 }
 
 function onMsg(e){
@@ -1286,7 +1289,8 @@ function onMsg(e){
             if(fl){fl.classList.add('go');setTimeout(()=>fl.classList.remove('go'),200);}
             // 1. Inietta l'immagine nel flusso visivo (realtimeInput)
             //    Questo fa effettivamente "vedere" la foto a Gemini
-            ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{mimeType:'image/jpeg',data:b64}]}}));
+            // Formato ufficiale doc Google: realtimeInput.video (non mediaChunks)
+            ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
             // 2. toolResponse con solo testo — sblocca Gemini e gli dice di elaborare la foto
             out='Ho scattato la foto e te la sto mostrando. Guardala attentamente e descrivi cosa vedi.';
             snapInFlight=false;
@@ -1468,6 +1472,9 @@ async function toggleCam(){
     const v=document.getElementById('camVideo'); v.srcObject=camStream;
     v.style.display='block'; document.getElementById('camPh').style.display='none';
     camActive=true; document.getElementById('btnCamOn').textContent='⏹ Spegni cam';
+    // Doc ufficiale: sessioni audio+video limitate a 2 minuti (vs 15 min audio-only)
+    if(connected) toast('⚠️ Cam attiva: sessione limitata a 2 min da Google');
+    dbg('📷 Cam attiva — sessione audio+video: max 2 min per doc ufficiale');
     document.getElementById('btnSnap').disabled=false; dot('dCam','on');
     await enumCams();
   }catch(e){toast('❌ Cam: '+e.message);}
