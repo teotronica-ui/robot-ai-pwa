@@ -846,7 +846,7 @@ async function startVuMonitor(forceDeviceId){
       // FASE 1: apri con default per sbloccare il permesso e rendere visibili le label
       dbg('🎤 getUserMedia (default — permesso + detect wired)...');
       const tempStream=await navigator.mediaDevices.getUserMedia({
-        audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}
+        audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}
       });
       const tempLabel=tempStream.getAudioTracks()[0]?.label||'';
       dbg('📋 Mic default: "'+tempLabel+'"');
@@ -886,8 +886,8 @@ async function startVuMonitor(forceDeviceId){
     if(!sharedMicStream){
       // Apri con deviceId specifico (selezionato manualmente o trovato nella fase 2)
       const constraint=devId
-        ?{audio:{deviceId:{exact:devId}, echoCancellation:false, noiseSuppression:false, autoGainControl:false}}
-        :{audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}};
+        ?{audio:{deviceId:{exact:devId}, echoCancellation:true, noiseSuppression:true, autoGainControl:true}}
+        :{audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}};
       dbg('🎤 getUserMedia '+(devId?'exact:'+devId.slice(0,12)+'...':'(default)')+'...');
       sharedMicStream=await navigator.mediaDevices.getUserMedia(constraint);
     }
