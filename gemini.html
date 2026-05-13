@@ -1116,6 +1116,8 @@ function pcmToBase64(pcm){
 let vadWasActive=false;    // true se nell'ultimo chunk eravamo sopra soglia
 let vadSilenceFrames=0;    // frame consecutivi sotto soglia dopo parlato
 let pendingSnap=false;     // snap in attesa del prossimo turnComplete o interrupted
+let snapInFlight=false;    // true mentre Gemini elabora la foto — blocca nuovi snap
+let lastVisionTs=0;        // timestamp ultimo snap — cooldown anti-loop
 const VAD_SILENCE_FRAMES=18; // ~300ms a 60fps prima di inviare audioStreamEnd
 
 function onChunk(e){
@@ -1205,7 +1207,10 @@ function onMsg(e){
       audioQ.push(new Int16Array(OUTPUT_SR));
       // turnComplete: forza drain anche se siamo sotto PRE_BUFFER_CHUNKS
       if(!playing) drain();
-      if(pendingSnap){pendingSnap=false;dbg('Snap dopo turnComplete');doSnap();}
+      // Reset snapInFlight: Gemini ha finito di rispondere alla foto
+      if(snapInFlight){snapInFlight=false;dbg('snapInFlight reset su turnComplete');}
+      // Esegui snap pendente SOLO se non è la risposta di uno snap (snapInFlight era true)
+      if(pendingSnap&&!snapInFlight){pendingSnap=false;dbg('Snap dopo turnComplete');doSnap();}
       // Azzera timeout snap se era in attesa
       if(window._snapTimeout){
         clearTimeout(window._snapTimeout);
@@ -1219,6 +1224,7 @@ function onMsg(e){
       setTimeout(()=>{setRobotSpeaking(false);setSt('listening');if(!silStart)silStart=Date.now();},1100);
     }
     if(sc.interrupted){
+      if(snapInFlight){snapInFlight=false;dbg('snapInFlight reset su interrupted');}
       if(pendingSnap){pendingSnap=false;dbg('Snap dopo interrupted');doSnap();}
       dbg('🛑 Barge-in');audioQ=[];playing=false;nextPlayTime=0;
       setRobotSpeaking(false);setSt('talking');dot('dMic','tk');silStart=null;
@@ -1278,11 +1284,11 @@ function onMsg(e){
           if(b64&&b64.length>100){
             const fl=document.getElementById('snapFlash');
             if(fl){fl.classList.add('go');setTimeout(()=>fl.classList.remove('go'),200);}
-            ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[
-              {inlineData:{mimeType:'image/jpeg',data:b64}},
-              {text:'Descrivi esattamente cosa vedi, rispondi in italiano.'}
-            ]}],turnComplete:true}}));
-            out='Foto scattata single-turn. Analizza e descrivi.';
+            // Il toolResponse porta l'immagine come inlineData
+            // NON inviamo clientContent separato: Gemini gestisce il turno
+            // tramite la toolResponse — evita il problema 'due turni aperti'
+            out=JSON.stringify({inlineData:{mimeType:'image/jpeg',data:b64}});
+            snapInFlight=false; // la foto è nella toolResponse, non in un turno separato
             const st=document.getElementById('snapSt');
             if(st){st.style.color='var(--yellow)';st.textContent='Foto '+new Date().toLocaleTimeString();}
             addMsg('[foto scattata]','sys'); toast('Foto scattata!');
@@ -1313,6 +1319,7 @@ function disc(clearHandle=false){
   if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch(e){}}
   audioCtx=null; analyser=vuAnalyser;
   audioQ=[]; playing=false; silStart=null; nextPlayTime=0; vadWasActive=false; vadSilenceFrames=0;
+  pendingSnap=false; snapInFlight=false; lastVisionTs=0;
   robotSpeaking=false; autoMuteSuspended=false;
   setRobotSpeaking(false);
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
@@ -1474,6 +1481,13 @@ function stopCam(){
 }
 async function switchCam(){if(camActive){stopCam();await toggleCam();}}
 function doSnap(){
+  // Azzera subito pendingSnap: se fallisce non riprova automaticamente
+  pendingSnap=false;
+  // Cooldown 3s: evita loop e doppi trigger da VAD/keyword
+  const now=Date.now();
+  if(now-lastVisionTs<3000){dbg('doSnap: cooldown attivo, skip');return;}
+  // Blocca se Gemini sta già elaborando una foto precedente
+  if(snapInFlight){dbg('doSnap: snap già in volo, skip');return;}
   if(!camActive){toast('Attiva prima la cam');return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){toast('Connetti prima Gemini');return;}
   const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
@@ -1483,6 +1497,8 @@ function doSnap(){
   if(!b64||b64.length<100){toast('Frame cam vuoto');return;}
   const fl=document.getElementById('snapFlash');
   if(fl){fl.classList.add('go');setTimeout(()=>fl.classList.remove('go'),200);}
+  lastVisionTs=Date.now();  // registra timestamp per cooldown
+  snapInFlight=true;         // blocca nuovi snap finché Gemini non risponde
   // FIX: foto e testo nello stesso clientContent turn — evita allucinazioni
   ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[
     {inlineData:{mimeType:'image/jpeg',data:b64}},
