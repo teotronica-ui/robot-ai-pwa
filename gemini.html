@@ -458,8 +458,7 @@ const LS_KEY='robot_key_gemini', LS_CHARS='robot_characters', LS_LAST='robot_las
 const LS_MEMO='robot_memo'; // chiave localStorage per le memo vocali
 
 // Parole chiave per salvare una memo
-const MEMO_SAVE_KW = ['ricordati che','ricordati questo','ricordati:','ricordati il','ricordati la','ricordati i ','ricordati le ','ricordati un','ricordati una','memo:','nota:','salva questo','tieni a mente','annotati che','segna che'];
-// Parole chiave per leggere le memo
+// MEMO_SAVE_KW rimossa: il function calling (salva_memo tool) gestisce il salvataggio
 const MEMO_READ_KW = ['leggi le memo','leggi memo','cosa hai memorizzato','cosa ricordi','mostra le memo','mostra memo','ricordami le memo'];
 const GEMINI_WS_BASE='wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage';
 const INPUT_SR=16000, OUTPUT_SR=24000;
@@ -591,45 +590,15 @@ function exportMemo(){
 
 function checkMemoCommand(text){
   const t=text.toLowerCase().trim();
-
-  // Comando LEGGI memo
-  const isRead=MEMO_READ_KW.some(kw=>t.includes(kw));
-  if(isRead){
+  if(MEMO_READ_KW.some(kw=>t.includes(kw))){
     const list=getMemoList();
-    if(!list||list.length===0){
-      // Invia a Gemini: nessuna memo
-      if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
-        ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Non hai ancora salvato nessuna memo.'}]}],turnComplete:true}}));
-      }
-    } else {
-      const memoTxt=list.map(e=>'Memo '+e.n+' del '+e.t+': '+e.m).join('. ');
-      // Invia le memo a Gemini perché le legga
-      if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
-        ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Leggi queste memo salvate: '+memoTxt}]}],turnComplete:true}}));
-      }
-      dbg('📝 Memo inviate a Gemini per lettura');
-    }
-    return;
-  }
-
-  // Comando SALVA memo
-  const kw=MEMO_SAVE_KW.find(k=>t.includes(k));
-  if(kw){
-    // Estrai il testo dopo la keyword
-    const idx=t.indexOf(kw);
-    let memoText=text.slice(idx+kw.length).replace(/^[:;,\.\s]+/,'').trim();
-    if(memoText.length<2) memoText=text.trim(); // usa tutta la frase se testo troppo corto
-    const n=saveMemoItem(memoText);
-    toast('📝 Memo '+n+' salvata');
-    dbg('📝 Memo '+n+' salvata: "'+memoText+'"');
-    addMsg('📝 [memo '+n+' salvata: "'+memoText+'"]','sys');
-    // Conferma vocale da Gemini
-    if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
-      ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Hai appena salvato questa memo numero '+n+': "'+memoText+'". Confermalo brevemente.'}]}],turnComplete:true}}));
-    }
+    const msg=(!list||list.length===0)
+      ? 'Non hai ancora salvato nessuna memo.'
+      : 'Leggi queste memo: '+list.map(e=>'['+e.n+'] '+e.t+': '+e.m).join('. ');
+    if(ws&&ws.readyState===WebSocket.OPEN&&setupReady)
+      ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:msg}]}],turnComplete:true}}));
   }
 }
-
 function init(){
   buildVU(); loadKey(); renderChars(); loadKnowLS(); updVadUI(); loadMemo();
   setInterval(tickTimer,500); netCheck(); setInterval(netCheck,14000); enumCams();
@@ -1121,6 +1090,17 @@ function sendSetup(){
   // Se non c'è handle (prima connessione), viene abilitata solo la ricezione futura.
   setup.sessionResumption = sessionHandle ? {handle: sessionHandle} : {};
 
+  setup.tools = [{functionDeclarations:[
+    {name:'salva_memo',
+     description:"Salva una nota da ricordare. Usala ogni volta che l'utente chiede di ricordare, salvare, annotare o tenere a mente qualcosa.",
+     parameters:{type:'OBJECT',properties:{testo:{type:'STRING',description:'Testo da memorizzare'}},required:['testo']}},
+    {name:'leggi_memo',
+     description:"Recupera le note salvate. Usala quando l'utente chiede cosa ricordi o di leggere le memo.",
+     parameters:{type:'OBJECT',properties:{}}},
+    {name:'scatta_foto',
+     description:"Scatta una foto con la telecamera. Usala quando l'utente chiede cosa vedi, di guardare, descrivere la scena o qualsiasi richiesta visiva.",
+     parameters:{type:'OBJECT',properties:{}}}
+  ]}];
   const msg=JSON.stringify({setup:setup});
   dbg('📤 '+msg.slice(0,180));
   ws.send(msg);
@@ -1135,6 +1115,7 @@ function pcmToBase64(pcm){
 
 let vadWasActive=false;    // true se nell'ultimo chunk eravamo sopra soglia
 let vadSilenceFrames=0;    // frame consecutivi sotto soglia dopo parlato
+let pendingSnap=false;     // snap in attesa del prossimo turnComplete o interrupted
 const VAD_SILENCE_FRAMES=18; // ~300ms a 60fps prima di inviare audioStreamEnd
 
 function onChunk(e){
@@ -1224,6 +1205,7 @@ function onMsg(e){
       audioQ.push(new Int16Array(OUTPUT_SR));
       // turnComplete: forza drain anche se siamo sotto PRE_BUFFER_CHUNKS
       if(!playing) drain();
+      if(pendingSnap){pendingSnap=false;dbg('Snap dopo turnComplete');doSnap();}
       // Azzera timeout snap se era in attesa
       if(window._snapTimeout){
         clearTimeout(window._snapTimeout);
@@ -1237,6 +1219,7 @@ function onMsg(e){
       setTimeout(()=>{setRobotSpeaking(false);setSt('listening');if(!silStart)silStart=Date.now();},1100);
     }
     if(sc.interrupted){
+      if(pendingSnap){pendingSnap=false;dbg('Snap dopo interrupted');doSnap();}
       dbg('🛑 Barge-in');audioQ=[];playing=false;nextPlayTime=0;
       setRobotSpeaking(false);setSt('talking');dot('dMic','tk');silStart=null;
     }
@@ -1258,6 +1241,59 @@ function onMsg(e){
   }
   // goAway: Gemini avvisa che la connessione sta per chiudersi (~10min)
   // Riconnetti subito usando il sessionHandle per non perdere il contesto
+
+  if(m.toolCall){
+    const calls=m.toolCall.functionCalls||[];
+    const responses=[];
+    calls.forEach(call=>{
+      dbg('Tool: '+call.name+' '+JSON.stringify(call.args||{}));
+      let out='';
+      if(call.name==='salva_memo'){
+        const txt=(call.args&&call.args.testo)||'';
+        if(txt.trim()){
+          const n=saveMemoItem(txt.trim());
+          out='Memo #'+n+' salvata.';
+          addMsg('Memo #'+n+': "'+txt.trim()+'"','sys');
+          toast('Memo #'+n+' salvata');
+          showMemoFeedback('Salvata: '+txt.trim(),'var(--green)');
+        } else { out='Errore: testo vuoto.'; }
+      } else if(call.name==='leggi_memo'){
+        const list=getMemoList();
+        if(!list||list.length===0){
+          out='Nessuna memo salvata.';
+          showMemoFeedback('Nessuna memo','var(--muted)');
+        } else {
+          out='Memo ('+list.length+'): '+list.map(e=>'['+e.n+'] '+e.t+': '+e.m).join(' | ');
+          showMemoFeedback(list.length+' memo','var(--blue)');
+        }
+      } else if(call.name==='scatta_foto'){
+        if(!camActive){
+          out='Telecamera non attiva.';
+          toast('Cam non attiva');
+        } else {
+          const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
+          c.width=v.videoWidth||640; c.height=v.videoHeight||480;
+          c.getContext('2d').drawImage(v,0,0);
+          const b64=c.toDataURL('image/jpeg',0.85).split(',')[1];
+          if(b64&&b64.length>100){
+            const fl=document.getElementById('snapFlash');
+            if(fl){fl.classList.add('go');setTimeout(()=>fl.classList.remove('go'),200);}
+            ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[
+              {inlineData:{mimeType:'image/jpeg',data:b64}},
+              {text:'Descrivi esattamente cosa vedi, rispondi in italiano.'}
+            ]}],turnComplete:true}}));
+            out='Foto scattata single-turn. Analizza e descrivi.';
+            const st=document.getElementById('snapSt');
+            if(st){st.style.color='var(--yellow)';st.textContent='Foto '+new Date().toLocaleTimeString();}
+            addMsg('[foto scattata]','sys'); toast('Foto scattata!');
+          } else { out='Errore acquisizione frame.'; }
+        }
+      }
+      responses.push({id:call.id,name:call.name,response:{output:out}});
+    });
+    if(responses.length&&ws&&ws.readyState===WebSocket.OPEN)
+      ws.send(JSON.stringify({toolResponse:{functionResponses:responses}}));
+  }
   if(m.goAway){
     const secsLeft = m.goAway.timeLeft ? Math.round(m.goAway.timeLeft/1000) : '?';
     dbg('⚠️ goAway ricevuto — connessione termina tra ~'+secsLeft+'s · riconnessione con resumption...');
@@ -1438,55 +1474,35 @@ function stopCam(){
 }
 async function switchCam(){if(camActive){stopCam();await toggleCam();}}
 function doSnap(){
-  if(!camActive){toast('❌ Attiva prima la cam');return;}
-  if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connetti prima Gemini');return;}
+  if(!camActive){toast('Attiva prima la cam');return;}
+  if(!ws||ws.readyState!==WebSocket.OPEN){toast('Connetti prima Gemini');return;}
   const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
-  c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
-  const b64=c.toDataURL('image/jpeg',.85).split(',')[1];
-  const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
-  // Protocollo Gemini Live: immagine via realtimeInput + testo via clientContent
-  ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:b64,mimeType:'image/jpeg'}]}}));
-  ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}]}],turnComplete:true}}));
-  document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
-  addMsg('📸 [foto inviata]','sys'); toast('📸 Foto inviata!');
+  c.width=v.videoWidth||640; c.height=v.videoHeight||480;
+  c.getContext('2d').drawImage(v,0,0);
+  const b64=c.toDataURL('image/jpeg',0.85).split(',')[1];
+  if(!b64||b64.length<100){toast('Frame cam vuoto');return;}
+  const fl=document.getElementById('snapFlash');
+  if(fl){fl.classList.add('go');setTimeout(()=>fl.classList.remove('go'),200);}
+  // FIX: foto e testo nello stesso clientContent turn — evita allucinazioni
+  ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[
+    {inlineData:{mimeType:'image/jpeg',data:b64}},
+    {text:'Descrivi esattamente cosa vedi in questa immagine, rispondi in italiano.'}
+  ]}],turnComplete:true}}));
+  const st=document.getElementById('snapSt');
+  if(st){st.style.color='var(--yellow)';st.textContent='Foto '+new Date().toLocaleTimeString();}
+  addMsg('[foto inviata]','sys'); toast('Foto inviata!');
+  dbg('doSnap: '+Math.round(b64.length*0.75/1024)+'KB single-turn');
 }
-
-// Comando vocale snap: parole chiave in italiano e inglese
-const SNAP_KEYWORDS = [
-  'scatta','scatta una foto','scatta foto','fai una foto','fai foto',
-  'guarda','guardami','dai un\'occhiata','cosa vedi','cosa vedi?',
-  'descrivi','descrivimi','take a photo','take photo','look','snapshot'
-];
 function checkVoiceSnapCommand(text){
-  if(!camActive){
-    // Cam non attiva ma ha usato una keyword snap — avvisalo
-    const t=text.toLowerCase();
-    const isSnap=SNAP_KEYWORDS.some(kw=>t.includes(kw));
-    if(isSnap) toast('📷 Attiva prima la cam per scattare foto');
-    return;
-  }
-  if(!ws||ws.readyState!==WebSocket.OPEN){return;}
-  const t = text.toLowerCase().trim();
-  const triggered = SNAP_KEYWORDS.some(kw => t.includes(kw));
+  if(!camActive||!ws||ws.readyState!==WebSocket.OPEN) return;
+  const t=text.toLowerCase().trim();
+  const triggered=SNAP_KEYWORDS.some(kw=>t.includes(kw));
   if(triggered){
-    dbg('📸 Comando vocale rilevato: "'+text+'" → snap automatico');
-    toast('📸 Comando vocale: scatto!');
-    // Interrompi subito qualsiasi risposta Gemini già avviata prima di scattare.
-    // Senza questo, Gemini risponde alla domanda vocale ("cosa vedi?") inventando,
-    // perché ha già iniziato a generare prima che la foto arrivi.
-    if(ws&&ws.readyState===WebSocket.OPEN){
-      ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
-    }
-    audioQ=[]; playing=false;
-    if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
-    // Aspetta 500ms che Gemini si fermi, poi scatta
-    setTimeout(()=>doSnap(), 500);
+    dbg('Snap keyword: pendingSnap=true');
+    pendingSnap=true;
+    toast('Foto in arrivo...');
   }
 }
-
-// ═══════════════════════════════════════════════════════════════
-// SLIDERS
-// ═══════════════════════════════════════════════════════════════
 function oGain(v){
   document.getElementById('vGain').textContent=v+'%';
   // Aggiorna gain nel worklet live (solo se mic non è auto-mutato)
@@ -1669,13 +1685,18 @@ function loadKnowFile(inp){
   r.readAsText(file);
 }
 function buildSystemPrompt(){
-  const base=activePrompt;
+  const base=activePrompt||'Sei un assistente AI vocale interattivo. Rispondi sempre in italiano.';
   let prompt=knowledge.text?base+'\n\n---\nINFORMAZIONI EVENTO'+(knowledge.title?' ('+knowledge.title+')':'')+(':\n')+knowledge.text:base;
   const list=getMemoList();
   if(list&&list.length>0){
     const last10=list.slice(-10);
-    prompt+='\n\n---\nMemo salvate (ultime '+last10.length+'):\n'+last10.map(e=>'- ['+e.t+'] '+e.m).join('\n')+'\nSe ti viene chiesto cosa ricordi, riferisciti a queste memo.';
+    prompt+='\n\n---\nMemo salvate (ultime '+last10.length+'):\n'+last10.map(e=>'- ['+e.t+'] '+e.m).join('\n')+'\nQueste sono le tue note. Se ti viene chiesto cosa ricordi, leggile.';
   }
+  prompt+='\n\n---\nStrumenti disponibili - USALI SEMPRE quando appropriato:\n'
+    +'- salva_memo: quando l\'utente chiede di ricordare/salvare/annotare qualcosa\n'
+    +'- leggi_memo: quando chiede cosa ricordi o di leggere le note\n'
+    +'- scatta_foto: quando chiede cosa vedi, di guardare o descrivere la scena\n'
+    +'Non rispondere mai che non puoi fare queste cose: usa gli strumenti.';
   return prompt;
 }
 
