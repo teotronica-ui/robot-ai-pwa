@@ -1322,30 +1322,41 @@ function onMsg(e){
           if(b64&&b64.length>100){
             const fl=document.getElementById('snapFlash');
             if(fl){fl.classList.add('go');setTimeout(()=>fl.classList.remove('go'),200);}
-            // 1. Inietta l'immagine nel flusso visivo (realtimeInput)
-            //    Questo fa effettivamente "vedere" la foto a Gemini
-            // Formato ufficiale doc Google: realtimeInput.video (non mediaChunks)
-            ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
-            // 2. toolResponse con solo testo — sblocca Gemini e gli dice di elaborare la foto
-            out='Foto acquisita.';
+            // Strategia corretta per Live API:
+            // 1. Prima toolResponse — sblocca Gemini dallo stato di attesa tool
+            // 2. Poi realtimeInput.video — inietta il frame nel flusso visivo
+            // L'ordine inverso (video prima di toolResponse) può causare
+            // che Gemini processi la toolResponse senza aver visto il frame
+            out='Foto acquisita. Descriverò quello che vedo.';
             snapInFlight=false;
             const st=document.getElementById('snapSt');
             if(st){st.style.color='var(--yellow)';st.textContent='Foto '+new Date().toLocaleTimeString();}
             addMsg('[foto scattata]','sys'); toast('Foto scattata!');
+            // Salva b64 per invio dopo toolResponse
+            window._pendingSnapB64=b64;
           } else { out='Errore acquisizione frame.'; }
         }
       }
       responses.push({id:call.id,name:call.name,response:{output:out}});
     });
     if(responses.length&&ws&&ws.readyState===WebSocket.OPEN){
-      // Se c'era uno snap, aspetta 300ms che Gemini processi il frame video
-      // prima di mandare la toolResponse che sblocca la risposta
       const snapCall=calls.find(c=>c.name==='scatta_foto');
-      const delay=snapCall?300:0;
-      setTimeout(()=>{
-        if(ws&&ws.readyState===WebSocket.OPEN)
-          ws.send(JSON.stringify({toolResponse:{functionResponses:responses}}));
-      }, delay);
+      if(snapCall && window._pendingSnapB64){
+        const b64=window._pendingSnapB64;
+        window._pendingSnapB64=null;
+        // Ordine corretto per Live API:
+        // 1. toolResponse prima — sblocca Gemini dallo stato di attesa
+        ws.send(JSON.stringify({toolResponse:{functionResponses:responses}}));
+        // 2. video dopo — Gemini ora può ricevere input mentre elabora la risposta
+        setTimeout(()=>{
+          if(ws&&ws.readyState===WebSocket.OPEN){
+            ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
+            dbg('Snap: toolResponse inviata, poi video frame');
+          }
+        }, 100);
+      } else {
+        ws.send(JSON.stringify({toolResponse:{functionResponses:responses}}));
+      }
     }
   }
   if(m.goAway){
