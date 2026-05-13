@@ -231,12 +231,16 @@
 
 <!-- MEMO -->
 <div class="card">
-  <div class="card-hd" style="margin-bottom:8px">📝 Memo vocali
-    <button onclick="exportMemo()" style="font-family:var(--mono);font-size:.55rem;padding:4px 8px;background:var(--surf);border:1px solid var(--bord);border-radius:7px;color:var(--muted);cursor:pointer;float:right">⬇ ESPORTA</button>
-    <button onclick="clearMemo()" style="font-family:var(--mono);font-size:.55rem;padding:4px 8px;background:var(--surf);border:1px solid var(--bord);border-radius:7px;color:var(--muted);cursor:pointer;float:right;margin-right:6px">🗑 SVUOTA</button>
+  <div class="card-hd" style="margin-bottom:10px">📝 Memo
+    <span id="memoCount" style="font-size:.65rem;color:var(--muted);font-weight:normal;margin-left:6px">0</span>
+    <button onclick="clearMemo()" style="font-family:var(--mono);font-size:.55rem;padding:4px 8px;background:var(--surf);border:1px solid var(--bord);border-radius:7px;color:var(--muted);cursor:pointer;float:right">🗑</button>
   </div>
-  <div id="memoBox" style="font-family:var(--mono);font-size:.68rem;color:var(--fg);background:var(--bg);border:1px solid var(--bord);border-radius:8px;padding:10px;min-height:60px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.6">— nessuna memo salvata —</div>
-  <div style="font-size:.6rem;color:var(--muted);margin-top:5px;font-family:var(--mono)">💡 Di' "ricordati che..." oppure "memo: ..." per salvare · "leggi le memo" per richiamarle</div>
+  <div id="memoLast" style="display:none;font-family:var(--mono);font-size:.72rem;color:var(--green);background:var(--bg);border:1px solid var(--green);border-radius:8px;padding:8px 10px;margin-bottom:8px;word-break:break-word"></div>
+  <div id="memoList" style="display:flex;flex-direction:column;gap:5px;max-height:220px;overflow-y:auto;margin-bottom:6px"></div>
+  <div style="font-size:.6rem;color:var(--muted);font-family:var(--mono);line-height:1.5">
+    💡 "ricordati che..." per salvare · "cosa ricordi?" per leggere<br>
+    ✏️ Tocca per modificare · ✕ elimina · 💾 auto-salvate alla disconnessione
+  </div>
 </div>
 
 <!-- CHAT -->
@@ -538,6 +542,21 @@ function getMemoList(){
   }catch(e){return [];}
 }
 
+function editMemoItem(n, newText){
+  const list=getMemoList();
+  const entry=list.find(e=>e.n===n);
+  if(!entry) return;
+  entry.m=newText.trim();
+  try{localStorage.setItem(LS_MEMO,JSON.stringify(list));}catch(e){}
+}
+
+function deleteMemoItem(n){
+  const list=getMemoList().filter(e=>e.n!==n);
+  try{localStorage.setItem(LS_MEMO,JSON.stringify(list));}catch(e){}
+  renderMemoBox(list);
+  toast('Memo #'+n+' eliminata');
+}
+
 function showMemoFeedback(msg, color){
   const lastEl=document.getElementById('memoLast');
   if(!lastEl) return;
@@ -562,18 +581,40 @@ function saveMemoItem(text){
   return entry.n;
 }
 
-function renderMemoBox(list){
-  const box=document.getElementById('memoBox');
-  if(!list||list.length===0){box.textContent='— nessuna memo salvata —';return;}
-  box.textContent=list.map(e=>'['+e.n+'] '+e.t+'\n    '+e.m).join('\n\n');
-  box.scrollTop=box.scrollHeight;
+function renderMemoBox(list, highlightN){
+  const container=document.getElementById('memoList');
+  const cnt=document.getElementById('memoCount');
+  if(!container) return;
+  if(cnt) cnt.textContent=list?list.length:0;
+  if(!list||list.length===0){
+    container.innerHTML='<div style="font-family:var(--mono);font-size:.65rem;color:var(--muted);padding:4px">nessuna memo</div>';
+    return;
+  }
+  container.innerHTML='';
+  [...list].reverse().forEach(entry=>{
+    const item=document.createElement('div');
+    item.className='memo-item'+(entry.n===highlightN?' memo-new':'');
+    const txt=entry.m.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    item.innerHTML=
+      '<div class="memo-item-n">#'+entry.n+'</div>'+
+      '<div class="memo-item-body">'+
+        '<div class="memo-item-t">'+entry.t+'</div>'+
+        '<textarea class="memo-item-text" rows="2" '+
+          'onchange="editMemoItem('+entry.n+',this.value)" '+
+          'onblur="editMemoItem('+entry.n+',this.value)">'+txt+'</textarea>'+
+      '</div>'+
+      '<button class="memo-item-del" onclick="deleteMemoItem('+entry.n+')" title="Elimina">x</button>';
+    container.appendChild(item);
+  });
 }
 
 function clearMemo(){
   if(!confirm('Cancellare tutte le memo?'))return;
   try{localStorage.removeItem(LS_MEMO);}catch(e){}
-  document.getElementById('memoBox').textContent='— nessuna memo salvata —';
-  toast('🗑 Memo cancellate');
+  renderMemoBox([]);
+  const el=document.getElementById('memoLast');
+  if(el) el.style.display='none';
+  toast('Memo cancellate');
 }
 
 function exportMemo(){
@@ -589,15 +630,9 @@ function exportMemo(){
 }
 
 function checkMemoCommand(text){
-  const t=text.toLowerCase().trim();
-  if(MEMO_READ_KW.some(kw=>t.includes(kw))){
-    const list=getMemoList();
-    const msg=(!list||list.length===0)
-      ? 'Non hai ancora salvato nessuna memo.'
-      : 'Leggi queste memo: '+list.map(e=>'['+e.n+'] '+e.t+': '+e.m).join('. ');
-    if(ws&&ws.readyState===WebSocket.OPEN&&setupReady)
-      ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:msg}]}],turnComplete:true}}));
-  }
+  // Rimosso: inviare clientContent durante trascrizione attiva causa conflitti e reset.
+  // Il function calling leggi_memo gestisce tutto correttamente.
+  // Questa funzione è ora un no-op mantenuta per compatibilità.
 }
 function init(){
   buildVU(); loadKey(); renderChars(); loadKnowLS(); updVadUI(); loadMemo();
@@ -1292,7 +1327,7 @@ function onMsg(e){
             // Formato ufficiale doc Google: realtimeInput.video (non mediaChunks)
             ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
             // 2. toolResponse con solo testo — sblocca Gemini e gli dice di elaborare la foto
-            out='Ho scattato la foto e te la sto mostrando. Guardala attentamente e descrivi cosa vedi.';
+            out='Foto acquisita.';
             snapInFlight=false;
             const st=document.getElementById('snapSt');
             if(st){st.style.color='var(--yellow)';st.textContent='Foto '+new Date().toLocaleTimeString();}
@@ -1302,8 +1337,16 @@ function onMsg(e){
       }
       responses.push({id:call.id,name:call.name,response:{output:out}});
     });
-    if(responses.length&&ws&&ws.readyState===WebSocket.OPEN)
-      ws.send(JSON.stringify({toolResponse:{functionResponses:responses}}));
+    if(responses.length&&ws&&ws.readyState===WebSocket.OPEN){
+      // Se c'era uno snap, aspetta 300ms che Gemini processi il frame video
+      // prima di mandare la toolResponse che sblocca la risposta
+      const snapCall=calls.find(c=>c.name==='scatta_foto');
+      const delay=snapCall?300:0;
+      setTimeout(()=>{
+        if(ws&&ws.readyState===WebSocket.OPEN)
+          ws.send(JSON.stringify({toolResponse:{functionResponses:responses}}));
+      }, delay);
+    }
   }
   if(m.goAway){
     const secsLeft = m.goAway.timeLeft ? Math.round(m.goAway.timeLeft/1000) : '?';
