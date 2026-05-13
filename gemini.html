@@ -1284,11 +1284,12 @@ function onMsg(e){
           if(b64&&b64.length>100){
             const fl=document.getElementById('snapFlash');
             if(fl){fl.classList.add('go');setTimeout(()=>fl.classList.remove('go'),200);}
-            // Il toolResponse porta l'immagine come inlineData
-            // NON inviamo clientContent separato: Gemini gestisce il turno
-            // tramite la toolResponse — evita il problema 'due turni aperti'
-            out=JSON.stringify({inlineData:{mimeType:'image/jpeg',data:b64}});
-            snapInFlight=false; // la foto è nella toolResponse, non in un turno separato
+            // 1. Inietta l'immagine nel flusso visivo (realtimeInput)
+            //    Questo fa effettivamente "vedere" la foto a Gemini
+            ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{mimeType:'image/jpeg',data:b64}]}}));
+            // 2. toolResponse con solo testo — sblocca Gemini e gli dice di elaborare la foto
+            out='Ho scattato la foto e te la sto mostrando. Guardala attentamente e descrivi cosa vedi.';
+            snapInFlight=false;
             const st=document.getElementById('snapSt');
             if(st){st.style.color='var(--yellow)';st.textContent='Foto '+new Date().toLocaleTimeString();}
             addMsg('[foto scattata]','sys'); toast('Foto scattata!');
