@@ -231,16 +231,12 @@
 
 <!-- MEMO -->
 <div class="card">
-  <div class="card-hd" style="margin-bottom:10px">📝 Memo
-    <span id="memoCount" style="font-size:.65rem;color:var(--muted);font-weight:normal;margin-left:6px">0</span>
-    <button onclick="clearMemo()" style="font-family:var(--mono);font-size:.55rem;padding:4px 8px;background:var(--surf);border:1px solid var(--bord);border-radius:7px;color:var(--muted);cursor:pointer;float:right">🗑</button>
+  <div class="card-hd" style="margin-bottom:8px">📝 Memo vocali
+    <button onclick="exportMemo()" style="font-family:var(--mono);font-size:.55rem;padding:4px 8px;background:var(--surf);border:1px solid var(--bord);border-radius:7px;color:var(--muted);cursor:pointer;float:right">⬇ ESPORTA</button>
+    <button onclick="clearMemo()" style="font-family:var(--mono);font-size:.55rem;padding:4px 8px;background:var(--surf);border:1px solid var(--bord);border-radius:7px;color:var(--muted);cursor:pointer;float:right;margin-right:6px">🗑 SVUOTA</button>
   </div>
-  <div id="memoLast" style="display:none;font-family:var(--mono);font-size:.72rem;color:var(--green);background:var(--bg);border:1px solid var(--green);border-radius:8px;padding:8px 10px;margin-bottom:8px;word-break:break-word"></div>
-  <div id="memoList" style="display:flex;flex-direction:column;gap:5px;max-height:220px;overflow-y:auto;margin-bottom:6px"></div>
-  <div style="font-size:.6rem;color:var(--muted);font-family:var(--mono);line-height:1.5">
-    💡 "ricordati che..." per salvare · "cosa ricordi?" per leggere<br>
-    ✏️ Tocca per modificare · ✕ elimina · 💾 auto-salvate alla disconnessione
-  </div>
+  <div id="memoBox" style="font-family:var(--mono);font-size:.68rem;color:var(--fg);background:var(--bg);border:1px solid var(--bord);border-radius:8px;padding:10px;min-height:60px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.6">— nessuna memo salvata —</div>
+  <div style="font-size:.6rem;color:var(--muted);margin-top:5px;font-family:var(--mono)">💡 Di' "ricordati che..." oppure "memo: ..." per salvare · "leggi le memo" per richiamarle</div>
 </div>
 
 <!-- CHAT -->
@@ -462,7 +458,8 @@ const LS_KEY='robot_key_gemini', LS_CHARS='robot_characters', LS_LAST='robot_las
 const LS_MEMO='robot_memo'; // chiave localStorage per le memo vocali
 
 // Parole chiave per salvare una memo
-// MEMO_SAVE_KW rimossa: il function calling (salva_memo tool) gestisce il salvataggio
+const MEMO_SAVE_KW = ['ricordati che','ricordati questo','ricordati:','ricordati il','ricordati la','ricordati i ','ricordati le ','ricordati un','ricordati una','memo:','nota:','salva questo','tieni a mente','annotati che','segna che'];
+// Parole chiave per leggere le memo
 const MEMO_READ_KW = ['leggi le memo','leggi memo','cosa hai memorizzato','cosa ricordi','mostra le memo','mostra memo','ricordami le memo'];
 const GEMINI_WS_BASE='wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage';
 const INPUT_SR=16000, OUTPUT_SR=24000;
@@ -542,21 +539,6 @@ function getMemoList(){
   }catch(e){return [];}
 }
 
-function editMemoItem(n, newText){
-  const list=getMemoList();
-  const entry=list.find(e=>e.n===n);
-  if(!entry) return;
-  entry.m=newText.trim();
-  try{localStorage.setItem(LS_MEMO,JSON.stringify(list));}catch(e){}
-}
-
-function deleteMemoItem(n){
-  const list=getMemoList().filter(e=>e.n!==n);
-  try{localStorage.setItem(LS_MEMO,JSON.stringify(list));}catch(e){}
-  renderMemoBox(list);
-  toast('Memo #'+n+' eliminata');
-}
-
 function showMemoFeedback(msg, color){
   const lastEl=document.getElementById('memoLast');
   if(!lastEl) return;
@@ -581,40 +563,18 @@ function saveMemoItem(text){
   return entry.n;
 }
 
-function renderMemoBox(list, highlightN){
-  const container=document.getElementById('memoList');
-  const cnt=document.getElementById('memoCount');
-  if(!container) return;
-  if(cnt) cnt.textContent=list?list.length:0;
-  if(!list||list.length===0){
-    container.innerHTML='<div style="font-family:var(--mono);font-size:.65rem;color:var(--muted);padding:4px">nessuna memo</div>';
-    return;
-  }
-  container.innerHTML='';
-  [...list].reverse().forEach(entry=>{
-    const item=document.createElement('div');
-    item.className='memo-item'+(entry.n===highlightN?' memo-new':'');
-    const txt=entry.m.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    item.innerHTML=
-      '<div class="memo-item-n">#'+entry.n+'</div>'+
-      '<div class="memo-item-body">'+
-        '<div class="memo-item-t">'+entry.t+'</div>'+
-        '<textarea class="memo-item-text" rows="2" '+
-          'onchange="editMemoItem('+entry.n+',this.value)" '+
-          'onblur="editMemoItem('+entry.n+',this.value)">'+txt+'</textarea>'+
-      '</div>'+
-      '<button class="memo-item-del" onclick="deleteMemoItem('+entry.n+')" title="Elimina">x</button>';
-    container.appendChild(item);
-  });
+function renderMemoBox(list){
+  const box=document.getElementById('memoBox');
+  if(!list||list.length===0){box.textContent='— nessuna memo salvata —';return;}
+  box.textContent=list.map(e=>'['+e.n+'] '+e.t+'\n    '+e.m).join('\n\n');
+  box.scrollTop=box.scrollHeight;
 }
 
 function clearMemo(){
   if(!confirm('Cancellare tutte le memo?'))return;
   try{localStorage.removeItem(LS_MEMO);}catch(e){}
-  renderMemoBox([]);
-  const el=document.getElementById('memoLast');
-  if(el) el.style.display='none';
-  toast('Memo cancellate');
+  document.getElementById('memoBox').textContent='— nessuna memo salvata —';
+  toast('🗑 Memo cancellate');
 }
 
 function exportMemo(){
@@ -630,10 +590,46 @@ function exportMemo(){
 }
 
 function checkMemoCommand(text){
-  // Rimosso: inviare clientContent durante trascrizione attiva causa conflitti e reset.
-  // Il function calling leggi_memo gestisce tutto correttamente.
-  // Questa funzione è ora un no-op mantenuta per compatibilità.
+  const t=text.toLowerCase().trim();
+
+  // Comando LEGGI memo
+  const isRead=MEMO_READ_KW.some(kw=>t.includes(kw));
+  if(isRead){
+    const list=getMemoList();
+    if(!list||list.length===0){
+      // Invia a Gemini: nessuna memo
+      if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
+        ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Non hai ancora salvato nessuna memo.'}]}],turnComplete:true}}));
+      }
+    } else {
+      const memoTxt=list.map(e=>'Memo '+e.n+' del '+e.t+': '+e.m).join('. ');
+      // Invia le memo a Gemini perché le legga
+      if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
+        ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Leggi queste memo salvate: '+memoTxt}]}],turnComplete:true}}));
+      }
+      dbg('📝 Memo inviate a Gemini per lettura');
+    }
+    return;
+  }
+
+  // Comando SALVA memo
+  const kw=MEMO_SAVE_KW.find(k=>t.includes(k));
+  if(kw){
+    // Estrai il testo dopo la keyword
+    const idx=t.indexOf(kw);
+    let memoText=text.slice(idx+kw.length).replace(/^[:;,\.\s]+/,'').trim();
+    if(memoText.length<2) memoText=text.trim(); // usa tutta la frase se testo troppo corto
+    const n=saveMemoItem(memoText);
+    toast('📝 Memo '+n+' salvata');
+    dbg('📝 Memo '+n+' salvata: "'+memoText+'"');
+    addMsg('📝 [memo '+n+' salvata: "'+memoText+'"]','sys');
+    // Conferma vocale da Gemini
+    if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
+      ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Hai appena salvato questa memo numero '+n+': "'+memoText+'". Confermalo brevemente.'}]}],turnComplete:true}}));
+    }
+  }
 }
+
 function init(){
   buildVU(); loadKey(); renderChars(); loadKnowLS(); updVadUI(); loadMemo();
   setInterval(tickTimer,500); netCheck(); setInterval(netCheck,14000); enumCams();
@@ -850,9 +846,7 @@ async function startVuMonitor(forceDeviceId){
       // FASE 1: apri con default per sbloccare il permesso e rendere visibili le label
       dbg('🎤 getUserMedia (default — permesso + detect wired)...');
       const tempStream=await navigator.mediaDevices.getUserMedia({
-        // iOS: echoCancellation:true è fondamentale per mic interno iPhone
-        // senza AEC il mic cattura l'audio delle casse causando eco e blocchi
-        audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}
+        audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}
       });
       const tempLabel=tempStream.getAudioTracks()[0]?.label||'';
       dbg('📋 Mic default: "'+tempLabel+'"');
@@ -1127,17 +1121,6 @@ function sendSetup(){
   // Se non c'è handle (prima connessione), viene abilitata solo la ricezione futura.
   setup.sessionResumption = sessionHandle ? {handle: sessionHandle} : {};
 
-  setup.tools = [{functionDeclarations:[
-    {name:'salva_memo',
-     description:"Salva una nota da ricordare. Usala ogni volta che l'utente chiede di ricordare, salvare, annotare o tenere a mente qualcosa.",
-     parameters:{type:'OBJECT',properties:{testo:{type:'STRING',description:'Testo da memorizzare'}},required:['testo']}},
-    {name:'leggi_memo',
-     description:"Recupera le note salvate. Usala quando l'utente chiede cosa ricordi o di leggere le memo.",
-     parameters:{type:'OBJECT',properties:{}}},
-    {name:'scatta_foto',
-     description:"Scatta una foto con la telecamera. Usala quando l'utente chiede cosa vedi, di guardare, descrivere la scena o qualsiasi richiesta visiva.",
-     parameters:{type:'OBJECT',properties:{}}}
-  ]}];
   const msg=JSON.stringify({setup:setup});
   dbg('📤 '+msg.slice(0,180));
   ws.send(msg);
@@ -1152,9 +1135,6 @@ function pcmToBase64(pcm){
 
 let vadWasActive=false;    // true se nell'ultimo chunk eravamo sopra soglia
 let vadSilenceFrames=0;    // frame consecutivi sotto soglia dopo parlato
-let pendingSnap=false;     // snap in attesa del prossimo turnComplete o interrupted
-let snapInFlight=false;    // true mentre Gemini elabora la foto — blocca nuovi snap
-let lastVisionTs=0;        // timestamp ultimo snap — cooldown anti-loop
 const VAD_SILENCE_FRAMES=18; // ~300ms a 60fps prima di inviare audioStreamEnd
 
 function onChunk(e){
@@ -1185,8 +1165,7 @@ function onChunk(e){
   vadWasActive=true;
   vadSilenceFrames=0;
   const actualSR=audioCtx?audioCtx.sampleRate:48000;
-  // Formato ufficiale doc Google (maggio 2026): realtimeInput.audio
-  ws.send(JSON.stringify({realtimeInput:{audio:{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate='+actualSR}}}));
+  ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate='+actualSR}]}}));
 }
 
 function onMsg(e){
@@ -1245,10 +1224,6 @@ function onMsg(e){
       audioQ.push(new Int16Array(OUTPUT_SR));
       // turnComplete: forza drain anche se siamo sotto PRE_BUFFER_CHUNKS
       if(!playing) drain();
-      // Reset snapInFlight: Gemini ha finito di rispondere alla foto
-      if(snapInFlight){snapInFlight=false;dbg('snapInFlight reset su turnComplete');}
-      // Esegui snap pendente SOLO se non è la risposta di uno snap (snapInFlight era true)
-      if(pendingSnap&&!snapInFlight){pendingSnap=false;dbg('Snap dopo turnComplete');doSnap();}
       // Azzera timeout snap se era in attesa
       if(window._snapTimeout){
         clearTimeout(window._snapTimeout);
@@ -1262,8 +1237,6 @@ function onMsg(e){
       setTimeout(()=>{setRobotSpeaking(false);setSt('listening');if(!silStart)silStart=Date.now();},1100);
     }
     if(sc.interrupted){
-      if(snapInFlight){snapInFlight=false;dbg('snapInFlight reset su interrupted');}
-      if(pendingSnap){pendingSnap=false;dbg('Snap dopo interrupted');doSnap();}
       dbg('🛑 Barge-in');audioQ=[];playing=false;nextPlayTime=0;
       setRobotSpeaking(false);setSt('talking');dot('dMic','tk');silStart=null;
     }
@@ -1285,80 +1258,6 @@ function onMsg(e){
   }
   // goAway: Gemini avvisa che la connessione sta per chiudersi (~10min)
   // Riconnetti subito usando il sessionHandle per non perdere il contesto
-
-  if(m.toolCall){
-    const calls=m.toolCall.functionCalls||[];
-    const responses=[];
-    calls.forEach(call=>{
-      dbg('Tool: '+call.name+' '+JSON.stringify(call.args||{}));
-      let out='';
-      if(call.name==='salva_memo'){
-        const txt=(call.args&&call.args.testo)||'';
-        if(txt.trim()){
-          const n=saveMemoItem(txt.trim());
-          out='Memo #'+n+' salvata.';
-          addMsg('Memo #'+n+': "'+txt.trim()+'"','sys');
-          toast('Memo #'+n+' salvata');
-          showMemoFeedback('Salvata: '+txt.trim(),'var(--green)');
-        } else { out='Errore: testo vuoto.'; }
-      } else if(call.name==='leggi_memo'){
-        const list=getMemoList();
-        if(!list||list.length===0){
-          out='Nessuna memo salvata.';
-          showMemoFeedback('Nessuna memo','var(--muted)');
-        } else {
-          out='Memo ('+list.length+'): '+list.map(e=>'['+e.n+'] '+e.t+': '+e.m).join(' | ');
-          showMemoFeedback(list.length+' memo','var(--blue)');
-        }
-      } else if(call.name==='scatta_foto'){
-        if(!camActive){
-          out='Telecamera non attiva.';
-          toast('Cam non attiva');
-        } else {
-          const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
-          c.width=v.videoWidth||640; c.height=v.videoHeight||480;
-          c.getContext('2d').drawImage(v,0,0);
-          const b64=c.toDataURL('image/jpeg',0.85).split(',')[1];
-          if(b64&&b64.length>100){
-            const fl=document.getElementById('snapFlash');
-            if(fl){fl.classList.add('go');setTimeout(()=>fl.classList.remove('go'),200);}
-            // Strategia corretta per Live API:
-            // 1. Prima toolResponse — sblocca Gemini dallo stato di attesa tool
-            // 2. Poi realtimeInput.video — inietta il frame nel flusso visivo
-            // L'ordine inverso (video prima di toolResponse) può causare
-            // che Gemini processi la toolResponse senza aver visto il frame
-            out='Foto acquisita. Descriverò quello che vedo.';
-            snapInFlight=false;
-            const st=document.getElementById('snapSt');
-            if(st){st.style.color='var(--yellow)';st.textContent='Foto '+new Date().toLocaleTimeString();}
-            addMsg('[foto scattata]','sys'); toast('Foto scattata!');
-            // Salva b64 per invio dopo toolResponse
-            window._pendingSnapB64=b64;
-          } else { out='Errore acquisizione frame.'; }
-        }
-      }
-      responses.push({id:call.id,name:call.name,response:{output:out}});
-    });
-    if(responses.length&&ws&&ws.readyState===WebSocket.OPEN){
-      const snapCall=calls.find(c=>c.name==='scatta_foto');
-      if(snapCall && window._pendingSnapB64){
-        const b64=window._pendingSnapB64;
-        window._pendingSnapB64=null;
-        // Ordine corretto per Live API:
-        // 1. toolResponse prima — sblocca Gemini dallo stato di attesa
-        ws.send(JSON.stringify({toolResponse:{functionResponses:responses}}));
-        // 2. video dopo — Gemini ora può ricevere input mentre elabora la risposta
-        setTimeout(()=>{
-          if(ws&&ws.readyState===WebSocket.OPEN){
-            ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
-            dbg('Snap: toolResponse inviata, poi video frame');
-          }
-        }, 100);
-      } else {
-        ws.send(JSON.stringify({toolResponse:{functionResponses:responses}}));
-      }
-    }
-  }
   if(m.goAway){
     const secsLeft = m.goAway.timeLeft ? Math.round(m.goAway.timeLeft/1000) : '?';
     dbg('⚠️ goAway ricevuto — connessione termina tra ~'+secsLeft+'s · riconnessione con resumption...');
@@ -1378,7 +1277,6 @@ function disc(clearHandle=false){
   if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch(e){}}
   audioCtx=null; analyser=vuAnalyser;
   audioQ=[]; playing=false; silStart=null; nextPlayTime=0; vadWasActive=false; vadSilenceFrames=0;
-  pendingSnap=false; snapInFlight=false; lastVisionTs=0;
   robotSpeaking=false; autoMuteSuspended=false;
   setRobotSpeaking(false);
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
@@ -1526,9 +1424,6 @@ async function toggleCam(){
     const v=document.getElementById('camVideo'); v.srcObject=camStream;
     v.style.display='block'; document.getElementById('camPh').style.display='none';
     camActive=true; document.getElementById('btnCamOn').textContent='⏹ Spegni cam';
-    // Doc ufficiale: sessioni audio+video limitate a 2 minuti (vs 15 min audio-only)
-    if(connected) toast('⚠️ Cam attiva: sessione limitata a 2 min da Google');
-    dbg('📷 Cam attiva — sessione audio+video: max 2 min per doc ufficiale');
     document.getElementById('btnSnap').disabled=false; dot('dCam','on');
     await enumCams();
   }catch(e){toast('❌ Cam: '+e.message);}
@@ -1543,44 +1438,55 @@ function stopCam(){
 }
 async function switchCam(){if(camActive){stopCam();await toggleCam();}}
 function doSnap(){
-  // Azzera subito pendingSnap: se fallisce non riprova automaticamente
-  pendingSnap=false;
-  // Cooldown 3s: evita loop e doppi trigger da VAD/keyword
-  const now=Date.now();
-  if(now-lastVisionTs<3000){dbg('doSnap: cooldown attivo, skip');return;}
-  // Blocca se Gemini sta già elaborando una foto precedente
-  if(snapInFlight){dbg('doSnap: snap già in volo, skip');return;}
-  if(!camActive){toast('Attiva prima la cam');return;}
-  if(!ws||ws.readyState!==WebSocket.OPEN){toast('Connetti prima Gemini');return;}
+  if(!camActive){toast('❌ Attiva prima la cam');return;}
+  if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connetti prima Gemini');return;}
   const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
-  c.width=v.videoWidth||640; c.height=v.videoHeight||480;
-  c.getContext('2d').drawImage(v,0,0);
-  const b64=c.toDataURL('image/jpeg',0.85).split(',')[1];
-  if(!b64||b64.length<100){toast('Frame cam vuoto');return;}
-  const fl=document.getElementById('snapFlash');
-  if(fl){fl.classList.add('go');setTimeout(()=>fl.classList.remove('go'),200);}
-  lastVisionTs=Date.now();  // registra timestamp per cooldown
-  snapInFlight=true;         // blocca nuovi snap finché Gemini non risponde
-  // FIX: foto e testo nello stesso clientContent turn — evita allucinazioni
-  ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[
-    {inlineData:{mimeType:'image/jpeg',data:b64}},
-    {text:'Descrivi esattamente cosa vedi in questa immagine, rispondi in italiano.'}
-  ]}],turnComplete:true}}));
-  const st=document.getElementById('snapSt');
-  if(st){st.style.color='var(--yellow)';st.textContent='Foto '+new Date().toLocaleTimeString();}
-  addMsg('[foto inviata]','sys'); toast('Foto inviata!');
-  dbg('doSnap: '+Math.round(b64.length*0.75/1024)+'KB single-turn');
+  c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
+  const b64=c.toDataURL('image/jpeg',.85).split(',')[1];
+  const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
+  // Protocollo Gemini Live: immagine via realtimeInput + testo via clientContent
+  ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:b64,mimeType:'image/jpeg'}]}}));
+  ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Descrivi cosa vedi in questa foto, rispondi in italiano.'}]}],turnComplete:true}}));
+  document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
+  addMsg('📸 [foto inviata]','sys'); toast('📸 Foto inviata!');
 }
+
+// Comando vocale snap: parole chiave in italiano e inglese
+const SNAP_KEYWORDS = [
+  'scatta','scatta una foto','scatta foto','fai una foto','fai foto',
+  'guarda','guardami','dai un\'occhiata','cosa vedi','cosa vedi?',
+  'descrivi','descrivimi','take a photo','take photo','look','snapshot'
+];
 function checkVoiceSnapCommand(text){
-  if(!camActive||!ws||ws.readyState!==WebSocket.OPEN) return;
-  const t=text.toLowerCase().trim();
-  const triggered=SNAP_KEYWORDS.some(kw=>t.includes(kw));
+  if(!camActive){
+    // Cam non attiva ma ha usato una keyword snap — avvisalo
+    const t=text.toLowerCase();
+    const isSnap=SNAP_KEYWORDS.some(kw=>t.includes(kw));
+    if(isSnap) toast('📷 Attiva prima la cam per scattare foto');
+    return;
+  }
+  if(!ws||ws.readyState!==WebSocket.OPEN){return;}
+  const t = text.toLowerCase().trim();
+  const triggered = SNAP_KEYWORDS.some(kw => t.includes(kw));
   if(triggered){
-    dbg('Snap keyword: pendingSnap=true');
-    pendingSnap=true;
-    toast('Foto in arrivo...');
+    dbg('📸 Comando vocale rilevato: "'+text+'" → snap automatico');
+    toast('📸 Comando vocale: scatto!');
+    // Interrompi subito qualsiasi risposta Gemini già avviata prima di scattare.
+    // Senza questo, Gemini risponde alla domanda vocale ("cosa vedi?") inventando,
+    // perché ha già iniziato a generare prima che la foto arrivi.
+    if(ws&&ws.readyState===WebSocket.OPEN){
+      ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+    }
+    audioQ=[]; playing=false;
+    if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
+    // Aspetta 500ms che Gemini si fermi, poi scatta
+    setTimeout(()=>doSnap(), 500);
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// SLIDERS
+// ═══════════════════════════════════════════════════════════════
 function oGain(v){
   document.getElementById('vGain').textContent=v+'%';
   // Aggiorna gain nel worklet live (solo se mic non è auto-mutato)
@@ -1763,18 +1669,13 @@ function loadKnowFile(inp){
   r.readAsText(file);
 }
 function buildSystemPrompt(){
-  const base=activePrompt||'Sei un assistente AI vocale interattivo. Rispondi sempre in italiano.';
+  const base=activePrompt;
   let prompt=knowledge.text?base+'\n\n---\nINFORMAZIONI EVENTO'+(knowledge.title?' ('+knowledge.title+')':'')+(':\n')+knowledge.text:base;
   const list=getMemoList();
   if(list&&list.length>0){
     const last10=list.slice(-10);
-    prompt+='\n\n---\nMemo salvate (ultime '+last10.length+'):\n'+last10.map(e=>'- ['+e.t+'] '+e.m).join('\n')+'\nQueste sono le tue note. Se ti viene chiesto cosa ricordi, leggile.';
+    prompt+='\n\n---\nMemo salvate (ultime '+last10.length+'):\n'+last10.map(e=>'- ['+e.t+'] '+e.m).join('\n')+'\nSe ti viene chiesto cosa ricordi, riferisciti a queste memo.';
   }
-  prompt+='\n\n---\nStrumenti disponibili - USALI SEMPRE quando appropriato:\n'
-    +'- salva_memo: quando l\'utente chiede di ricordare/salvare/annotare qualcosa\n'
-    +'- leggi_memo: quando chiede cosa ricordi o di leggere le note\n'
-    +'- scatta_foto: quando chiede cosa vedi, di guardare o descrivere la scena\n'
-    +'Non rispondere mai che non puoi fare queste cose: usa gli strumenti.';
   return prompt;
 }
 
