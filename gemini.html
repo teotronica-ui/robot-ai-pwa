@@ -856,10 +856,9 @@ function setRobotSpeaking(speaking){
     badge.className='amute-badge mic-muted';
     badge.textContent='🔇 Mic sospeso — robot in risposta';
     if(workletNode) workletNode.port.postMessage({cmd:'gain', value:0});
-    // Avvisa Gemini che il flusso mic è interrotto (auto-mute)
-    if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
-      ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
-    }
+    // FIX VAD: NON inviamo piu' audioStreamEnd manuale. Il VAD server di Gemini
+    // gestira' da solo l'inizio/fine turno basandosi sull'audio (silenzio = gain 0).
+    // Inviare audioStreamEnd manuale confliggeva col VAD server e causava "doppia voce".
     vadWasActive=false;
   } else if(speaking && !autoMute){
     // Robot parla ma auto-mute OFF
@@ -1281,33 +1280,26 @@ function onChunk(e){
   if(!setupReady)return;
   if(autoMuteSuspended)return;
   if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
+  // GUARDIA: se il robot sta gia' parlando, non inviare audio
+  // (evita eco e doppi turni se l'auto-mute non e' abbastanza veloce)
+  if(robotSpeaking) return;
+  // FIX DEFINITIVO "doppia voce su stessa domanda":
+  // Il VAD client (gate su vuDisplayPct + audioStreamEnd manuale) confliggeva con il
+  // VAD server di Gemini. Entrambi prendevano decisioni indipendenti su quando finiva
+  // il turno utente, e in alcune condizioni Gemini generava DUE risposte in parallelo.
+  // Soluzione: NON gestiamo piu' il VAD lato client. Mandiamo SEMPRE l'audio (anche
+  // silenzio) e lasciamo che il VAD server di Gemini decida da solo quando inizia/finisce
+  // il turno. Mai inviare audioStreamEnd: e' superfluo e generava il conflitto.
+  // Il VU meter visuale resta funzionante (usa vuDisplayPct), ma non interviene piu'
+  // sull'invio audio.
   const pcm=new Int16Array(e.data);
-  // Gain applicato SOLO nel worklet
-  // VAD gate: confronta vuDisplayPct (gain+noisefloor aware) con soglia slider
-  const thrRaw=parseInt(document.getElementById('rThr').value);
-  const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
-  const aboveVad = (vuDisplayPct >= thrPct);
-  if(!aboveVad){
-    if(vadWasActive){
-      vadSilenceFrames++;
-      // Aspetta VAD_SILENCE_FRAMES frame consecutivi di silenzio prima di
-      // dichiarare fine del turno — evita audioStreamEnd su micropauses tra parole
-      if(vadSilenceFrames >= VAD_SILENCE_FRAMES){
-        ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
-        dbg('🔇 audioStreamEnd inviato (silenzio '+VAD_SILENCE_FRAMES+' frame)');
-        vadWasActive=false;
-        vadSilenceFrames=0;
-      }
-    }
-    return;
-  }
-  // Sopra soglia: invia audio e resetta contatore silenzio
-  vadWasActive=true;
-  vadSilenceFrames=0;
   const actualSR=audioCtx?audioCtx.sampleRate:48000;
-  // Formato ufficiale doc Google (maggio 2026): realtimeInput.audio
   ws.send(JSON.stringify({realtimeInput:{audio:{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate='+actualSR}}}));
 }
+
+// Flag legacy: lasciato per compatibilita' con i vari reset. Non viene piu'
+// usato per gating audio dopo il fix VAD.
+let _turnSubmitted = false;
 
 function onMsg(e){
   let raw;
@@ -1362,6 +1354,7 @@ function onMsg(e){
     }
     if(sc.turnComplete){
       finalizeRobot();
+      _turnSubmitted = false;  // Riapri il flusso audio utente per il prossimo turno
       // Padding ridotto: 200ms invece di 1s. Lo scopo e' coprire mini-gap di rete,
       // non aggiungere latenza percepita.
       audioQ.push(new Int16Array(Math.floor(OUTPUT_SR * 0.2)));
@@ -1396,6 +1389,7 @@ function onMsg(e){
       setTimeout(()=>{setRobotSpeaking(false);setSt('listening');if(!silStart)silStart=Date.now();},600);
     }
     if(sc.interrupted){
+      _turnSubmitted = false;  // turno interrotto: riapri il flusso audio
       const wasSnapInFlight = snapInFlight;
       snapInFlight = false;
       if(wasSnapInFlight) dbg('snapInFlight reset su interrupted');
@@ -1550,6 +1544,7 @@ function disc(clearHandle=false){
   if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch(e){}}
   audioCtx=null; analyser=vuAnalyser;
   audioQ=[]; playing=false; silStart=null; nextPlayTime=0; vadWasActive=false; vadSilenceFrames=0;
+  _turnSubmitted = false;
   pendingSnap=false; snapInFlight=false; lastVisionTs=0;
   robotSpeaking=false; autoMuteSuspended=false;
   setRobotSpeaking(false);
@@ -1625,24 +1620,36 @@ function stopAllSources(){
   nextPlayTime = 0;
 }
 
-async function drain(){
-  if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
-  if(!audioCtx||!audioQ.length){playing=false;return;}
+// Lock per evitare doppia esecuzione concorrente di drain().
+// Tra il check iniziale e l'assegnazione playing=true ci sono await: in quel lasso
+// due chiamate parallele a drain() (es. una da onMsg, una da turnComplete) possono
+// passare entrambe i controlli e schedulare gli stessi chunk due volte → "doppia voce".
+let _drainRunning = false;
 
-  // Assicurati che AudioContext sia running prima di iniziare
-  if(audioCtx.state==='suspended'){
-    try{await audioCtx.resume();}catch(e){
-      dbg('❌ drain: AudioContext resume fallito — retry tra 500ms');
-      drainWatchdog=setTimeout(()=>drain(), 500);
-      return;
-    }
-  }
-  if(audioCtx.state!=='running'){
-    drainWatchdog=setTimeout(()=>drain(), 300);
+async function drain(){
+  if(_drainRunning){
+    dbg('drain: gia in esecuzione, skip');
     return;
   }
+  _drainRunning = true;
+  try {
+    if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
+    if(!audioCtx||!audioQ.length){playing=false;return;}
 
-  playing=true;
+    // Assicurati che AudioContext sia running prima di iniziare
+    if(audioCtx.state==='suspended'){
+      try{await audioCtx.resume();}catch(e){
+        dbg('❌ drain: AudioContext resume fallito — retry tra 500ms');
+        drainWatchdog=setTimeout(()=>drain(), 500);
+        return;
+      }
+    }
+    if(audioCtx.state!=='running'){
+      drainWatchdog=setTimeout(()=>drain(), 300);
+      return;
+    }
+
+    playing=true;
 
   // Svuota tutta la coda in un ciclo sincrono, pianificando ogni buffer
   // con timestamp preciso — nessun gap, nessuna latenza di callback
@@ -1704,6 +1711,14 @@ async function drain(){
   if(audioQ.length === 0){
     playing=false;
     // Non serve un loop di polling: onMsg chiamerà drain() se playing===false
+  }
+  } finally {
+    _drainRunning = false;
+    // Se nel frattempo sono arrivati nuovi chunk mentre il lock era preso,
+    // rilancia drain (no setTimeout cosi e' immediato ma async)
+    if(audioQ.length > 0 && !playing){
+      setTimeout(()=>drain(), 0);
+    }
   }
 }
 
@@ -1768,6 +1783,19 @@ function doSnap(){
     toast('⚠️ Video non pronto, riprova');
     return;
   }
+
+  // FIX "doppia voce su domanda visiva": se c'e' una risposta in corso, prima
+  // fermala. Senza questo, Gemini sta gia' rispondendo al turno vocale "cosa vedi"
+  // e in piu' riceve un clientContent con la foto -> due risposte parallele.
+  if(robotSpeaking || playing || activeSources.length > 0){
+    dbg('doSnap: risposta in corso, fermo audio + interrompo turno prima di scattare');
+    stopAllSources();
+    audioQ=[];
+    playing=false;
+    nextPlayTime=0;
+    setRobotSpeaking(false);
+  }
+
   c.width=v.videoWidth; c.height=v.videoHeight;
   c.getContext('2d').drawImage(v,0,0);
   const b64=c.toDataURL('image/jpeg',0.85).split(',')[1];
@@ -1801,10 +1829,18 @@ function checkVoiceSnapCommand(text){
   if(!camActive||!ws||ws.readyState!==WebSocket.OPEN) return;
   const t=text.toLowerCase().trim();
   const triggered=SNAP_KEYWORDS.some(kw=>t.includes(kw));
-  if(triggered){
-    dbg('Snap keyword: pendingSnap=true');
+  if(triggered && !snapInFlight && !pendingSnap){
+    dbg('Snap keyword rilevata: pendingSnap=true');
     pendingSnap=true;
     toast('Foto in arrivo...');
+    // NUOVO: non aspettiamo passivamente il turnComplete (che arriverebbe DOPO
+    // che Gemini ha gia' iniziato a rispondere al vocale, generando "doppia voce").
+    // Invece, scatta subito: doSnap() ferma l'audio Gemini in corso, manda la foto
+    // con un singolo clientContent e fa generare a Gemini UNA sola risposta basata
+    // sull'immagine.
+    setTimeout(()=>{
+      if(pendingSnap) doSnap();
+    }, 100);
   }
 }
 function oGain(v){
@@ -1847,10 +1883,8 @@ function toggleMute(){
   const b=document.getElementById('btnMute');
   b.textContent=muted?'🔇 MUTO':'🎙 ATTIVO'; b.classList.toggle('on',muted);
   toast(muted?'🔇 Mic silenziato':'🎙 Mic attivo');
-  if(muted && ws&&ws.readyState===WebSocket.OPEN&&setupReady){
-    ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
-    vadWasActive=false;
-  }
+  // FIX VAD: niente piu' audioStreamEnd. Quando muted=true, onChunk smette di inviare
+  // audio (vedi check `if(muted) return`). Il VAD server vede silenzio e gestisce da solo.
 }
 
 // ═══════════════════════════════════════════════════════════════
