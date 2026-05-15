@@ -147,17 +147,6 @@
     .amute-badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:.65rem;padding:3px 8px;border-radius:12px;border:1px solid var(--bord);color:var(--muted);margin-top:6px;transition:all .3s}
     .amute-badge.robot-speaking{background:#001810;border-color:var(--green);color:var(--green)}
     .amute-badge.mic-muted{background:#1a0000;border-color:var(--red);color:var(--red)}
-
-    /* Memo items (mancavano: gli stili erano referenziati nell'HTML generato ma non definiti) */
-    .memo-item{display:flex;gap:8px;align-items:flex-start;background:#040c15;border:1px solid var(--bord);border-radius:8px;padding:8px;transition:all .3s}
-    .memo-item.memo-new{border-color:var(--green);box-shadow:0 0 8px rgba(79,138,255,.3)}
-    .memo-item-n{font-family:var(--mono);font-size:.7rem;color:var(--green);font-weight:700;padding-top:4px;min-width:28px;flex-shrink:0}
-    .memo-item-body{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0}
-    .memo-item-t{font-family:var(--mono);font-size:.55rem;color:var(--muted);letter-spacing:1px}
-    .memo-item-text{width:100%;background:var(--surf);border:1px solid var(--bord);border-radius:6px;color:var(--text);font-family:var(--sans);font-size:.78rem;padding:6px 8px;resize:vertical;line-height:1.4;outline:none}
-    .memo-item-text:focus{border-color:var(--green)}
-    .memo-item-del{background:transparent;border:none;color:var(--muted);font-size:1rem;cursor:pointer;padding:4px 8px;border-radius:6px;flex-shrink:0;transition:all .2s}
-    .memo-item-del:hover{color:var(--red);background:#1a0000}
   </style>
 </head>
 <body>
@@ -446,33 +435,21 @@ class PCM16Processor extends AudioWorkletProcessor {
     super();
     this._active = true;
     this._gainValue = 1.0;
-    // Ping-pong buffer: zero allocazioni nel loop audio -> meno GC -> meno glitch
-    this._bufs = [new Int16Array(128), new Int16Array(128)];
-    this._bufIdx = 0;
     this.port.onmessage = (e) => {
       if (e.data.cmd === 'stop') this._active = false;
-      if (e.data.cmd === 'gain') this._gainValue = Math.max(0, e.data.value);
+      if (e.data.cmd === 'gain') this._gainValue = e.data.value;
     };
   }
   process(inputs) {
     if (!this._active) return false;
     const ch = inputs[0]?.[0];
-    if (!ch || ch.length === 0) return true;
-    // Adatta size se cambia (alcuni browser)
-    if (this._bufs[this._bufIdx].length !== ch.length) {
-      this._bufs[0] = new Int16Array(ch.length);
-      this._bufs[1] = new Int16Array(ch.length);
-    }
-    const pcm = this._bufs[this._bufIdx];
-    const gain = this._gainValue;
+    if (!ch) return true;
+    const pcm = new Int16Array(ch.length);
     for (let i = 0; i < ch.length; i++) {
-      const s = Math.max(-1, Math.min(1, ch[i] * gain));
+      const s = Math.max(-1, Math.min(1, ch[i] * this._gainValue));
       pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
     }
     this.port.postMessage(pcm.buffer, [pcm.buffer]);
-    // Buffer trasferito -> rialloca SOLO quello slot e passa all'altro
-    this._bufs[this._bufIdx] = new Int16Array(ch.length);
-    this._bufIdx ^= 1;
     return true;
   }
 }
@@ -487,17 +464,10 @@ const LS_MEMO='robot_memo'; // chiave localStorage per le memo vocali
 // Parole chiave per salvare una memo
 // MEMO_SAVE_KW rimossa: il function calling (salva_memo tool) gestisce il salvataggio
 const MEMO_READ_KW = ['leggi le memo','leggi memo','cosa hai memorizzato','cosa ricordi','mostra le memo','mostra memo','ricordami le memo'];
-
-// Parole chiave per scattare una foto via comando vocale
-// Triggerate da inputTranscription. Lo snap parte al turnComplete dell'utente
-// (vedi pendingSnap in checkVoiceSnapCommand + drain logic).
-const SNAP_KEYWORDS = [
-  'cosa vedi','che cosa vedi','cosa stai vedendo','che vedi',
-  'guarda','dai un\'occhiata','dai uno sguardo',
-  'descrivi la scena','descrivi quello che vedi','descrivi cosa vedi',
-  'scatta una foto','fai una foto','fammi una foto','fammi vedere','scatta foto',
-  'cosa c\'è davanti','cosa c\'è qui','chi c\'è davanti','chi vedi','chi c\'è'
-];
+// SNAP_KEYWORDS: keyword vocali che attivano lo scatto foto via checkVoiceSnapCommand.
+// Era referenziata in checkVoiceSnapCommand ma non definita: ReferenceError silenzioso
+// che interrompeva il blocco inputTranscription a ogni frase utente.
+const SNAP_KEYWORDS = ['cosa vedi','che cosa vedi','che vedi','guarda','dai un\'occhiata','dai uno sguardo','descrivi la scena','descrivi quello che vedi','descrivi cosa vedi','scatta una foto','fai una foto','fammi vedere'];
 const GEMINI_WS_BASE='wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage';
 const INPUT_SR=16000, OUTPUT_SR=24000;
 const PRICES={
@@ -524,10 +494,6 @@ let localVadLevel=0;
 let ws=null, audioCtx=null, workletNode=null, micStream=null;
 let muted=false, connected=false, isRec=false, recChunks=[];
 let audioQ=[], playing=false, analyser=null, silStart=null;
-let activeSources=[];  // FIX "doppia voce": traccia tutti gli AudioBufferSource schedulati
-                       // per poterli fermare a comando (disc/sendSess/barge-in).
-                       // Senza questo, src.start(t) schedula nell'hardware audio e continua
-                       // a suonare anche dopo che audioQ e' stato svuotato.
 let nextPlayTime=0;   // scheduling preciso: quando finisce l'ultimo buffer pianificato
 let tok={ai:0,ao:0};
 let editingChar=null, camStream=null, camActive=false;
@@ -566,28 +532,18 @@ let sessionHandle=null; // handle per session resumption (ricevuto da Gemini)
 function loadMemo(){
   try{
     const saved=localStorage.getItem(LS_MEMO);
-    if(saved){
-      const list=JSON.parse(saved);
-      if(Array.isArray(list)) renderMemoBox(list);
-    } else {
-      renderMemoBox([]);
+    const box=document.getElementById('memoBox');
+    if(saved&&JSON.parse(saved).length>0){
+      renderMemoBox(JSON.parse(saved));
     }
-  }catch(e){
-    dbg('loadMemo errore: '+e.message);
-    renderMemoBox([]);
-  }
+  }catch(e){}
 }
 
 function getMemoList(){
   try{
     const saved=localStorage.getItem(LS_MEMO);
-    if(!saved) return [];
-    const list=JSON.parse(saved);
-    return Array.isArray(list) ? list : [];
-  }catch(e){
-    dbg('getMemoList errore: '+e.message);
-    return [];
-  }
+    return saved?JSON.parse(saved):[];
+  }catch(e){return [];}
 }
 
 function editMemoItem(n, newText){
@@ -690,29 +646,15 @@ function init(){
   // Sincronizza stato barge-in con auto-mute
   document.getElementById('chkAutoMute').addEventListener('change', onAutoMuteChange);
   onAutoMuteChange();
-  // Gestione visibility: quando il telefono e' bloccato/in background,
-  // riprendiamo AudioContext al ritorno e logghiamo lo stato per debug fiera.
-  document.addEventListener('visibilitychange', ()=>{
-    if(document.hidden){
-      dbg('App in background');
-    } else {
-      dbg('App in foreground - check audio');
-      if(vuCtx && vuCtx.state==='suspended'){
-        vuCtx.resume().then(()=>dbg('vuCtx resumed')).catch(e=>dbg('vuCtx resume err: '+e.message));
-      }
-      if(audioCtx && audioCtx!==vuCtx && audioCtx.state==='suspended'){
-        audioCtx.resume().then(()=>dbg('audioCtx resumed')).catch(e=>dbg('audioCtx resume err: '+e.message));
-      }
-    }
-  });
-  // Warning beforeunload se sessione attiva (evita disconnessioni accidentali in fiera)
-  window.addEventListener('beforeunload', e=>{
-    if(connected){
-      e.preventDefault();
-      e.returnValue = 'Sessione Gemini attiva. Confermi l\'uscita?';
-      return e.returnValue;
-    }
-  });
+}
+
+// sendSess: la Live API NON permette di aggiornare systemInstruction in-flight.
+// L'unico modo per rinnovare il contesto e' riconnettere (con sessionResumption).
+// Visto che l'utente disconnette manualmente prima di cambiare personaggio/voce,
+// qui non facciamo nulla: era prima un riferimento orfano che generava ReferenceError
+// silenziosi a ogni cambio personaggio/conoscenza, interrompendo l'handler.
+function sendSess(){
+  // no-op intenzionale. Vedi commento sopra.
 }
 
 function onAutoMuteChange(){
@@ -727,10 +669,7 @@ function onAutoMuteChange(){
     bargeEl.disabled = false;
     bargeEl.closest('.trow').style.opacity = '1';
   }
-  // NIENTE sendSess() qui: auto-mute e' pura logica JS locale (gestita in
-  // setRobotSpeaking()), non richiede di aggiornare la systemInstruction lato
-  // Gemini. Prima chiamavo sendSess che faceva un reconnect inutile e poteva
-  // generare voce doppia se cliccato durante una risposta.
+  if(connected) sendSess();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -856,9 +795,10 @@ function setRobotSpeaking(speaking){
     badge.className='amute-badge mic-muted';
     badge.textContent='🔇 Mic sospeso — robot in risposta';
     if(workletNode) workletNode.port.postMessage({cmd:'gain', value:0});
-    // FIX VAD: NON inviamo piu' audioStreamEnd manuale. Il VAD server di Gemini
-    // gestira' da solo l'inizio/fine turno basandosi sull'audio (silenzio = gain 0).
-    // Inviare audioStreamEnd manuale confliggeva col VAD server e causava "doppia voce".
+    // Avvisa Gemini che il flusso mic è interrotto (auto-mute)
+    if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
+      ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+    }
     vadWasActive=false;
   } else if(speaking && !autoMute){
     // Robot parla ma auto-mute OFF
@@ -1101,43 +1041,19 @@ function startCtxWatchdog(){
 // ═══════════════════════════════════════════════════════════════
 // CONNESSIONE
 // ═══════════════════════════════════════════════════════════════
-let _toggleConnBusy = false;
 async function toggleConn(){
-  if(_toggleConnBusy){ dbg('toggleConn ignorato (in corso)'); return; }
-  _toggleConnBusy = true;
-  try{
-    if(connected || reconnectTimer){
-      userDisconnected=true;
-      cancelReconnect();
-      disc(true); // clearHandle=true: disconnessione volontaria, azzera la sessione
-    } else {
-      userDisconnected=false;
-      reconnectCount=0;
-      await conn();
-    }
-  } finally {
-    // Sblocca dopo un piccolo delay per assorbire doppi tap accidentali
-    setTimeout(()=>{ _toggleConnBusy = false; }, 600);
+  if(connected || reconnectTimer){
+    userDisconnected=true;
+    cancelReconnect();
+    disc(true); // clearHandle=true: disconnessione volontaria, azzera la sessione
+  } else {
+    userDisconnected=false;
+    reconnectCount=0;
+    await conn();
   }
 }
 
 async function conn(){
-  // GUARDIA "doppia connessione": se c'e' gia' un ws aperto o in apertura,
-  // chiudilo prima. Altrimenti due ws coesistono entrambi con onmessage attivo
-  // e mixano due flussi audio insieme -> sintomo "due voci".
-  if(ws){
-    dbg('⚠️ conn() chiamato con ws gia esistente — chiudo il vecchio prima');
-    try{ ws.onopen=null; ws.onmessage=null; ws.onerror=null; ws.onclose=null; ws.close(); }catch(e){}
-    ws=null;
-  }
-  // Anche workletNode vecchio: se esiste, scollegalo prima di crearne uno nuovo
-  if(workletNode){
-    try{ workletNode.port.onmessage=null; workletNode.disconnect(); }catch(e){}
-    workletNode=null;
-  }
-  // Ferma audio in coda della sessione precedente (es. dopo goAway)
-  stopAllSources();
-  audioQ=[]; playing=false; nextPlayTime=0;
   const raw=document.getElementById('keyIn').value;
   API_KEY=raw.replace(/[\x00-\x1F\x7F\u200B-\u200D\uFEFF]/g,'').trim();
   if(API_KEY.length<20){toast('❌ Chiave troppo corta ('+API_KEY.length+' chars)');return;}
@@ -1157,11 +1073,7 @@ async function conn(){
     if(audioCtx.state==='suspended'){try{await audioCtx.resume();}catch(e){}}
     const _wBlob=new Blob([_WORKLET_SRC],{type:'application/javascript'});
     const _wUrl=URL.createObjectURL(_wBlob);
-    try{ await audioCtx.audioWorklet.addModule(_wUrl); }catch(e){
-      // addModule fallisce se gia' registrato sullo stesso ctx: e' OK, non e' un errore reale
-      if(!String(e.message||'').toLowerCase().includes('already')) throw e;
-      dbg('worklet gia registrato, riuso');
-    } finally{ URL.revokeObjectURL(_wUrl); }
+    try{ await audioCtx.audioWorklet.addModule(_wUrl); }finally{ URL.revokeObjectURL(_wUrl); }
     workletNode=new AudioWorkletNode(audioCtx,'pcm16-processor');
     workletNode.port.onmessage=onChunk;
     if(analyser)analyser.connect(workletNode);
@@ -1171,31 +1083,14 @@ async function conn(){
     const GEMINI_WS=GEMINI_WS_BASE+'.'+apiVer+'.GenerativeService.BidiGenerateContent';
     const url=GEMINI_WS+'?key='+API_KEY;
     dbg('🌐 WS → '+apiVer+' · '+model);
-    // Cattura locale del riferimento: cosi se ws globale viene sostituito,
-    // gli handler vecchi non confondono i flussi.
-    const myWs = new WebSocket(url);
-    ws = myWs;
+    ws=new WebSocket(url);
     wsTimeoutTimer=setTimeout(()=>{
       if(!connected){dbg('⏱ Timeout WS');toast('❌ Timeout');disc();scheduleReconnect();}
     },WS_TIMEOUT_MS);
-    myWs.onopen=()=>{
-      if(ws !== myWs){ dbg('onopen ignorato: ws e\' stato sostituito'); return; }
-      dbg('🔗 WS aperto — invio setup'+(sessionHandle?' (resumption)':'')+'...');
-      sendSetup();
-    };
-    myWs.onmessage=e=>{
-      // GUARDIA: ignora i messaggi se questo ws non e' piu' quello attivo.
-      // Senza questa guardia, ws vecchio + ws nuovo coesistevano e davano due voci.
-      if(ws !== myWs){ return; }
-      onMsg(e);
-    };
-    myWs.onerror=e=>{console.error('[WS]',e);dbg('❌ WS errore');};
-    myWs.onclose=e=>{
-      if(ws !== myWs){
-        // Era un ws vecchio: ignora, non scatenare reconnect
-        dbg('onclose di ws vecchio ignorato');
-        return;
-      }
+    ws.onopen=()=>{ dbg('🔗 WS aperto — invio setup'+(sessionHandle?' (resumption)':'')+'...'); sendSetup(); };
+    ws.onmessage=onMsg;
+    ws.onerror=e=>{console.error('[WS]',e);dbg('❌ WS errore');};
+    ws.onclose=e=>{
       dbg('🔌 WS chiuso: '+e.code+(e.reason?' '+e.reason:''));
       clearTimeout(wsTimeoutTimer);
       setupReady=false;
@@ -1252,10 +1147,15 @@ function sendSetup(){
     {name:'leggi_memo',
      description:"Recupera le note salvate. Usala quando l'utente chiede cosa ricordi o di leggere le memo.",
      parameters:{type:'OBJECT',properties:{}}}
-    // scatta_foto RIMOSSO: la visione e' gestita lato client da doSnap() che invia
-    // foto + testo nello stesso clientContent turn. Avere anche un tool causava
-    // race condition: il modello iniziava a rispondere prima che il frame arrivasse,
-    // generando descrizioni allucinate al primo colpo.
+    // scatta_foto RIMOSSO: causava descrizioni inventate alla prima richiesta.
+    // Motivo (documentato): realtimeInput.video inviato dopo toolResponse non e'
+    // ordering-guaranteed (vedi doc Live API: "realtimeInput is optimized for
+    // responsiveness; ordering across modalities is not guaranteed"). Inoltre
+    // functionResponse accetta solo JSON, non inlineData (vedi LangChain issue
+    // #10297). Gemini iniziava a generare con il testo "Foto acquisita" prima
+    // di ricevere il frame, inventando. Soluzione: la visione viene attivata
+    // direttamente dal client via doSnap() che manda foto + testo in un solo
+    // clientContent — vedi checkVoiceSnapCommand piu' sotto.
   ]}];
   const msg=JSON.stringify({setup:setup});
   dbg('📤 '+msg.slice(0,180));
@@ -1280,26 +1180,33 @@ function onChunk(e){
   if(!setupReady)return;
   if(autoMuteSuspended)return;
   if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
-  // GUARDIA: se il robot sta gia' parlando, non inviare audio
-  // (evita eco e doppi turni se l'auto-mute non e' abbastanza veloce)
-  if(robotSpeaking) return;
-  // FIX DEFINITIVO "doppia voce su stessa domanda":
-  // Il VAD client (gate su vuDisplayPct + audioStreamEnd manuale) confliggeva con il
-  // VAD server di Gemini. Entrambi prendevano decisioni indipendenti su quando finiva
-  // il turno utente, e in alcune condizioni Gemini generava DUE risposte in parallelo.
-  // Soluzione: NON gestiamo piu' il VAD lato client. Mandiamo SEMPRE l'audio (anche
-  // silenzio) e lasciamo che il VAD server di Gemini decida da solo quando inizia/finisce
-  // il turno. Mai inviare audioStreamEnd: e' superfluo e generava il conflitto.
-  // Il VU meter visuale resta funzionante (usa vuDisplayPct), ma non interviene piu'
-  // sull'invio audio.
   const pcm=new Int16Array(e.data);
+  // Gain applicato SOLO nel worklet
+  // VAD gate: confronta vuDisplayPct (gain+noisefloor aware) con soglia slider
+  const thrRaw=parseInt(document.getElementById('rThr').value);
+  const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
+  const aboveVad = (vuDisplayPct >= thrPct);
+  if(!aboveVad){
+    if(vadWasActive){
+      vadSilenceFrames++;
+      // Aspetta VAD_SILENCE_FRAMES frame consecutivi di silenzio prima di
+      // dichiarare fine del turno — evita audioStreamEnd su micropauses tra parole
+      if(vadSilenceFrames >= VAD_SILENCE_FRAMES){
+        ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+        dbg('🔇 audioStreamEnd inviato (silenzio '+VAD_SILENCE_FRAMES+' frame)');
+        vadWasActive=false;
+        vadSilenceFrames=0;
+      }
+    }
+    return;
+  }
+  // Sopra soglia: invia audio e resetta contatore silenzio
+  vadWasActive=true;
+  vadSilenceFrames=0;
   const actualSR=audioCtx?audioCtx.sampleRate:48000;
+  // Formato ufficiale doc Google (maggio 2026): realtimeInput.audio
   ws.send(JSON.stringify({realtimeInput:{audio:{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate='+actualSR}}}));
 }
-
-// Flag legacy: lasciato per compatibilita' con i vari reset. Non viene piu'
-// usato per gating audio dopo il fix VAD.
-let _turnSubmitted = false;
 
 function onMsg(e){
   let raw;
@@ -1354,28 +1261,13 @@ function onMsg(e){
     }
     if(sc.turnComplete){
       finalizeRobot();
-      _turnSubmitted = false;  // Riapri il flusso audio utente per il prossimo turno
-      // Padding ridotto: 200ms invece di 1s. Lo scopo e' coprire mini-gap di rete,
-      // non aggiungere latenza percepita.
-      audioQ.push(new Int16Array(Math.floor(OUTPUT_SR * 0.2)));
+      audioQ.push(new Int16Array(OUTPUT_SR));
       // turnComplete: forza drain anche se siamo sotto PRE_BUFFER_CHUNKS
       if(!playing) drain();
-      // FIX race: salva PRIMA, poi azzera, poi decidi.
-      // Prima si azzerava snapInFlight subito dopo, rendendo l'if successivo sempre vero.
-      const wasSnapInFlight = snapInFlight;
-      snapInFlight = false;
-      if(wasSnapInFlight) dbg('snapInFlight reset su turnComplete');
-      // Esegui snap pendente SOLO se questo turn NON era la risposta a uno snap precedente
-      if(pendingSnap && !wasSnapInFlight){
-        pendingSnap = false;
-        dbg('Snap dopo turnComplete (era pendente)');
-        // microtask di delay per dare tempo al drain audio di partire pulito
-        setTimeout(doSnap, 50);
-      } else if(pendingSnap && wasSnapInFlight){
-        // Era la risposta a uno snap: annulla pending per evitare doppio scatto
-        pendingSnap = false;
-        dbg('pendingSnap annullato: turn era gia risposta a snap');
-      }
+      // Reset snapInFlight: Gemini ha finito di rispondere alla foto
+      if(snapInFlight){snapInFlight=false;dbg('snapInFlight reset su turnComplete');}
+      // Esegui snap pendente SOLO se non è la risposta di uno snap (snapInFlight era true)
+      if(pendingSnap&&!snapInFlight){pendingSnap=false;dbg('Snap dopo turnComplete');doSnap();}
       // Azzera timeout snap se era in attesa
       if(window._snapTimeout){
         clearTimeout(window._snapTimeout);
@@ -1386,23 +1278,12 @@ function onMsg(e){
           st.textContent='✅ '+new Date().toLocaleTimeString()+' — risposta ricevuta';
         }
       }
-      setTimeout(()=>{setRobotSpeaking(false);setSt('listening');if(!silStart)silStart=Date.now();},600);
+      setTimeout(()=>{setRobotSpeaking(false);setSt('listening');if(!silStart)silStart=Date.now();},1100);
     }
     if(sc.interrupted){
-      _turnSubmitted = false;  // turno interrotto: riapri il flusso audio
-      const wasSnapInFlight = snapInFlight;
-      snapInFlight = false;
-      if(wasSnapInFlight) dbg('snapInFlight reset su interrupted');
-      if(pendingSnap && !wasSnapInFlight){
-        pendingSnap = false;
-        dbg('Snap dopo interrupted');
-        setTimeout(doSnap, 50);
-      } else if(pendingSnap){
-        pendingSnap = false;
-      }
-      dbg('🛑 Barge-in');
-      stopAllSources();  // FIX "doppia voce": ferma anche i source gia' schedulati
-      audioQ=[];playing=false;nextPlayTime=0;
+      if(snapInFlight){snapInFlight=false;dbg('snapInFlight reset su interrupted');}
+      if(pendingSnap){pendingSnap=false;dbg('Snap dopo interrupted');doSnap();}
+      dbg('🛑 Barge-in');audioQ=[];playing=false;nextPlayTime=0;
       setRobotSpeaking(false);setSt('talking');dot('dMic','tk');silStart=null;
     }
   }
@@ -1449,7 +1330,7 @@ function onMsg(e){
           showMemoFeedback(list.length+' memo','var(--blue)');
         }
       } else {
-        // Tool non riconosciuto (es. modello chiama scatta_foto da cache): risposta neutra
+        // Tool sconosciuto: risposta neutra (es. modello prova ancora scatta_foto dalla cache)
         out='Strumento non disponibile.';
         dbg('Tool sconosciuto: '+call.name);
       }
@@ -1463,88 +1344,21 @@ function onMsg(e){
     const secsLeft = m.goAway.timeLeft ? Math.round(m.goAway.timeLeft/1000) : '?';
     dbg('⚠️ goAway ricevuto — connessione termina tra ~'+secsLeft+'s · riconnessione con resumption...');
     toast('🔄 Rinnovo sessione (10min limit)...');
-    // FIX "doppia voce" su rinnovo automatico: aspetta che la coda audio si svuoti
-    // e che i source schedulati finiscano, altrimenti l'audio della vecchia
-    // sessione si sovrappone a quello della nuova.
-    const waitAndReconnect = (waited)=>{
-      const stillPlaying = playing || activeSources.length > 0 || audioQ.length > 0;
-      if(stillPlaying && waited < 6000){
-        setTimeout(()=>waitAndReconnect(waited + 200), 200);
-        return;
-      }
-      if(stillPlaying) dbg('goAway: timeout attesa audio, forzo reconnect');
-      disc(false);
-      if(!userDisconnected) setTimeout(()=>conn(), 300);
-    };
-    waitAndReconnect(0);
-  }
-}
-
-// sendSess: aggiorna la sessione attiva quando cambiano personaggio/conoscenza/auto-mute.
-// La Live API di Gemini NON permette di cambiare systemInstruction in-flight: l'unica
-// strada pulita e' riconnettere con session resumption (sessionHandle preservato).
-// Throttling: max una chiamata ogni 3s per evitare cicli se l'utente clicca rapido.
-// FIX "doppia voce": aspetta che il robot abbia finito di parlare prima di
-// disconnettere/riconnettere. Altrimenti l'audio della sessione vecchia continua
-// e si sovrappone a quello della nuova.
-let _sendSessLastTs = 0;
-let _sendSessPending = false;
-function sendSess(){
-  if(!connected) return;
-  const now = Date.now();
-  if(now - _sendSessLastTs < 3000){
-    dbg('sendSess: throttled (attendi 3s)');
-    return;
-  }
-  if(_sendSessPending){
-    dbg('sendSess: gia in attesa');
-    return;
-  }
-  _sendSessLastTs = now;
-  // Se il robot sta ancora parlando o ci sono source schedulati, aspetta.
-  // Polling ogni 200ms, max 8s (40 iterazioni).
-  let waited = 0;
-  _sendSessPending = true;
-  const tryReconnect = ()=>{
-    const stillSpeaking = robotSpeaking || playing || activeSources.length > 0 || audioQ.length > 0;
-    if(stillSpeaking && waited < 8000){
-      waited += 200;
-      setTimeout(tryReconnect, 200);
-      return;
-    }
-    _sendSessPending = false;
-    if(stillSpeaking) dbg('sendSess: timeout attesa, forzo reconnect');
-    dbg('Aggiornamento sessione (reconnect con resumption)...');
-    // Disconnetti SENZA azzerare handle. disc() chiama stopAllSources internamente.
-    const prevUserDisc = userDisconnected;
-    userDisconnected = false;
+    // Disconnetti senza azzerare l'handle, poi riconnetti subito
     disc(false);
-    setTimeout(()=>{
-      if(!connected) conn().catch(e=>dbg('sendSess reconnect err: '+e.message));
-      userDisconnected = prevUserDisc;
-    }, 400);
-  };
-  if(robotSpeaking || playing || activeSources.length > 0 || audioQ.length > 0){
-    dbg('sendSess: aspetto fine risposta robot...');
-    toast('🔄 Aggiornamento dopo fine risposta...');
+    if(!userDisconnected) setTimeout(()=>conn(), 500);
   }
-  tryReconnect();
 }
 
 function disc(clearHandle=false){
   connected=false; setupReady=false;
   clearTimeout(wsTimeoutTimer);
-  // FIX "doppia voce": ferma TUTTI i source schedulati PRIMA di azzerare audioCtx,
-  // altrimenti continuano a suonare anche dopo che la nuova connessione e' aperta.
-  // Questo e' il fix principale per il bug "ora si sentono due voci insieme".
-  stopAllSources();
   if(ws){ws.onclose=null;try{ws.close();}catch(e){}ws=null;}
   if(workletNode){try{workletNode.disconnect();workletNode.port.postMessage({cmd:'stop'});}catch(e){}workletNode=null;}
   if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null;}
   if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch(e){}}
   audioCtx=null; analyser=vuAnalyser;
   audioQ=[]; playing=false; silStart=null; nextPlayTime=0; vadWasActive=false; vadSilenceFrames=0;
-  _turnSubmitted = false;
   pendingSnap=false; snapInFlight=false; lastVisionTs=0;
   robotSpeaking=false; autoMuteSuspended=false;
   setRobotSpeaking(false);
@@ -1606,50 +1420,24 @@ function hideReconnBar(){
 // La registrazione avviene al momento della ricezione dalla rete,
 // non al momento della riproduzione — così il WAV è sempre continuo.
 
-// FIX "doppia voce": ferma TUTTI gli AudioBufferSource schedulati.
-// Da chiamare su: barge-in, disc, sendSess (reconnect). Web Audio una volta
-// che hai chiamato src.start(t) NON cancella la riproduzione svuotando audioQ:
-// il source e' gia' nelle mani dello scheduler hardware. Serve src.stop().
-function stopAllSources(){
-  if(!activeSources.length) return;
-  dbg('🛑 stopAllSources: '+activeSources.length+' source attivi');
-  activeSources.forEach(s=>{
-    try{ s.onended = null; s.stop(0); s.disconnect(); }catch(e){}
-  });
-  activeSources = [];
-  nextPlayTime = 0;
-}
-
-// Lock per evitare doppia esecuzione concorrente di drain().
-// Tra il check iniziale e l'assegnazione playing=true ci sono await: in quel lasso
-// due chiamate parallele a drain() (es. una da onMsg, una da turnComplete) possono
-// passare entrambe i controlli e schedulare gli stessi chunk due volte → "doppia voce".
-let _drainRunning = false;
-
 async function drain(){
-  if(_drainRunning){
-    dbg('drain: gia in esecuzione, skip');
-    return;
-  }
-  _drainRunning = true;
-  try {
-    if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
-    if(!audioCtx||!audioQ.length){playing=false;return;}
+  if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
+  if(!audioCtx||!audioQ.length){playing=false;return;}
 
-    // Assicurati che AudioContext sia running prima di iniziare
-    if(audioCtx.state==='suspended'){
-      try{await audioCtx.resume();}catch(e){
-        dbg('❌ drain: AudioContext resume fallito — retry tra 500ms');
-        drainWatchdog=setTimeout(()=>drain(), 500);
-        return;
-      }
-    }
-    if(audioCtx.state!=='running'){
-      drainWatchdog=setTimeout(()=>drain(), 300);
+  // Assicurati che AudioContext sia running prima di iniziare
+  if(audioCtx.state==='suspended'){
+    try{await audioCtx.resume();}catch(e){
+      dbg('❌ drain: AudioContext resume fallito — retry tra 500ms');
+      drainWatchdog=setTimeout(()=>drain(), 500);
       return;
     }
+  }
+  if(audioCtx.state!=='running'){
+    drainWatchdog=setTimeout(()=>drain(), 300);
+    return;
+  }
 
-    playing=true;
+  playing=true;
 
   // Svuota tutta la coda in un ciclo sincrono, pianificando ogni buffer
   // con timestamp preciso — nessun gap, nessuna latenza di callback
@@ -1670,24 +1458,9 @@ async function drain(){
       // Se nextPlayTime è nel passato (es. dopo una pausa), usa currentTime + 0.01s
       // di headroom per evitare glitch.
       // 0.06s headroom sul primo chunk per dare tempo all'hardware di prepararsi
-      // CAP: se per qualche motivo (rete a strappi, freeze JS) nextPlayTime
-      // e' avanti di piu' di 2 secondi rispetto a currentTime, resetta per
-      // evitare latenza crescente e desincronizzazione audio.
-      if(nextPlayTime - audioCtx.currentTime > 2.0){
-        dbg('⚠️ nextPlayTime drift > 2s, reset scheduling');
-        nextPlayTime = 0;
-      }
       const startAt = Math.max(audioCtx.currentTime + 0.06, nextPlayTime);
       src.start(startAt);
       nextPlayTime = startAt + buf.duration;
-
-      // FIX "doppia voce": registra il source per poterlo fermare se serve.
-      // Auto-pulizia: rimuovilo dalla lista quando finisce naturalmente.
-      activeSources.push(src);
-      src.onended = ()=>{
-        const idx = activeSources.indexOf(src);
-        if(idx >= 0) activeSources.splice(idx, 1);
-      };
 
       // Watchdog sull'ultimo buffer pianificato: se dopo la durata attesa
       // la coda è ancora vuota e playing=true, sblocchiamo lo stato
@@ -1711,14 +1484,6 @@ async function drain(){
   if(audioQ.length === 0){
     playing=false;
     // Non serve un loop di polling: onMsg chiamerà drain() se playing===false
-  }
-  } finally {
-    _drainRunning = false;
-    // Se nel frattempo sono arrivati nuovi chunk mentre il lock era preso,
-    // rilancia drain (no setTimeout cosi e' immediato ma async)
-    if(audioQ.length > 0 && !playing){
-      setTimeout(()=>drain(), 0);
-    }
   }
 }
 
@@ -1766,37 +1531,10 @@ function doSnap(){
   if(now-lastVisionTs<3000){dbg('doSnap: cooldown attivo, skip');return;}
   // Blocca se Gemini sta già elaborando una foto precedente
   if(snapInFlight){dbg('doSnap: snap già in volo, skip');return;}
-  if(!camActive){
-    // Invece di solo toast, informa Gemini cosi puo dire all'utente
-    if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
-      ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[
-        {text:'(Sistema: la telecamera non e\' attiva, di\' all\'utente di attivarla con il pulsante Attiva cam)'}
-      ]}],turnComplete:true}}));
-    }
-    toast('⚠️ Attiva prima la cam');
-    return;
-  }
+  if(!camActive){toast('Attiva prima la cam');return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){toast('Connetti prima Gemini');return;}
   const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
-  if(!v.videoWidth||!v.videoHeight){
-    dbg('doSnap: video non pronto, skip');
-    toast('⚠️ Video non pronto, riprova');
-    return;
-  }
-
-  // FIX "doppia voce su domanda visiva": se c'e' una risposta in corso, prima
-  // fermala. Senza questo, Gemini sta gia' rispondendo al turno vocale "cosa vedi"
-  // e in piu' riceve un clientContent con la foto -> due risposte parallele.
-  if(robotSpeaking || playing || activeSources.length > 0){
-    dbg('doSnap: risposta in corso, fermo audio + interrompo turno prima di scattare');
-    stopAllSources();
-    audioQ=[];
-    playing=false;
-    nextPlayTime=0;
-    setRobotSpeaking(false);
-  }
-
-  c.width=v.videoWidth; c.height=v.videoHeight;
+  c.width=v.videoWidth||640; c.height=v.videoHeight||480;
   c.getContext('2d').drawImage(v,0,0);
   const b64=c.toDataURL('image/jpeg',0.85).split(',')[1];
   if(!b64||b64.length<100){toast('Frame cam vuoto');return;}
@@ -1807,40 +1545,21 @@ function doSnap(){
   // FIX: foto e testo nello stesso clientContent turn — evita allucinazioni
   ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[
     {inlineData:{mimeType:'image/jpeg',data:b64}},
-    {text:'Descrivi esattamente cosa vedi in questa immagine. Sii breve e concreto (1-2 frasi). Rispondi in italiano. Se non e\' chiaro, ammettilo: non inventare.'}
+    {text:'Descrivi esattamente cosa vedi in questa immagine, rispondi in italiano.'}
   ]}],turnComplete:true}}));
   const st=document.getElementById('snapSt');
   if(st){st.style.color='var(--yellow)';st.textContent='Foto '+new Date().toLocaleTimeString();}
   addMsg('[foto inviata]','sys'); toast('Foto inviata!');
   dbg('doSnap: '+Math.round(b64.length*0.75/1024)+'KB single-turn');
-  // Watchdog: se dopo 15s non arriva risposta, resetta snapInFlight
-  if(window._snapTimeout) clearTimeout(window._snapTimeout);
-  window._snapTimeout = setTimeout(()=>{
-    if(snapInFlight){
-      dbg('⚠️ Snap watchdog: nessuna risposta in 15s, reset');
-      snapInFlight = false;
-      const st2=document.getElementById('snapSt');
-      if(st2){st2.style.color='var(--red)';st2.textContent='⚠️ Nessuna risposta';}
-    }
-    window._snapTimeout = null;
-  }, 15000);
 }
 function checkVoiceSnapCommand(text){
   if(!camActive||!ws||ws.readyState!==WebSocket.OPEN) return;
   const t=text.toLowerCase().trim();
   const triggered=SNAP_KEYWORDS.some(kw=>t.includes(kw));
-  if(triggered && !snapInFlight && !pendingSnap){
-    dbg('Snap keyword rilevata: pendingSnap=true');
+  if(triggered){
+    dbg('Snap keyword: pendingSnap=true');
     pendingSnap=true;
     toast('Foto in arrivo...');
-    // NUOVO: non aspettiamo passivamente il turnComplete (che arriverebbe DOPO
-    // che Gemini ha gia' iniziato a rispondere al vocale, generando "doppia voce").
-    // Invece, scatta subito: doSnap() ferma l'audio Gemini in corso, manda la foto
-    // con un singolo clientContent e fa generare a Gemini UNA sola risposta basata
-    // sull'immagine.
-    setTimeout(()=>{
-      if(pendingSnap) doSnap();
-    }, 100);
   }
 }
 function oGain(v){
@@ -1883,8 +1602,10 @@ function toggleMute(){
   const b=document.getElementById('btnMute');
   b.textContent=muted?'🔇 MUTO':'🎙 ATTIVO'; b.classList.toggle('on',muted);
   toast(muted?'🔇 Mic silenziato':'🎙 Mic attivo');
-  // FIX VAD: niente piu' audioStreamEnd. Quando muted=true, onChunk smette di inviare
-  // audio (vedi check `if(muted) return`). Il VAD server vede silenzio e gestisce da solo.
+  if(muted && ws&&ws.readyState===WebSocket.OPEN&&setupReady){
+    ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+    vadWasActive=false;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2025,21 +1746,17 @@ function loadKnowFile(inp){
 function buildSystemPrompt(){
   const base=activePrompt||'Sei un assistente AI vocale interattivo. Rispondi sempre in italiano.';
   let prompt=knowledge.text?base+'\n\n---\nINFORMAZIONI EVENTO'+(knowledge.title?' ('+knowledge.title+')':'')+(':\n')+knowledge.text:base;
-  // Memo NON piu' nel system prompt: causava duplicazione e disallineamento
-  // (le memo aggiunte durante la sessione non erano visibili al modello).
-  // Ora il modello chiama leggi_memo on-demand e legge sempre i dati aggiornati.
-  const memoCount = getMemoList().length;
-  if(memoCount > 0){
-    prompt += '\n\n---\nHai '+memoCount+' memo salvate. Per leggerle usa lo strumento leggi_memo.';
+  const list=getMemoList();
+  if(list&&list.length>0){
+    const last10=list.slice(-10);
+    prompt+='\n\n---\nMemo salvate (ultime '+last10.length+'):\n'+last10.map(e=>'- ['+e.t+'] '+e.m).join('\n')+'\nQueste sono le tue note. Se ti viene chiesto cosa ricordi, leggile.';
   }
   prompt+='\n\n---\nStrumenti disponibili - USALI SEMPRE quando appropriato:\n'
     +'- salva_memo: quando l\'utente chiede di ricordare/salvare/annotare qualcosa\n'
     +'- leggi_memo: quando chiede cosa ricordi o di leggere le note\n'
-    +'Per la visione: quando l\'utente chiede cosa vedi/di guardare/descrivere la scena, '
-    +'il sistema ti invierà automaticamente una foto insieme alla domanda. '
-    +'Descrivi SOLO quello che vedi nella foto, senza inventare nulla. '
-    +'Se non ricevi una foto, dì semplicemente "non vedo nulla in questo momento".\n'
-    +'Non rispondere mai che non puoi fare queste cose: il sistema le gestisce per te.';
+    +'Quando l\'utente chiede cosa vedi/di guardare/descrivere la scena, il client invia '
+    +'automaticamente una foto insieme alla domanda. Descrivi SOLO quello che vedi nella foto, '
+    +'non inventare. Non rispondere mai che non puoi fare queste cose.';
   return prompt;
 }
 
@@ -2154,15 +1871,6 @@ function toast(m){
 }
 
 init();
-
-// Catcher globale: su iOS Safari spesso gli errori sono silenziati.
-// Loggali nella chat di debug cosi vedi cosa rompe l'app durante la fiera.
-window.addEventListener('error', e=>{
-  try{dbg('❌ ERR: '+(e.message||'?')+' @'+(e.filename||'').split('/').pop()+':'+(e.lineno||'?'));}catch(_){}
-});
-window.addEventListener('unhandledrejection', e=>{
-  try{dbg('❌ PROMISE: '+(e.reason?.message||e.reason||'?'));}catch(_){}
-});
 </script>
 </body>
 </html>
