@@ -714,7 +714,7 @@ async function startVuMonitor(forceDeviceId){
       // FASE 1: apri con default per sbloccare il permesso e rendere visibili le label
       dbg('🎤 getUserMedia (default — permesso + detect wired)...');
       const tempStream=await navigator.mediaDevices.getUserMedia({
-        audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}
+        audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}
       });
       const tempLabel=tempStream.getAudioTracks()[0]?.label||'';
       dbg('📋 Mic default: "'+tempLabel+'"');
@@ -754,8 +754,8 @@ async function startVuMonitor(forceDeviceId){
     if(!sharedMicStream){
       // Apri con deviceId specifico (selezionato manualmente o trovato nella fase 2)
       const constraint=devId
-        ?{audio:{deviceId:{exact:devId}, echoCancellation:false, noiseSuppression:false, autoGainControl:false}}
-        :{audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}};
+        ?{audio:{deviceId:{exact:devId}, echoCancellation:true, noiseSuppression:true, autoGainControl:true}}
+        :{audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}};
       dbg('🎤 getUserMedia '+(devId?'exact:'+devId.slice(0,12)+'...':'(default)')+'...');
       sharedMicStream=await navigator.mediaDevices.getUserMedia(constraint);
     }
@@ -814,6 +814,8 @@ async function startVuMonitor(forceDeviceId){
         if(vuCalibFrames<=0){
           vuNoiseFloor=vuCalibMax;
           vuCalibActive=false;
+          // Reset VAD state dopo calibrazione: evita che il gate blocchi l'audio
+          vadWasActive=false; vadSilenceFrames=0;
           const btn=document.getElementById('btnZero');
           if(btn){btn.textContent='LIV.ZERO';btn.style.borderColor='var(--bord)';btn.style.color='var(--muted)';}
           dbg('🎤 Noise floor impostato: '+Math.round(vuNoiseFloor));
@@ -1300,13 +1302,11 @@ function doSnap(){
   c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
   const b64=c.toDataURL('image/jpeg',.85).split(',')[1];
   const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
-  // Invia solo l'immagine via realtimeInput — NON inviare clientContent
-  // clientContent durante turno audio causa errore 1011 (Internal error)
-  // Il VAD server-side di Gemini gestisce il turno automaticamente
-  ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:b64,mimeType:'image/jpeg'}]}}));
+  // Doc ufficiale: realtimeInput.video per immagini, NON clientContent
+  // Mescolare clientContent e realtimeInput non garantisce ordine e causa 1011
+  ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
   document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
   addMsg('📸 [foto inviata]','sys'); toast('📸 Foto inviata!');
-  snapPending=false;
 }
 
 // Comando vocale snap: parole chiave in italiano e inglese
@@ -1315,19 +1315,18 @@ const SNAP_KEYWORDS = [
   'guarda','guardami','dai un\'occhiata','cosa vedi','cosa vedi?',
   'descrivi','descrivimi','take a photo','take photo','look','snapshot'
 ];
-let snapPending=false; // anti-doppio trigger
-
+let _snapDebounce=false;
 function checkVoiceSnapCommand(text){
   if(!camActive){return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){return;}
-  if(snapPending){return;} // già in attesa, ignora duplicati
+  if(_snapDebounce){return;} // anti-doppio trigger
   const t = text.toLowerCase().trim();
   const triggered = SNAP_KEYWORDS.some(kw => t.includes(kw));
   if(triggered){
+    _snapDebounce=true;
     dbg('📸 Comando vocale: "'+text+'" → snap');
-    toast('📸 Scatto in arrivo...');
-    snapPending=true;
-    setTimeout(()=>doSnap(), 600);
+    toast('📸 Scatto...');
+    setTimeout(()=>{ doSnap(); _snapDebounce=false; }, 500);
   }
 }
 
