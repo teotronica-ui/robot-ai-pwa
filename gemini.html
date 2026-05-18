@@ -469,6 +469,9 @@ let audioQ=[], playing=false, analyser=null, silStart=null;
 let nextPlayTime=0;   // scheduling preciso: quando finisce l'ultimo buffer pianificato
 let tok={ai:0,ao:0};
 let editingChar=null, camStream=null, camActive=false;
+let videoStreamInterval=null; // streaming video continuo a 1fps per Gemini Live API
+const VIDEO_STREAM_FPS=1;     // doc ufficiale: max 1 frame/sec
+const VIDEO_STREAM_QUALITY=0.7; // jpeg quality per ridurre bandwidth nel continuo
 let knowledge={title:'',text:''};
 let robotMsgEl=null, robotTxt='';
 // mic/VU
@@ -1057,6 +1060,9 @@ function onMsg(e){
     addMsg('✅ Gemini connesso · modello: '+document.getElementById('selModel').value+' · voce: '+(document.getElementById('selVoice').value||activeVoice),'sys');
     toast('✅ Gemini pronto');
     dbg('✅ setupComplete — invio audio abilitato. SR microfono: '+(audioCtx?audioCtx.sampleRate:'?')+'Hz');
+    // Se la camera è già attiva al momento del setupComplete, avvia
+    // lo streaming video continuo (1 fps) richiesto dalla doc ufficiale.
+    if(camActive) startVideoStream();
     return;
   }
   if(m.serverContent){
@@ -1083,8 +1089,10 @@ function onMsg(e){
       const userText = sc.inputTranscription.text;
       addMsg(userText,'user');
       tok.ai+=Math.round(userText.length*1.3);renderCost();
-      // Comando vocale scatta foto: rileva parole chiave nella trascrizione
-      checkVoiceSnapCommand(userText);
+      // NB: checkVoiceSnapCommand disattivato — ora lo streaming video
+      // continuo (1 fps) garantisce che Gemini abbia sempre frame freschi
+      // nel turno corrente. Inviare un frame *dopo* la trascrizione era
+      // troppo tardi: l'audioStreamEnd aveva già chiuso il turno utente.
     }
     if(sc.turnComplete){
       finalizeRobot();
@@ -1128,6 +1136,7 @@ function onMsg(e){
 
 function disc(clearHandle=false){
   connected=false; setupReady=false;
+  stopVideoStream(); // ferma streaming video prima di chiudere WS
   clearTimeout(wsTimeoutTimer);
   if(ws){ws.onclose=null;try{ws.close();}catch(e){}ws=null;}
   if(workletNode){try{workletNode.disconnect();workletNode.port.postMessage({cmd:'stop'});}catch(e){}workletNode=null;}
@@ -1284,9 +1293,13 @@ async function toggleCam(){
     camActive=true; document.getElementById('btnCamOn').textContent='⏹ Spegni cam';
     document.getElementById('btnSnap').disabled=false; dot('dCam','on');
     await enumCams();
+    // Se WS è già connesso, avvia streaming video immediatamente.
+    // Altrimenti partirà al setupComplete.
+    if(connected && setupReady) startVideoStream();
   }catch(e){toast('❌ Cam: '+e.message);}
 }
 function stopCam(){
+  stopVideoStream(); // ferma streaming prima di spegnere la cam
   if(camStream) camStream.getTracks().forEach(t=>t.stop());
   camStream=null; camActive=false;
   document.getElementById('camVideo').style.display='none';
@@ -1295,6 +1308,45 @@ function stopCam(){
   document.getElementById('btnSnap').disabled=true; dot('dCam',null);
 }
 async function switchCam(){if(camActive){stopCam();await toggleCam();}}
+
+// ═══════════════════════════════════════════════════════════════
+// VIDEO STREAMING CONTINUO (1 fps) — doc ufficiale Gemini Live API
+// Manda 1 frame/sec mentre cam è attiva e WS è pronto. Così quando
+// l'utente dice "cosa vedi?" il frame più recente è già nel turno
+// corrente, e non arriva dopo audioStreamEnd (turno chiuso).
+// Ref: ai.google.dev/gemini-api/docs/live-api/get-started-websocket
+// ═══════════════════════════════════════════════════════════════
+function startVideoStream(){
+  if(videoStreamInterval) return; // già attivo
+  if(!camActive){dbg('⚠️ startVideoStream: cam non attiva');return;}
+  if(!ws||ws.readyState!==WebSocket.OPEN||!setupReady){dbg('⚠️ startVideoStream: WS non pronto');return;}
+  dbg('🎥 Streaming video avviato (1 fps)');
+  const intervalMs = Math.round(1000/VIDEO_STREAM_FPS);
+  videoStreamInterval = setInterval(()=>{
+    // Guardie: cam, WS, setup, ma NON blocchiamo durante auto-mute
+    // (Gemini ha bisogno del video anche mentre parla, e il video non
+    // è soggetto a VAD come l'audio)
+    if(!camActive){stopVideoStream();return;}
+    if(!ws||ws.readyState!==WebSocket.OPEN||!setupReady){stopVideoStream();return;}
+    try{
+      const v=document.getElementById('camVideo');
+      if(!v||!v.videoWidth) return; // video non ancora pronto
+      const c=document.getElementById('camCanvas');
+      c.width=v.videoWidth; c.height=v.videoHeight;
+      c.getContext('2d').drawImage(v,0,0);
+      const b64=c.toDataURL('image/jpeg',VIDEO_STREAM_QUALITY).split(',')[1];
+      ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
+    }catch(e){dbg('❌ videoStream frame: '+e.message);}
+  }, intervalMs);
+}
+function stopVideoStream(){
+  if(videoStreamInterval){
+    clearInterval(videoStreamInterval);
+    videoStreamInterval=null;
+    dbg('🛑 Streaming video fermato');
+  }
+}
+
 function doSnap(){
   if(!camActive){toast('❌ Attiva prima la cam');return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connetti prima Gemini');return;}
