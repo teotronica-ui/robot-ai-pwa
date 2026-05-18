@@ -1089,10 +1089,10 @@ function onMsg(e){
       const userText = sc.inputTranscription.text;
       addMsg(userText,'user');
       tok.ai+=Math.round(userText.length*1.3);renderCost();
-      // NB: checkVoiceSnapCommand disattivato — ora lo streaming video
-      // continuo (1 fps) garantisce che Gemini abbia sempre frame freschi
-      // nel turno corrente. Inviare un frame *dopo* la trascrizione era
-      // troppo tardi: l'audioStreamEnd aveva già chiuso il turno utente.
+      // Fallback: se lo streaming video continuo non è attivo (cam appena
+      // accesa, WS lento, ecc.), il comando vocale tenta uno snap manuale.
+      // Quando lo streaming gira, Gemini ha già frame freschi nel buffer.
+      checkVoiceSnapCommand(userText);
     }
     if(sc.turnComplete){
       finalizeRobot();
@@ -1320,22 +1320,39 @@ function startVideoStream(){
   if(videoStreamInterval) return; // già attivo
   if(!camActive){dbg('⚠️ startVideoStream: cam non attiva');return;}
   if(!ws||ws.readyState!==WebSocket.OPEN||!setupReady){dbg('⚠️ startVideoStream: WS non pronto');return;}
-  dbg('🎥 Streaming video avviato (1 fps)');
+  dbg('🎥 Streaming video avviato (1 fps, max 640px)');
   const intervalMs = Math.round(1000/VIDEO_STREAM_FPS);
+  let frameCount = 0;
+  let droppedCount = 0;
   videoStreamInterval = setInterval(()=>{
-    // Guardie: cam, WS, setup, ma NON blocchiamo durante auto-mute
-    // (Gemini ha bisogno del video anche mentre parla, e il video non
-    // è soggetto a VAD come l'audio)
     if(!camActive){stopVideoStream();return;}
     if(!ws||ws.readyState!==WebSocket.OPEN||!setupReady){stopVideoStream();return;}
+    // Backpressure: se WS ha ancora roba in coda dal frame precedente,
+    // SALTA questo frame. Evita di saturare la connessione e di
+    // accumulare latenza (Gemini comunque processa max 1 fps).
+    if(ws.bufferedAmount > 200000){
+      droppedCount++;
+      if(droppedCount % 5 === 0) dbg('⏭ Drop frame: WS buffer pieno ('+Math.round(ws.bufferedAmount/1024)+' KB), drop totali: '+droppedCount);
+      return;
+    }
     try{
       const v=document.getElementById('camVideo');
       if(!v||!v.videoWidth) return; // video non ancora pronto
       const c=document.getElementById('camCanvas');
-      c.width=v.videoWidth; c.height=v.videoHeight;
-      c.getContext('2d').drawImage(v,0,0);
+      // Downscale a max 640px sul lato lungo. Gemini comunque rescala
+      // il frame a ~70 token (low/medium resolution), quindi mandare
+      // 1280x720 o 1920x1080 è solo spreco di bandwidth e CPU.
+      const maxSide = 640;
+      const scale = Math.min(1, maxSide / Math.max(v.videoWidth, v.videoHeight));
+      c.width = Math.round(v.videoWidth * scale);
+      c.height = Math.round(v.videoHeight * scale);
+      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
       const b64=c.toDataURL('image/jpeg',VIDEO_STREAM_QUALITY).split(',')[1];
       ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
+      frameCount++;
+      // Log primo frame e poi ogni 10 frame per non spammare
+      if(frameCount === 1) dbg('📷 1° frame inviato: '+c.width+'x'+c.height+' · '+Math.round(b64.length*0.75/1024)+' KB');
+      else if(frameCount % 10 === 0) dbg('📷 '+frameCount+' frame inviati');
     }catch(e){dbg('❌ videoStream frame: '+e.message);}
   }, intervalMs);
 }
