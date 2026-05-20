@@ -70,6 +70,18 @@
     canvas{display:none}
     .snap-flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:9999;transition:opacity .15s}
     .snap-flash.go{opacity:.7}
+    /* Vision frame indicator: bordo colorato che pulsa quando un frame
+       video viene catturato e inviato a Gemini. Visibile ma non invasivo. */
+    #camVideo.vision-pulse{
+      border:3px solid var(--green);
+      box-shadow:0 0 18px var(--green), inset 0 0 12px rgba(0,255,128,.25);
+      transition:border-color .1s, box-shadow .1s;
+    }
+    /* Pallino "EYE" che lampeggia in sincrono ogni frame */
+    .eye-indicator{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:.62rem;color:var(--muted);margin-top:5px;transition:color .15s}
+    .eye-indicator.active{color:var(--green)}
+    .eye-indicator .eye-dot{width:9px;height:9px;border-radius:50%;background:var(--muted);transition:all .1s}
+    .eye-indicator.active .eye-dot{background:var(--green);box-shadow:0 0 10px var(--green);transform:scale(1.4)}
 
     /* Controls */
     .sg{margin-top:11px}
@@ -243,6 +255,7 @@
   </div>
   <div class="f" style="margin-top:9px"><label>Videocamera</label><select id="selCam" onchange="switchCam()"></select></div>
   <div id="snapSt" style="font-size:.63rem;color:var(--muted);font-family:var(--mono);margin-top:4px;min-height:14px"></div>
+  <div class="eye-indicator" id="eyeInd"><div class="eye-dot"></div><span id="eyeLbl">👁 visione: spenta</span></div>
 </div>
 
 <!-- SPEED -->
@@ -608,11 +621,18 @@ function buildVU(){
 }
 function drawVU(level){
   localVadLevel=level;  // peak grezzo 0-255, aggiornato ogni frame
-  // Calcola il livello display: corretto dal noise floor, scalato col gain
-  const corrected = Math.max(0, level - vuNoiseFloor);
+  // Soglia minima fissa per silenziare il rumore di fondo a riposo.
+  // La curva gamma in tick() (pow 0.55) amplifica i valori bassi: senza
+  // questo gate, anche silenzio totale segna ~15-20%. È indipendente da
+  // LIV.ZERO: se l'utente ha già calibrato, vuNoiseFloor è più alto e
+  // questo gate diventa irrilevante (innocuo).
+  const MIN_NOISE_GATE = 10;
+  const effectiveFloor = Math.max(vuNoiseFloor, MIN_NOISE_GATE);
+  // Calcola il livello display: corretto dal floor effettivo, scalato col gain
+  const corrected = Math.max(0, level - effectiveFloor);
   const gainDisplay = parseInt(document.getElementById('rGain').value) / 100;
   const withGain = Math.min(255, corrected * gainDisplay);
-  const scale = Math.max(1, 255 - vuNoiseFloor);
+  const scale = Math.max(1, 255 - effectiveFloor);
   const pct = Math.min(1, withGain / scale);
   // vuDisplayPct: la percentuale effettivamente mostrata — usata dal VAD gate
   vuDisplayPct = pct;
@@ -1363,6 +1383,7 @@ function startVideoStream(){
       c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
       const b64=c.toDataURL('image/jpeg',VIDEO_STREAM_QUALITY).split(',')[1];
       ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
+      pulseVisionIndicator(); // ⚡ feedback visivo: Gemini sta guardando
       frameCount++;
       // Log primo frame e poi ogni 10 frame per non spammare
       if(frameCount === 1) dbg('📷 1° frame inviato: '+c.width+'x'+c.height+' · '+Math.round(b64.length*0.75/1024)+' KB');
@@ -1376,6 +1397,32 @@ function stopVideoStream(){
     videoStreamInterval=null;
     dbg('🛑 Streaming video fermato');
   }
+  // Resetta l'indicatore visione: cam non sta più mandando frame
+  const v=document.getElementById('camVideo'); if(v)v.classList.remove('vision-pulse');
+  const ind=document.getElementById('eyeInd'); if(ind)ind.classList.remove('active');
+  const lbl=document.getElementById('eyeLbl'); if(lbl)lbl.textContent='👁 visione: spenta';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// VISION INDICATOR — feedback visivo quando un frame viene inviato
+// Pulsa il bordo del riquadro video + un pallino "EYE" sotto la cam.
+// Durata: ~250ms per dare percezione chiara senza disturbare.
+// ═══════════════════════════════════════════════════════════════
+let visionPulseTimer=null;
+function pulseVisionIndicator(){
+  const v=document.getElementById('camVideo');
+  const ind=document.getElementById('eyeInd');
+  const lbl=document.getElementById('eyeLbl');
+  if(v) v.classList.add('vision-pulse');
+  if(ind) ind.classList.add('active');
+  if(lbl) lbl.textContent='👁 visione: ATTIVA · sta guardando';
+  if(visionPulseTimer) clearTimeout(visionPulseTimer);
+  visionPulseTimer=setTimeout(()=>{
+    if(v) v.classList.remove('vision-pulse');
+    if(ind) ind.classList.remove('active');
+    // La label resta "ATTIVA" finché lo stream gira (next pulse riapparirà)
+    if(lbl && videoStreamInterval) lbl.textContent='👁 visione: attiva · in pausa tra frame';
+  }, 250);
 }
 
 function doSnap(){
