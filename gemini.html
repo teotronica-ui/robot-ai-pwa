@@ -3,6 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <!-- PWA per Safari iOS: nasconde la barra quando l'app viene aperta
+       dall'icona home. Procedura: in Safari → Condividi → "Aggiungi a Home".
+       Se hai già un'icona vecchia, rimuovila e riaggiungila dopo questo update. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Robot AI">
+  <meta name="theme-color" content="#070d18">
   <title>Robot AI — Gemini v2</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
@@ -189,6 +196,12 @@
       <button id="btnZero" onclick="calibrateNoise()" style="font-family:var(--mono);font-size:.55rem;padding:5px 9px;background:var(--surf);border:1px solid var(--bord);border-radius:7px;color:var(--muted);cursor:pointer;white-space:nowrap;letter-spacing:1px">LIV.ZERO</button>
       <div class="rms-val" id="rmsVal"> 0%</div>
     </div>
+  </div>
+  <!-- Soglia rumore manuale: alza per silenziare ronzii/fruscii a riposo -->
+  <div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-family:var(--mono);font-size:.58rem;color:var(--muted)">
+    <span style="white-space:nowrap">SOGLIA ZERO</span>
+    <input type="range" id="rNoiseGate" min="0" max="80" value="10" step="1" oninput="updateNoiseGate(this.value)" style="flex:1;accent-color:var(--green)">
+    <span id="noiseGateVal" style="min-width:24px;text-align:right">10</span>
   </div>
   <!-- selezione mic -->
   <div class="mic-row">
@@ -407,6 +420,26 @@
   </div>
 </div>
 
+<!-- BACKUP COMPLETO -->
+<div class="card">
+  <div class="card-hd">💾 Backup completo <span style="color:var(--muted);font-size:.57rem">— personaggi, conoscenza, impostazioni</span></div>
+  <div style="font-size:.62rem;color:var(--muted);font-family:var(--mono);margin-bottom:8px;line-height:1.4">
+    Salva un file .json con tutti i tuoi dati (esclusa la chiave API per sicurezza).<br>
+    Usalo per migrare tra Safari/Chrome o tra iPhone.
+  </div>
+  <div class="brow">
+    <button class="bs" onclick="exportBackup()">📤 Esporta backup</button>
+    <div class="upl" style="flex:1;margin-top:0" onclick="document.getElementById('fBackup').click()">
+      <input type="file" id="fBackup" accept=".json,application/json" onchange="importBackup(this)">
+      📂 Importa backup
+    </div>
+  </div>
+  <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:.62rem;color:var(--muted);font-family:var(--mono);cursor:pointer">
+    <input type="checkbox" id="chkBackupKey" style="margin:0">
+    Includi anche la API key nel backup (⚠️ tieni il file in un posto sicuro)
+  </label>
+</div>
+
 <!-- API KEY -->
 <div class="card">
   <div class="card-hd">🔑 API Key Google <span style="color:var(--muted);font-size:.57rem">— si inserisce una volta sola</span></div>
@@ -493,6 +526,18 @@ let sharedMicStream=null, vuCtx=null, vuAnalyser=null, vuRaf=null;
 let vuNoiseFloor=0;   // impostato manualmente con LIV.ZERO
 let vuDisplayPct=0;   // livello display corrente (0-1), usato dal VAD gate
 let vuCalibActive=false, vuCalibFrames=0, vuCalibMax=0;
+// Soglia rumore regolabile dall'utente (slider SOGLIA ZERO).
+// Valore 0-80 su scala 0-255: alza per silenziare rumori di fondo.
+const LS_NOISE_GATE='gemini_noise_gate';
+let userNoiseGate=(()=>{
+  try{const v=parseInt(localStorage.getItem(LS_NOISE_GATE));return isNaN(v)?10:Math.max(0,Math.min(80,v));}
+  catch{return 10;}
+})();
+function updateNoiseGate(v){
+  userNoiseGate=parseInt(v)||0;
+  const lbl=document.getElementById('noiseGateVal'); if(lbl)lbl.textContent=String(userNoiseGate);
+  try{localStorage.setItem(LS_NOISE_GATE,String(userNoiseGate));}catch{}
+}
 
 function calibrateNoise(){
   // Misura il rumore di fondo per ~1.5 secondi (90 frame a ~60fps)
@@ -517,6 +562,11 @@ let sessionHandle=null; // handle per session resumption (ricevuto da Gemini)
 // ═══════════════════════════════════════════════════════════════
 function init(){
   buildVU(); loadKey(); renderChars(); loadKnowLS(); updVadUI();
+  // Ripristina slider soglia rumore dal valore in localStorage
+  const ng=document.getElementById('rNoiseGate');
+  if(ng){ng.value=userNoiseGate;}
+  const ngl=document.getElementById('noiseGateVal');
+  if(ngl){ngl.textContent=String(userNoiseGate);}
   setInterval(tickTimer,500); netCheck(); setInterval(netCheck,14000); enumCams();
   try{navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);}catch(e){}
   setInterval(pollMics,4000);
@@ -621,13 +671,13 @@ function buildVU(){
 }
 function drawVU(level){
   localVadLevel=level;  // peak grezzo 0-255, aggiornato ogni frame
-  // Soglia minima fissa per silenziare il rumore di fondo a riposo.
+  // Soglia rumore: regolabile dall'utente via slider "SOGLIA ZERO".
   // La curva gamma in tick() (pow 0.55) amplifica i valori bassi: senza
-  // questo gate, anche silenzio totale segna ~15-20%. È indipendente da
-  // LIV.ZERO: se l'utente ha già calibrato, vuNoiseFloor è più alto e
-  // questo gate diventa irrilevante (innocuo).
-  const MIN_NOISE_GATE = 10;
-  const effectiveFloor = Math.max(vuNoiseFloor, MIN_NOISE_GATE);
+  // questo gate, anche silenzio totale segna ~20-30% (ronzii, fruscii).
+  // È indipendente da LIV.ZERO: se l'utente ha calibrato, si usa il max
+  // tra i due. Il valore di default (10) è prudente; alzalo per silenzi
+  // ambientali più rumorosi.
+  const effectiveFloor = Math.max(vuNoiseFloor, userNoiseGate);
   // Calcola il livello display: corretto dal floor effettivo, scalato col gain
   const corrected = Math.max(0, level - effectiveFloor);
   const gainDisplay = parseInt(document.getElementById('rGain').value) / 100;
@@ -1630,6 +1680,128 @@ function importChar(inp){
     editingChar=null; document.getElementById('charEd').classList.add('open');
     inp.value=''; toast('📂 Caricato — controlla e salva');
   };
+  r.readAsText(file);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BACKUP COMPLETO — export/import di tutti i dati persistenti
+// Salva: personaggi, conoscenza, ultimo personaggio, soglia rumore.
+// Opzionale: API key (solo se l'utente spunta esplicitamente).
+// Formato: JSON v1, retrocompatibile. Nessuna logica esistente toccata.
+// ═══════════════════════════════════════════════════════════════
+function exportBackup(){
+  try{
+    const includeKey = document.getElementById('chkBackupKey')?.checked || false;
+    const backup = {
+      _format: 'robot-ai-gemini-backup',
+      _version: 1,
+      _exportedAt: new Date().toISOString(),
+      data: {}
+    };
+    // Personaggi
+    try{const v=localStorage.getItem(LS_CHARS); if(v) backup.data.characters=JSON.parse(v);}catch(e){}
+    // Ultimo personaggio scelto
+    try{const v=localStorage.getItem(LS_LAST); if(v) backup.data.lastChar=v;}catch(e){}
+    // Conoscenza
+    try{const v=localStorage.getItem(LS_KNOW); if(v) backup.data.knowledge=JSON.parse(v);}catch(e){}
+    // Soglia rumore
+    try{const v=localStorage.getItem(LS_NOISE_GATE); if(v) backup.data.noiseGate=parseInt(v);}catch(e){}
+    // API key SOLO se richiesto esplicitamente
+    if(includeKey){
+      try{const v=localStorage.getItem(LS_KEY); if(v) backup.data.apiKey=v;}catch(e){}
+    }
+    const json = JSON.stringify(backup, null, 2);
+    const stamp = new Date().toISOString().slice(0,10);
+    const url = URL.createObjectURL(new Blob([json],{type:'application/json'}));
+    const a = document.createElement('a');
+    a.href=url; a.download='robot-ai-backup-'+stamp+'.json'; a.click();
+    URL.revokeObjectURL(url);
+    const nChar = backup.data.characters?.length || 0;
+    toast('📤 Backup esportato · '+nChar+' personaggi'+(includeKey?' · con API key':''));
+  }catch(e){
+    toast('❌ Errore export: '+e.message);
+    dbg('❌ exportBackup: '+e.message);
+  }
+}
+
+function importBackup(inp){
+  const file = inp.files[0]; if(!file) return;
+  const r = new FileReader();
+  r.onload = e => {
+    try{
+      const backup = JSON.parse(e.target.result);
+      // Validazione formato
+      if(!backup || typeof backup !== 'object'){
+        toast('❌ File non valido'); inp.value=''; return;
+      }
+      if(backup._format !== 'robot-ai-gemini-backup'){
+        toast('⚠️ Formato non riconosciuto · provo comunque...');
+      }
+      const d = backup.data || backup; // tollerante: accetta anche JSON "piatto"
+      // Conferma utente prima di sovrascrivere
+      const existing = [];
+      try{if(localStorage.getItem(LS_CHARS)) existing.push('personaggi');}catch(e){}
+      try{if(localStorage.getItem(LS_KNOW)) existing.push('conoscenza');}catch(e){}
+      if(existing.length > 0){
+        if(!confirm('Importare il backup sovrascriverà: '+existing.join(', ')+'.\n\nContinuare?')){
+          inp.value=''; return;
+        }
+      }
+      let imported = [];
+      // Personaggi
+      if(Array.isArray(d.characters)){
+        try{localStorage.setItem(LS_CHARS, JSON.stringify(d.characters)); imported.push(d.characters.length+' personaggi');}catch(e){dbg('❌ import chars: '+e.message);}
+      }
+      // Ultimo personaggio
+      if(typeof d.lastChar === 'string'){
+        try{localStorage.setItem(LS_LAST, d.lastChar);}catch(e){}
+      }
+      // Conoscenza
+      if(d.knowledge && typeof d.knowledge === 'object'){
+        try{
+          localStorage.setItem(LS_KNOW, JSON.stringify(d.knowledge));
+          knowledge = {title: d.knowledge.title||'', text: d.knowledge.text||''};
+          imported.push('conoscenza');
+        }catch(e){dbg('❌ import know: '+e.message);}
+      }
+      // Soglia rumore
+      if(typeof d.noiseGate === 'number' && d.noiseGate >= 0 && d.noiseGate <= 80){
+        try{
+          localStorage.setItem(LS_NOISE_GATE, String(d.noiseGate));
+          userNoiseGate = d.noiseGate;
+          const ng = document.getElementById('rNoiseGate'); if(ng) ng.value = d.noiseGate;
+          const ngl = document.getElementById('noiseGateVal'); if(ngl) ngl.textContent = String(d.noiseGate);
+          imported.push('soglia rumore');
+        }catch(e){}
+      }
+      // API key (solo se presente nel backup)
+      if(typeof d.apiKey === 'string' && d.apiKey.trim()){
+        try{
+          localStorage.setItem(LS_KEY, d.apiKey);
+          sessionStorage.setItem(LS_KEY, d.apiKey);
+          const keyIn = document.getElementById('keyIn'); if(keyIn) keyIn.value = d.apiKey;
+          // Aggiorna lo stato chiave se la funzione esiste
+          if(typeof onKeyIn === 'function') onKeyIn();
+          imported.push('API key');
+        }catch(e){}
+      }
+      // Rinfresca UI senza toccare logiche esistenti: ricarica liste
+      if(typeof renderChars === 'function') renderChars();
+      if(typeof renderKnowView === 'function') renderKnowView();
+      inp.value='';
+      if(imported.length){
+        toast('✅ Importato: '+imported.join(', '));
+        dbg('📥 Backup importato: '+imported.join(', '));
+      }else{
+        toast('⚠️ Nessun dato valido nel backup');
+      }
+    }catch(err){
+      toast('❌ File JSON non valido: '+err.message);
+      dbg('❌ importBackup: '+err.message);
+      inp.value='';
+    }
+  };
+  r.onerror = () => { toast('❌ Errore lettura file'); inp.value=''; };
   r.readAsText(file);
 }
 
