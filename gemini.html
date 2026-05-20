@@ -156,6 +156,7 @@
     <span id="reconnMsg">Riconnessione in corso...</span>
   </div>
   <div class="dot-row">
+    <div class="dw"><div class="dot on" id="dHealth"></div><span>OK</span></div>
     <div class="dw"><div class="dot" id="dNet"></div><span>NET</span></div>
     <div class="dw"><div class="dot" id="dAI"></div><span>AI</span></div>
     <div class="dw"><div class="dot" id="dMic"></div><span>MIC</span></div>
@@ -622,7 +623,9 @@ function drawVU(level){
   const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
   document.getElementById('thrLine').style.left=(thrPct*100)+'%';
   const s=vuEl.children;
-  const isMutedNow = autoMuteSuspended;
+  // VU "spento" sia con auto-mute attivo (robot parla) sia con mute manuale.
+  // Usa la stessa classe .seg.muted già definita nel CSS.
+  const isMutedNow = autoMuteSuspended || muted;
   for(let i=0;i<N_SEGS;i++){
     if(isMutedNow){s[i].className='seg muted';}
     else{const p=(i+1)/N_SEGS; s[i].className='seg '+(i<lit?(p<.6?'g':p<.85?'y':'r'):'');}
@@ -947,18 +950,21 @@ async function conn(){
     },WS_TIMEOUT_MS);
     ws.onopen=()=>{ dbg('🔗 WS aperto — invio setup'+(sessionHandle?' (resumption)':'')+'...'); sendSetup(); };
     ws.onmessage=onMsg;
-    ws.onerror=e=>{console.error('[WS]',e);dbg('❌ WS errore');};
+    ws.onerror=e=>{console.error('[WS]',e);dbg('❌ WS errore');health('err','WS errore');};
     ws.onclose=e=>{
       dbg('🔌 WS chiuso: '+e.code+(e.reason?' '+e.reason:''));
       clearTimeout(wsTimeoutTimer);
       setupReady=false;
       const wasConn=connected; disc();
+      // WS chiuso inaspettatamente = errore. Chiusura voluta dall'utente = OK.
+      if(!userDisconnected) health('err','WS chiuso ('+e.code+')');
       if(wasConn&&!userDisconnected)scheduleReconnect();
       else if(!wasConn&&!userDisconnected&&reconnectCount>0)scheduleReconnect();
     };
   }catch(e){
     clearTimeout(wsTimeoutTimer);
     dbg('❌ conn: '+e.name+': '+e.message); toast('❌ '+e.message); setSt('idle');
+    health('err','Conn: '+e.message);
     document.getElementById('btnConn').disabled=false;
     if(!userDisconnected)scheduleReconnect();
   }
@@ -1116,6 +1122,7 @@ function onMsg(e){
   if(m.error){
     const msg=m.error.message||'Errore Gemini';
     addMsg('❌ '+msg,'sys');toast('⚠️ '+msg);dbg('❌ API: '+msg);
+    health('err','API: '+msg);
     if(m.error.code===503||m.error.code===500){disc();if(!userDisconnected)scheduleReconnect();}
   }
   // Session resumption: salva il nuovo handle quando Gemini lo invia
@@ -1336,7 +1343,10 @@ function startVideoStream(){
     // accumulare latenza (Gemini comunque processa max 1 fps).
     if(ws.bufferedAmount > 200000){
       droppedCount++;
-      if(droppedCount % 5 === 0) dbg('⏭ Drop frame: WS buffer pieno ('+Math.round(ws.bufferedAmount/1024)+' KB), drop totali: '+droppedCount);
+      if(droppedCount % 5 === 0){
+        dbg('⏭ Drop frame: WS buffer pieno ('+Math.round(ws.bufferedAmount/1024)+' KB), drop totali: '+droppedCount);
+        health('warn','Drop video: '+droppedCount+' frame');
+      }
       return;
     }
     try{
@@ -1357,7 +1367,7 @@ function startVideoStream(){
       // Log primo frame e poi ogni 10 frame per non spammare
       if(frameCount === 1) dbg('📷 1° frame inviato: '+c.width+'x'+c.height+' · '+Math.round(b64.length*0.75/1024)+' KB');
       else if(frameCount % 10 === 0) dbg('📷 '+frameCount+' frame inviati');
-    }catch(e){dbg('❌ videoStream frame: '+e.message);}
+    }catch(e){dbg('❌ videoStream frame: '+e.message);health('err','Frame video: '+e.message);}
   }, intervalMs);
 }
 function stopVideoStream(){
@@ -1438,6 +1448,32 @@ function dot(id,st){
   const d=document.getElementById(id); if(!d)return;
   d.className='dot'+(st==='on'?' on':st==='er'?' er':st==='tk'?' tk':st==='muted'?' muted':'');
 }
+// ═══════════════════════════════════════════════════════════════
+// HEALTH INDICATOR — pallino diagnostico globale
+// Verde = OK. Rosso = errore recente. Giallo (tk) = warning.
+// Auto-recovery: torna verde dopo HEALTH_RECOVERY_MS senza nuovi
+// problemi. Non interferisce con la logica esistente: è solo lettura.
+// ═══════════════════════════════════════════════════════════════
+let healthTimer=null;
+const HEALTH_RECOVERY_MS=5000;
+function health(level, reason){
+  // level: 'ok' | 'warn' | 'err'
+  const d=document.getElementById('dHealth'); if(!d)return;
+  if(level==='ok'){d.className='dot on';}
+  else if(level==='warn'){d.className='dot tk';dbg('⚠️ '+(reason||'warning'));}
+  else if(level==='err'){d.className='dot er';dbg('❌ HEALTH: '+(reason||'errore'));}
+  // Programma auto-recovery (solo se non era già OK)
+  if(level!=='ok'){
+    if(healthTimer)clearTimeout(healthTimer);
+    healthTimer=setTimeout(()=>{
+      const cur=document.getElementById('dHealth');
+      if(cur)cur.className='dot on';
+      healthTimer=null;
+    }, HEALTH_RECOVERY_MS);
+  } else if(healthTimer){
+    clearTimeout(healthTimer); healthTimer=null;
+  }
+}
 function updBtn(){
   const b=document.getElementById('btnConn');
   if(connected){b.classList.add('off');b.textContent='🔴  DISCONNETTI';}
@@ -1452,6 +1488,9 @@ function toggleMute(){
   const b=document.getElementById('btnMute');
   b.textContent=muted?'🔇 MUTO':'🎙 ATTIVO'; b.classList.toggle('on',muted);
   toast(muted?'🔇 Mic silenziato':'🎙 Mic attivo');
+  // Aggiorna pallino MIC per coerenza visiva con VU
+  if(muted) dot('dMic','muted');
+  else if(connected && !autoMuteSuspended) dot('dMic','on');
   if(muted && ws&&ws.readyState===WebSocket.OPEN&&setupReady){
     ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
     vadWasActive=false;
