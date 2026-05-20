@@ -637,6 +637,10 @@ function drawVU(level){
 // ═══════════════════════════════════════════════════════════════
 function setRobotSpeaking(speaking){
   robotSpeaking = speaking;
+  // Aggiorna label stato: quando Gemini inizia a parlare mostra "GEMINI PARLA".
+  // Quando torna false, NON tocchiamo la label qui: ci pensa il codice
+  // esistente (setSt('listening') dopo turnComplete a riga 1103) a ripristinarla.
+  if(speaking && connected) setSt('gemini_speaking');
   const autoMute = document.getElementById('chkAutoMute').checked;
   autoMuteSuspended = speaking && autoMute;
 
@@ -1421,7 +1425,13 @@ function updVadUI(){
 // STATUS
 // ═══════════════════════════════════════════════════════════════
 function setSt(s){
-  const m={idle:'● IDLE',connecting:'◌ CONNESSIONE...',listening:'◉ IN ASCOLTO',talking:'▶ PARLA'};
+  const m={
+    idle:'● IDLE',
+    connecting:'◌ CONNESSIONE...',
+    listening:'◉ IN ASCOLTO',
+    talking:'▶ TU PARLI',
+    gemini_speaking:'🔊 GEMINI PARLA'
+  };
   document.getElementById('stLbl').textContent=m[s]||s;
 }
 function dot(id,st){
