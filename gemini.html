@@ -150,6 +150,32 @@
     .ks.ok{color:var(--green)}.ks.w{color:var(--yellow)}
     #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--bord);color:var(--text);border-radius:20px;padding:8px 18px;font-size:.76rem;font-family:var(--mono);opacity:0;transition:opacity .3s;pointer-events:none;z-index:9998;white-space:nowrap}
     #toast.s{opacity:1}
+
+    /* ═══════ CONSOLE DEBUG ═══════ */
+    .dbgCard{margin-top:10px}
+    .dbgHd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:.66rem}
+    .dbgHd .title{color:var(--green);font-weight:bold;letter-spacing:1px}
+    .dbgHd .stats{color:var(--muted);font-size:.6rem}
+    .dbgBtns{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+    .dbgBtn{font-family:var(--mono);font-size:.58rem;padding:4px 8px;background:var(--surf);border:1px solid var(--bord);border-radius:6px;color:var(--muted);cursor:pointer;letter-spacing:.5px}
+    .dbgBtn:active{background:var(--bord)}
+    .dbgBtn.on{color:var(--green);border-color:var(--green)}
+    .dbgBtn.warn{color:var(--yellow);border-color:var(--yellow)}
+    .dbgFilters{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;padding:6px;background:var(--surf);border-radius:6px}
+    .dbgFilters .dbgBtn{font-size:.55rem;padding:3px 7px}
+    .dbgBox{background:#020810;border:1px solid var(--bord);border-radius:7px;padding:8px;margin-top:7px;height:220px;overflow-y:auto;font-family:var(--mono);font-size:.6rem;line-height:1.5;color:#9bb}
+    .dbgBox.tall{height:380px}
+    .dbgLine{white-space:pre-wrap;word-break:break-word;padding:1px 4px;border-radius:3px}
+    .dbgLine.err{color:#ff6060;background:rgba(255,60,60,.08)}
+    .dbgLine.warn{color:#ffc744;background:rgba(255,200,0,.05)}
+    .dbgLine.ok{color:#5eff9a}
+    .dbgLine.info{color:#9bb}
+    .dbgLine.audio{color:#7cd5ff}
+    .dbgLine.video{color:#c79aff}
+    .dbgLine.ws{color:#ffaa6c}
+    .dbgLine.vad{color:#a8e860}
+    .dbgLine .ts{color:#446;margin-right:5px}
+    .dbgLine .tag{display:inline-block;min-width:48px;font-size:.55rem;opacity:.8;margin-right:4px}
     .back{font-size:.72rem;color:var(--muted);text-decoration:none;display:flex;align-items:center;gap:5px;width:100%;max-width:500px;font-family:var(--mono);padding:2px 0}
     .back:hover{color:var(--green)}
     select.mic-sel{flex:1;background:var(--surf);border:1px solid var(--bord);border-radius:8px;color:var(--text);padding:7px 10px;font-size:.73rem;outline:none;-webkit-appearance:none;font-family:var(--mono)}
@@ -453,6 +479,31 @@
     <input type="file" id="fKeys" accept=".txt" onchange="loadKeysFile(this)">
     📂 Carica <strong>keys.txt</strong> · <code>GEMINI_KEY=AIza...</code>
   </div>
+</div>
+
+<!-- CONSOLE DEBUG -->
+<div class="card dbgCard">
+  <div class="dbgHd">
+    <span class="title">🔧 CONSOLE DEBUG</span>
+    <span class="stats" id="dbgStats">0 righe</span>
+  </div>
+  <div class="dbgBtns">
+    <button class="dbgBtn on" id="dbgBtnAuto" onclick="dbgToggleAuto()">▼ Auto-scroll</button>
+    <button class="dbgBtn" onclick="dbgToggleHeight()">⤢ Espandi</button>
+    <button class="dbgBtn" onclick="dbgCopy()">📋 Copia</button>
+    <button class="dbgBtn" onclick="dbgSave()">💾 Salva .txt</button>
+    <button class="dbgBtn warn" onclick="dbgClear()">🗑 Pulisci</button>
+  </div>
+  <div class="dbgFilters">
+    <button class="dbgBtn on" data-cat="all" onclick="dbgFilter('all')">TUTTO</button>
+    <button class="dbgBtn" data-cat="err" onclick="dbgFilter('err')">ERR</button>
+    <button class="dbgBtn" data-cat="warn" onclick="dbgFilter('warn')">WARN</button>
+    <button class="dbgBtn" data-cat="ws" onclick="dbgFilter('ws')">WS</button>
+    <button class="dbgBtn" data-cat="audio" onclick="dbgFilter('audio')">AUDIO</button>
+    <button class="dbgBtn" data-cat="vad" onclick="dbgFilter('vad')">VAD</button>
+    <button class="dbgBtn" data-cat="video" onclick="dbgFilter('video')">VIDEO</button>
+  </div>
+  <div class="dbgBox" id="dbgBox"></div>
 </div>
 
 <div id="toast"></div>
@@ -775,11 +826,134 @@ function appendRobotTxt(delta){
   document.getElementById('chatBox').scrollTop=document.getElementById('chatBox').scrollHeight;
 }
 function finalizeRobot(){robotMsgEl=null;robotTxt='';}
-function dbg(msg){
-  const box=document.getElementById('chatBox');
-  const d=document.createElement('div'); d.className='msg sys'; d.style.fontSize='.6rem'; d.style.color='#2a7a5a';
-  d.textContent='['+new Date().toLocaleTimeString()+'] '+msg;
-  box.appendChild(d); box.scrollTop=box.scrollHeight; console.log('[DBG]',msg);
+// ═══════════════════════════════════════════════════════════════
+// CONSOLE DEBUG — buffer 500 righe, categorizzazione, copia/salva
+// La funzione dbg() resta retrocompatibile (un solo arg = info).
+// Nuovo modulo: usa dbgC(category, msg) o le helper dbgErr/dbgWarn/ecc.
+// ═══════════════════════════════════════════════════════════════
+const DBG_MAX_LINES = 500;
+let dbgBuffer = [];          // tutte le righe (anche filtrate via)
+let dbgAutoScroll = true;
+let dbgActiveFilter = 'all';
+let dbgCounters = {all:0, err:0, warn:0, ws:0, audio:0, vad:0, video:0, ok:0, info:0};
+
+// Auto-classifica msg in base a contenuto (per retrocompat con vecchi dbg)
+function dbgClassify(msg){
+  const s = String(msg);
+  if(/^❌|errore|error|fallit/i.test(s)) return 'err';
+  if(/^⚠️|^🛑|^🚨|warn|drop/i.test(s)) return 'warn';
+  if(/^✅|connesso|riuscit|pronto|attivo|ripristin|sbloccato/i.test(s)) return 'ok';
+  if(/WS|websocket|🌐|🔗|🔌|goAway|setup|handle/i.test(s)) return 'ws';
+  if(/🎥|video|frame|📷|streaming|cam|👁/i.test(s)) return 'video';
+  if(/audio|🔊|🎤|mic|chunk|PCM|🔇|audioStream/i.test(s)) return 'audio';
+  if(/VAD|vad|soglia|silenzi/i.test(s)) return 'vad';
+  return 'info';
+}
+
+function dbg(msg, forcedCat){
+  const cat = forcedCat || dbgClassify(msg);
+  const ts = new Date().toLocaleTimeString();
+  dbgBuffer.push({ts, cat, msg: String(msg)});
+  if(dbgBuffer.length > DBG_MAX_LINES) dbgBuffer.shift();
+  dbgCounters.all++;
+  if(dbgCounters[cat] !== undefined) dbgCounters[cat]++;
+  dbgRenderLine(ts, cat, msg);
+  dbgUpdateStats();
+  console.log('[DBG]', cat.toUpperCase(), msg);
+}
+// Helper per chiamate semantiche
+function dbgErr(msg){dbg(msg, 'err');}
+function dbgWarn(msg){dbg(msg, 'warn');}
+function dbgOk(msg){dbg(msg, 'ok');}
+function dbgWs(msg){dbg(msg, 'ws');}
+function dbgAudio(msg){dbg(msg, 'audio');}
+function dbgVad(msg){dbg(msg, 'vad');}
+function dbgVideo(msg){dbg(msg, 'video');}
+
+function dbgRenderLine(ts, cat, msg){
+  if(dbgActiveFilter !== 'all' && dbgActiveFilter !== cat) return;
+  const box = document.getElementById('dbgBox'); if(!box) return;
+  const d = document.createElement('div');
+  d.className = 'dbgLine ' + cat;
+  d.innerHTML = '<span class="ts">'+ts+'</span><span class="tag">['+cat.toUpperCase()+']</span>'+escapeHtml(String(msg));
+  box.appendChild(d);
+  // Limita anche il DOM per evitare lag
+  while(box.children.length > DBG_MAX_LINES) box.removeChild(box.firstChild);
+  if(dbgAutoScroll) box.scrollTop = box.scrollHeight;
+}
+function escapeHtml(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function dbgUpdateStats(){
+  const el = document.getElementById('dbgStats');
+  if(el) el.textContent = dbgBuffer.length+' righe · '+dbgCounters.err+'❌ '+dbgCounters.warn+'⚠️';
+}
+function dbgFilter(cat){
+  dbgActiveFilter = cat;
+  document.querySelectorAll('.dbgFilters .dbgBtn').forEach(b=>{
+    b.classList.toggle('on', b.dataset.cat === cat);
+  });
+  // Re-render tutto il buffer col nuovo filtro
+  const box = document.getElementById('dbgBox'); if(!box) return;
+  box.innerHTML = '';
+  dbgBuffer.forEach(e => {
+    if(cat === 'all' || e.cat === cat){
+      const d = document.createElement('div');
+      d.className = 'dbgLine ' + e.cat;
+      d.innerHTML = '<span class="ts">'+e.ts+'</span><span class="tag">['+e.cat.toUpperCase()+']</span>'+escapeHtml(e.msg);
+      box.appendChild(d);
+    }
+  });
+  if(dbgAutoScroll) box.scrollTop = box.scrollHeight;
+}
+function dbgToggleAuto(){
+  dbgAutoScroll = !dbgAutoScroll;
+  const b = document.getElementById('dbgBtnAuto');
+  if(b){
+    b.classList.toggle('on', dbgAutoScroll);
+    b.textContent = (dbgAutoScroll?'▼':'⏸')+' Auto-scroll';
+  }
+}
+function dbgToggleHeight(){
+  const box = document.getElementById('dbgBox');
+  if(box) box.classList.toggle('tall');
+}
+function dbgClear(){
+  dbgBuffer = [];
+  dbgCounters = {all:0, err:0, warn:0, ws:0, audio:0, vad:0, video:0, ok:0, info:0};
+  const box = document.getElementById('dbgBox'); if(box) box.innerHTML = '';
+  dbgUpdateStats();
+  dbg('🗑 Console pulita');
+}
+function dbgDumpText(){
+  return dbgBuffer.map(e => '['+e.ts+'] ['+e.cat.toUpperCase()+'] '+e.msg).join('\n');
+}
+async function dbgCopy(){
+  const txt = dbgDumpText();
+  try{
+    await navigator.clipboard.writeText(txt);
+    toast('📋 Log copiato ('+dbgBuffer.length+' righe)');
+  }catch(e){
+    // Fallback: textarea temporanea
+    try{
+      const ta = document.createElement('textarea');
+      ta.value = txt; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta);
+      toast('📋 Log copiato (fallback)');
+    }catch(err){
+      toast('❌ Copia fallita: '+err.message);
+    }
+  }
+}
+function dbgSave(){
+  const txt = dbgDumpText();
+  const stamp = new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
+  const url = URL.createObjectURL(new Blob([txt],{type:'text/plain'}));
+  const a = document.createElement('a');
+  a.href = url; a.download = 'gemini-debug-'+stamp+'.txt'; a.click();
+  URL.revokeObjectURL(url);
+  toast('💾 Log salvato');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1022,6 +1196,18 @@ async function conn(){
     workletNode.port.onmessage=onChunk;
     if(analyser)analyser.connect(workletNode);
     dot('dMic','on');
+    dbgAudio('🔧 Worklet PCM16 attivo · AudioContext state:'+audioCtx.state+' SR:'+audioCtx.sampleRate+'Hz');
+    // Watchdog: dopo 5 secondi controlla che onChunk venga effettivamente chiamato.
+    // Se calls=0, il worklet non riceve audio → problema di connessione audio.
+    setTimeout(()=>{
+      if(!setupReady) return; // non ancora pronti, normale
+      if(onChunkDiag.calls === 0){
+        dbgErr('🚨 WATCHDOG: il worklet NON sta ricevendo audio dal microfono! AudioContext state:'+(audioCtx?audioCtx.state:'null'));
+        health('err','Worklet senza audio');
+      } else {
+        dbgAudio('✓ Worklet riceve audio: '+onChunkDiag.calls+' chunk in 5s');
+      }
+    }, 5000);
     const model=document.getElementById('selModel').value;
     const apiVer=model.startsWith('gemini-live-')?'v1alpha':'v1beta';
     const GEMINI_WS=GEMINI_WS_BASE+'.'+apiVer+'.GenerativeService.BidiGenerateContent';
@@ -1101,17 +1287,36 @@ let vadWasActive=false;    // true se nell'ultimo chunk eravamo sopra soglia
 let vadSilenceFrames=0;    // frame consecutivi sotto soglia dopo parlato
 const VAD_SILENCE_FRAMES=18; // ~300ms a 60fps prima di inviare audioStreamEnd
 
+let onChunkDiag = {calls:0, blockedSetup:0, blockedMute:0, blockedWS:0, blockedAutoMute:0, blockedVAD:0, sent:0, lastLog:0};
 function onChunk(e){
-  if(!setupReady)return;
-  if(autoMuteSuspended)return;
-  if(!ws||ws.readyState!==WebSocket.OPEN||muted)return;
+  onChunkDiag.calls++;
+  if(!setupReady){onChunkDiag.blockedSetup++; return;}
+  if(autoMuteSuspended){onChunkDiag.blockedAutoMute++; return;}
+  if(muted){onChunkDiag.blockedMute++; return;}
+  if(!ws||ws.readyState!==WebSocket.OPEN){onChunkDiag.blockedWS++; return;}
   const pcm=new Int16Array(e.data);
   // Gain applicato SOLO nel worklet
   // VAD gate: confronta vuDisplayPct (gain+noisefloor aware) con soglia slider
   const thrRaw=parseInt(document.getElementById('rThr').value);
   const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
   const aboveVad = (vuDisplayPct >= thrPct);
+  // Log diagnostico ogni 3 secondi: cosa sta facendo onChunk
+  const now = Date.now();
+  if(now - onChunkDiag.lastLog > 3000){
+    onChunkDiag.lastLog = now;
+    if(onChunkDiag.sent === 0 && onChunkDiag.calls > 50){
+      // Nessun chunk inviato dopo 50+ chiamate: c'è un problema, logghiamo
+      dbgWarn('🔍 Diagnostica onChunk · chiamate:'+onChunkDiag.calls+' inviati:'+onChunkDiag.sent
+        +' · blocchi: setup='+onChunkDiag.blockedSetup
+        +' mute='+onChunkDiag.blockedMute
+        +' autoMute='+onChunkDiag.blockedAutoMute
+        +' ws='+onChunkDiag.blockedWS
+        +' vad='+onChunkDiag.blockedVAD
+        +' · vuLvl='+(vuDisplayPct*100).toFixed(0)+'% thr='+(thrPct*100).toFixed(0)+'%');
+    }
+  }
   if(!aboveVad){
+    onChunkDiag.blockedVAD++;
     if(vadWasActive){
       vadSilenceFrames++;
       // Aspetta VAD_SILENCE_FRAMES frame consecutivi di silenzio prima di
@@ -1126,10 +1331,19 @@ function onChunk(e){
     return;
   }
   // Sopra soglia: invia audio e resetta contatore silenzio
+  if(!vadWasActive){
+    // Primo chunk del turno: log VAD activation
+    dbgVad('🎙 VAD attivo · vuLvl='+(vuDisplayPct*100).toFixed(0)+'% > thr='+(thrPct*100).toFixed(0)+'%');
+  }
   vadWasActive=true;
   vadSilenceFrames=0;
   const actualSR=audioCtx?audioCtx.sampleRate:48000;
   ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate='+actualSR}]}}));
+  onChunkDiag.sent++;
+  // Log ogni 100 chunk inviati per confermare flusso attivo
+  if(onChunkDiag.sent % 100 === 0){
+    dbgAudio('📤 '+onChunkDiag.sent+' chunk audio inviati a Gemini');
+  }
 }
 
 function onMsg(e){
@@ -1153,6 +1367,15 @@ function onMsg(e){
     addMsg('✅ Gemini connesso · modello: '+document.getElementById('selModel').value+' · voce: '+(document.getElementById('selVoice').value||activeVoice),'sys');
     toast('✅ Gemini pronto');
     dbg('✅ setupComplete — invio audio abilitato. SR microfono: '+(audioCtx?audioCtx.sampleRate:'?')+'Hz');
+    // Reset contatori diagnostica onChunk per la nuova sessione
+    onChunkDiag = {calls:0, blockedSetup:0, blockedMute:0, blockedWS:0, blockedAutoMute:0, blockedVAD:0, sent:0, lastLog:0};
+    // Stato iniziale per debug: cosa potrebbe bloccare l'invio audio?
+    const blockers = [];
+    if(muted) blockers.push('mic MUTO');
+    if(autoMuteSuspended) blockers.push('autoMuteSuspended');
+    if(audioCtx && audioCtx.state !== 'running') blockers.push('AudioContext:'+audioCtx.state);
+    if(blockers.length) dbgWarn('⚠️ All\'avvio sessione, possibili blocchi: '+blockers.join(', '));
+    else dbgOk('✓ Stato pulito: mic attivo, AudioContext='+(audioCtx?audioCtx.state:'?'));
     // Se la camera è già attiva al momento del setupComplete, avvia
     // lo streaming video continuo (1 fps) richiesto dalla doc ufficiale.
     if(camActive) startVideoStream();
