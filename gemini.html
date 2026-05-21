@@ -197,12 +197,6 @@
       <div class="rms-val" id="rmsVal"> 0%</div>
     </div>
   </div>
-  <!-- Soglia rumore manuale: alza per silenziare ronzii/fruscii a riposo -->
-  <div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-family:var(--mono);font-size:.58rem;color:var(--muted)">
-    <span style="white-space:nowrap">SOGLIA ZERO</span>
-    <input type="range" id="rNoiseGate" min="0" max="150" value="10" step="1" oninput="updateNoiseGate(this.value)" style="flex:1;accent-color:var(--green)">
-    <span id="noiseGateVal" style="min-width:28px;text-align:right">10</span>
-  </div>
   <!-- selezione mic -->
   <div class="mic-row">
     <select class="mic-sel" id="selMic"><option value="">🎤 Auto</option></select>
@@ -267,6 +261,13 @@
     <button class="bs" id="btnSnap" onclick="doSnap()" disabled style="border-color:var(--green);color:var(--green)">📸 SNAP → AI</button>
   </div>
   <div class="f" style="margin-top:9px"><label>Videocamera</label><select id="selCam" onchange="switchCam()"></select></div>
+  <!-- Frequenza di campionamento video: tradeoff reattività ↔ token consumati.
+       1 fps = max consentito da Gemini (~263 tok/sec); 0.2 fps = 1 frame ogni 5 sec (~52 tok/sec). -->
+  <div style="display:flex;align-items:center;gap:8px;margin-top:9px;font-family:var(--mono);font-size:.58rem;color:var(--muted)">
+    <span style="white-space:nowrap">FRAME RATE</span>
+    <input type="range" id="rVidFps" min="2" max="10" value="10" step="1" oninput="updateVidFps(this.value)" style="flex:1;accent-color:var(--green)">
+    <span id="vidFpsLbl" style="min-width:62px;text-align:right">1.0 fps</span>
+  </div>
   <div id="snapSt" style="font-size:.63rem;color:var(--muted);font-family:var(--mono);margin-top:4px;min-height:14px"></div>
   <div class="eye-indicator" id="eyeInd"><div class="eye-dot"></div><span id="eyeLbl">👁 visione: spenta</span></div>
 </div>
@@ -516,9 +517,31 @@ let audioQ=[], playing=false, analyser=null, silStart=null;
 let nextPlayTime=0;   // scheduling preciso: quando finisce l'ultimo buffer pianificato
 let tok={ai:0,ao:0};
 let editingChar=null, camStream=null, camActive=false;
-let videoStreamInterval=null; // streaming video continuo a 1fps per Gemini Live API
-const VIDEO_STREAM_FPS=1;     // doc ufficiale: max 1 frame/sec
+let videoStreamInterval=null; // streaming video continuo per Gemini Live API
+// Frame rate video: configurabile via slider (0.2 - 1.0 fps).
+// Doc ufficiale Gemini Live: max 1 fps. Token consumati: ~263/sec a 1 fps.
+const LS_VID_FPS='gemini_vid_fps';
+let VIDEO_STREAM_FPS=(()=>{
+  try{const v=parseFloat(localStorage.getItem(LS_VID_FPS));return isNaN(v)?1.0:Math.max(0.2,Math.min(1.0,v));}
+  catch{return 1.0;}
+})();
 const VIDEO_STREAM_QUALITY=0.7; // jpeg quality per ridurre bandwidth nel continuo
+function updateVidFps(sliderVal){
+  // slider value 2..10 → fps 0.2..1.0
+  const fps = Math.max(0.2, Math.min(1.0, parseInt(sliderVal)/10));
+  VIDEO_STREAM_FPS = fps;
+  const lbl=document.getElementById('vidFpsLbl');
+  if(lbl){
+    const periodSec = (1/fps).toFixed(1);
+    lbl.textContent = fps.toFixed(1)+' fps' + (fps<1?' (1/'+periodSec+'s)':'');
+  }
+  try{localStorage.setItem(LS_VID_FPS, String(fps));}catch{}
+  // Hot-restart dello stream se attivo, per applicare subito il nuovo rate
+  if(videoStreamInterval){
+    stopVideoStream();
+    startVideoStream();
+  }
+}
 let knowledge={title:'',text:''};
 let robotMsgEl=null, robotTxt='';
 // mic/VU
@@ -526,18 +549,10 @@ let sharedMicStream=null, vuCtx=null, vuAnalyser=null, vuRaf=null;
 let vuNoiseFloor=0;   // impostato manualmente con LIV.ZERO
 let vuDisplayPct=0;   // livello display corrente (0-1), usato dal VAD gate
 let vuCalibActive=false, vuCalibFrames=0, vuCalibMax=0;
-// Soglia rumore regolabile dall'utente (slider SOGLIA ZERO).
-// Valore 0-80 su scala 0-255: alza per silenziare rumori di fondo.
+// Chiave localStorage mantenuta per compatibilità coi backup esistenti.
+// Lo slider SOGLIA ZERO è stato rimosso (creava conflitto col VAD gate
+// che usa la stessa vuDisplayPct: alzandola il robot smetteva di sentire).
 const LS_NOISE_GATE='gemini_noise_gate';
-let userNoiseGate=(()=>{
-  try{const v=parseInt(localStorage.getItem(LS_NOISE_GATE));return isNaN(v)?10:Math.max(0,Math.min(150,v));}
-  catch{return 10;}
-})();
-function updateNoiseGate(v){
-  userNoiseGate=Math.max(0,Math.min(150, parseInt(v)||0));
-  const lbl=document.getElementById('noiseGateVal'); if(lbl)lbl.textContent=String(userNoiseGate);
-  try{localStorage.setItem(LS_NOISE_GATE,String(userNoiseGate));}catch{}
-}
 
 function calibrateNoise(){
   // Misura il rumore di fondo per ~1.5 secondi (90 frame a ~60fps)
@@ -562,11 +577,16 @@ let sessionHandle=null; // handle per session resumption (ricevuto da Gemini)
 // ═══════════════════════════════════════════════════════════════
 function init(){
   buildVU(); loadKey(); renderChars(); loadKnowLS(); updVadUI();
-  // Ripristina slider soglia rumore dal valore in localStorage
-  const ng=document.getElementById('rNoiseGate');
-  if(ng){ng.value=userNoiseGate;}
-  const ngl=document.getElementById('noiseGateVal');
-  if(ngl){ngl.textContent=String(userNoiseGate);}
+  // Ripristina slider frame rate video da localStorage
+  const vfs=document.getElementById('rVidFps');
+  if(vfs){
+    vfs.value = Math.round(VIDEO_STREAM_FPS*10);
+    const lbl=document.getElementById('vidFpsLbl');
+    if(lbl){
+      const periodSec=(1/VIDEO_STREAM_FPS).toFixed(1);
+      lbl.textContent = VIDEO_STREAM_FPS.toFixed(1)+' fps' + (VIDEO_STREAM_FPS<1?' (1/'+periodSec+'s)':'');
+    }
+  }
   setInterval(tickTimer,500); netCheck(); setInterval(netCheck,14000); enumCams();
   try{navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);}catch(e){}
   setInterval(pollMics,4000);
@@ -671,18 +691,11 @@ function buildVU(){
 }
 function drawVU(level){
   localVadLevel=level;  // peak grezzo 0-255, aggiornato ogni frame
-  // Soglia rumore: regolabile dall'utente via slider "SOGLIA ZERO".
-  // La curva gamma in tick() (pow 0.55) amplifica i valori bassi: senza
-  // questo gate, anche silenzio totale segna ~20-30% (ronzii, fruscii).
-  // È indipendente da LIV.ZERO: se l'utente ha calibrato, si usa il max
-  // tra i due. Il valore di default (10) è prudente; alzalo per silenzi
-  // ambientali più rumorosi.
-  const effectiveFloor = Math.max(vuNoiseFloor, userNoiseGate);
-  // Calcola il livello display: corretto dal floor effettivo, scalato col gain
-  const corrected = Math.max(0, level - effectiveFloor);
+  // Calcola il livello display: corretto dal noise floor (LIV.ZERO), scalato col gain
+  const corrected = Math.max(0, level - vuNoiseFloor);
   const gainDisplay = parseInt(document.getElementById('rGain').value) / 100;
   const withGain = Math.min(255, corrected * gainDisplay);
-  const scale = Math.max(1, 255 - effectiveFloor);
+  const scale = Math.max(1, 255 - vuNoiseFloor);
   const pct = Math.min(1, withGain / scale);
   // vuDisplayPct: la percentuale effettivamente mostrata — usata dal VAD gate
   vuDisplayPct = pct;
@@ -1706,6 +1719,8 @@ function exportBackup(){
     try{const v=localStorage.getItem(LS_KNOW); if(v) backup.data.knowledge=JSON.parse(v);}catch(e){}
     // Soglia rumore
     try{const v=localStorage.getItem(LS_NOISE_GATE); if(v) backup.data.noiseGate=parseInt(v);}catch(e){}
+    // Frame rate video
+    try{const v=localStorage.getItem(LS_VID_FPS); if(v) backup.data.vidFps=parseFloat(v);}catch(e){}
     // API key SOLO se richiesto esplicitamente
     if(includeKey){
       try{const v=localStorage.getItem(LS_KEY); if(v) backup.data.apiKey=v;}catch(e){}
@@ -1765,13 +1780,24 @@ function importBackup(inp){
         }catch(e){dbg('❌ import know: '+e.message);}
       }
       // Soglia rumore
+      // Soglia rumore: chiave conservata per retro-compatibilità dei backup,
+      // ma lo slider è stato rimosso (causava blocco del VAD gate).
+      // Il valore viene scritto in localStorage ma non più letto da nessun codice attivo.
       if(typeof d.noiseGate === 'number' && d.noiseGate >= 0 && d.noiseGate <= 150){
+        try{localStorage.setItem(LS_NOISE_GATE, String(d.noiseGate));}catch(e){}
+      }
+      // Frame rate video
+      if(typeof d.vidFps === 'number' && d.vidFps >= 0.2 && d.vidFps <= 1.0){
         try{
-          localStorage.setItem(LS_NOISE_GATE, String(d.noiseGate));
-          userNoiseGate = d.noiseGate;
-          const ng = document.getElementById('rNoiseGate'); if(ng) ng.value = d.noiseGate;
-          const ngl = document.getElementById('noiseGateVal'); if(ngl) ngl.textContent = String(d.noiseGate);
-          imported.push('soglia rumore');
+          localStorage.setItem(LS_VID_FPS, String(d.vidFps));
+          VIDEO_STREAM_FPS = d.vidFps;
+          const vfs = document.getElementById('rVidFps'); if(vfs) vfs.value = Math.round(d.vidFps*10);
+          const lbl = document.getElementById('vidFpsLbl');
+          if(lbl){
+            const periodSec=(1/d.vidFps).toFixed(1);
+            lbl.textContent = d.vidFps.toFixed(1)+' fps' + (d.vidFps<1?' (1/'+periodSec+'s)':'');
+          }
+          imported.push('frame rate video');
         }catch(e){}
       }
       // API key (solo se presente nel backup)
