@@ -1219,7 +1219,21 @@ function onMsg(e){
   // goAway: Gemini avvisa che la connessione sta per chiudersi (~10min)
   // Riconnetti subito usando il sessionHandle per non perdere il contesto
   if(m.goAway){
-    const secsLeft = m.goAway.timeLeft ? Math.round(m.goAway.timeLeft/1000) : '?';
+    // timeLeft viene serializzato in vari modi a seconda del client:
+    //   - stringa protobuf duration: "10s", "600s"
+    //   - oggetto {seconds, nanos}
+    //   - numero (millisecondi)
+    // Gestiamo tutti i casi per evitare "NaNs" nel log.
+    let secsLeft = '?';
+    const tl = m.goAway.timeLeft;
+    if(typeof tl === 'string'){
+      const match = tl.match(/^(\d+(?:\.\d+)?)\s*s?$/);
+      if(match) secsLeft = Math.round(parseFloat(match[1]));
+    } else if(typeof tl === 'number' && !isNaN(tl)){
+      secsLeft = Math.round(tl/1000);
+    } else if(tl && typeof tl === 'object' && typeof tl.seconds !== 'undefined'){
+      secsLeft = Math.round(parseFloat(tl.seconds));
+    }
     dbg('⚠️ goAway ricevuto — connessione termina tra ~'+secsLeft+'s · riconnessione con resumption...');
     toast('🔄 Rinnovo sessione (10min limit)...');
     // Disconnetti senza azzerare l'handle, poi riconnetti subito
@@ -1418,19 +1432,42 @@ function startVideoStream(){
   const intervalMs = Math.round(1000/VIDEO_STREAM_FPS);
   let frameCount = 0;
   let droppedCount = 0;
+  let lastBufferLog = 0;
+  // Soglie backpressure:
+  // - BUFFER_DROP: oltre questa soglia il singolo frame viene saltato
+  // - BUFFER_PANIC: oltre questa soglia lo streaming viene SOSPESO per N ms
+  //   (evita che il buffer cresca a megabyte → goAway dal server)
+  const BUFFER_DROP = 80000;     // 80 KB
+  const BUFFER_PANIC = 400000;   // 400 KB
+  const PANIC_COOLDOWN_MS = 5000; // pausa 5s dopo panico
+  let panicUntil = 0;
   videoStreamInterval = setInterval(()=>{
     if(!camActive){stopVideoStream();return;}
     if(!ws||ws.readyState!==WebSocket.OPEN||!setupReady){stopVideoStream();return;}
-    // Backpressure: se WS ha ancora roba in coda dal frame precedente,
-    // SALTA questo frame. Evita di saturare la connessione e di
-    // accumulare latenza (Gemini comunque processa max 1 fps).
-    if(ws.bufferedAmount > 200000){
+    const buf = ws.bufferedAmount;
+    const now = Date.now();
+    // PANICO: buffer enorme → sospensione temporanea per dare tempo alla rete
+    if(buf > BUFFER_PANIC || now < panicUntil){
+      if(now >= panicUntil){
+        panicUntil = now + PANIC_COOLDOWN_MS;
+        dbg('🚨 Streaming video sospeso: buffer '+Math.round(buf/1024)+' KB > '+Math.round(BUFFER_PANIC/1024)+' KB · pausa '+(PANIC_COOLDOWN_MS/1000)+'s');
+        health('warn','Stream video in pausa (rete satura)');
+      }
+      return;
+    }
+    // BACKPRESSURE normale: skip singolo frame
+    if(buf > BUFFER_DROP){
       droppedCount++;
       if(droppedCount % 5 === 0){
-        dbg('⏭ Drop frame: WS buffer pieno ('+Math.round(ws.bufferedAmount/1024)+' KB), drop totali: '+droppedCount);
+        dbg('⏭ Drop frame: WS buffer ('+Math.round(buf/1024)+' KB), drop totali: '+droppedCount);
         health('warn','Drop video: '+droppedCount+' frame');
       }
       return;
+    }
+    // Log periodico dello stato buffer (ogni 10 sec) anche quando va bene
+    if(now - lastBufferLog > 10000){
+      lastBufferLog = now;
+      if(buf > 10000) dbg('📊 WS buffer: '+Math.round(buf/1024)+' KB · frame inviati: '+frameCount);
     }
     try{
       const v=document.getElementById('camVideo');
