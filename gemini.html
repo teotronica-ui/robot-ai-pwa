@@ -200,8 +200,8 @@
   <!-- Soglia rumore manuale: alza per silenziare ronzii/fruscii a riposo -->
   <div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-family:var(--mono);font-size:.58rem;color:var(--muted)">
     <span style="white-space:nowrap">SOGLIA ZERO</span>
-    <input type="range" id="rNoiseGate" min="0" max="80" value="10" step="1" oninput="updateNoiseGate(this.value)" style="flex:1;accent-color:var(--green)">
-    <span id="noiseGateVal" style="min-width:24px;text-align:right">10</span>
+    <input type="range" id="rNoiseGate" min="0" max="150" value="10" step="1" oninput="updateNoiseGate(this.value)" style="flex:1;accent-color:var(--green)">
+    <span id="noiseGateVal" style="min-width:28px;text-align:right">10</span>
   </div>
   <!-- selezione mic -->
   <div class="mic-row">
@@ -430,7 +430,7 @@
   <div class="brow">
     <button class="bs" onclick="exportBackup()">📤 Esporta backup</button>
     <div class="upl" style="flex:1;margin-top:0" onclick="document.getElementById('fBackup').click()">
-      <input type="file" id="fBackup" accept=".json,application/json" onchange="importBackup(this)">
+      <input type="file" id="fBackup" onchange="importBackup(this)">
       📂 Importa backup
     </div>
   </div>
@@ -530,11 +530,11 @@ let vuCalibActive=false, vuCalibFrames=0, vuCalibMax=0;
 // Valore 0-80 su scala 0-255: alza per silenziare rumori di fondo.
 const LS_NOISE_GATE='gemini_noise_gate';
 let userNoiseGate=(()=>{
-  try{const v=parseInt(localStorage.getItem(LS_NOISE_GATE));return isNaN(v)?10:Math.max(0,Math.min(80,v));}
+  try{const v=parseInt(localStorage.getItem(LS_NOISE_GATE));return isNaN(v)?10:Math.max(0,Math.min(150,v));}
   catch{return 10;}
 })();
 function updateNoiseGate(v){
-  userNoiseGate=parseInt(v)||0;
+  userNoiseGate=Math.max(0,Math.min(150, parseInt(v)||0));
   const lbl=document.getElementById('noiseGateVal'); if(lbl)lbl.textContent=String(userNoiseGate);
   try{localStorage.setItem(LS_NOISE_GATE,String(userNoiseGate));}catch{}
 }
@@ -1765,7 +1765,7 @@ function importBackup(inp){
         }catch(e){dbg('❌ import know: '+e.message);}
       }
       // Soglia rumore
-      if(typeof d.noiseGate === 'number' && d.noiseGate >= 0 && d.noiseGate <= 80){
+      if(typeof d.noiseGate === 'number' && d.noiseGate >= 0 && d.noiseGate <= 150){
         try{
           localStorage.setItem(LS_NOISE_GATE, String(d.noiseGate));
           userNoiseGate = d.noiseGate;
