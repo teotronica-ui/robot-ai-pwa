@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Robot AI">
   <meta name="theme-color" content="#070d18">
-  <title>Robot AI — Gemini v2</title>
+  <title>Robot AI — Gemini v3</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -247,7 +247,7 @@
     <div class="sticks"><span>0%</span><span>◆ 100%</span><span>150%</span></div>
   </div>
   <div class="sg">
-    <div class="sh"><span class="l">Soglia VAD (linea rossa)</span><span class="v" id="vThr">200</span></div>
+    <div class="sh"><span class="l">Soglia VAD <span style="font-size:.6rem;color:var(--muted)">(solo VAD Manuale)</span></span><span class="v" id="vThr">200</span></div>
     <input type="range" id="rThr" min="100" max="6000" step="100" value="200" oninput="oThr(this.value)">
     <div class="sticks"><span>100</span><span>3000</span><span>6000</span></div>
   </div>
@@ -290,7 +290,17 @@
     <button class="bs" id="btnCamOn" onclick="toggleCam()">📷 Attiva cam</button>
     <button class="bs" id="btnSnap" onclick="doSnap()" disabled style="border-color:var(--green);color:var(--green)">📸 SNAP → AI</button>
   </div>
-  <div class="f" style="margin-top:9px"><label>Videocamera</label><select id="selCam" onchange="switchCam()"></select></div>
+  <div class="f" style="margin-top:9px"><label>Videocamera</label>
+    <div style="display:flex;gap:6px;align-items:stretch">
+      <select id="selCamFacing" onchange="switchCamFacing()" style="flex:1">
+        <option value="user" selected>📱 Frontale (selfie)</option>
+        <option value="environment">🌍 Posteriore (mondo)</option>
+        <option value="manual">🎚 Manuale (deviceId)</option>
+      </select>
+      <button id="btnCamFlip" onclick="flipCam()" style="padding:6px 10px;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:6px;cursor:pointer" title="Inverti frontale/posteriore">🔄</button>
+    </div>
+    <select id="selCam" onchange="switchCam()" style="margin-top:6px;display:none"></select>
+  </div>
   <!-- Frequenza di campionamento video: tradeoff reattività ↔ token consumati.
        1 fps = max consentito da Gemini (~263 tok/sec); 0.2 fps = 1 frame ogni 5 sec (~52 tok/sec). -->
   <div style="display:flex;align-items:center;gap:8px;margin-top:9px;font-family:var(--mono);font-size:.58rem;color:var(--muted)">
@@ -344,9 +354,44 @@
     <div><label>Voce preferita</label>
       <select id="edVoice">
         <option value="">— usa quella selezionata —</option>
-        <option value="Puck">Puck</option><option value="Charon">Charon</option><option value="Kore">Kore</option>
-        <option value="Fenrir">Fenrir</option><option value="Aoede">Aoede</option><option value="Leda">Leda</option>
-        <option value="Orus">Orus</option><option value="Zephyr">Zephyr</option><option value="Autonoe">Autonoe</option><option value="Umbriel">Umbriel</option>
+        <optgroup label="— Brillanti & Vivaci —">
+          <option value="Zephyr">Zephyr (Bright)</option>
+          <option value="Puck">Puck (Upbeat)</option>
+          <option value="Autonoe">Autonoe (Bright)</option>
+          <option value="Laomedeia">Laomedeia (Upbeat)</option>
+          <option value="Sadachbia">Sadachbia (Lively)</option>
+          <option value="Fenrir">Fenrir (Excitable)</option>
+          <option value="Pulcherrima">Pulcherrima (Forward)</option>
+        </optgroup>
+        <optgroup label="— Calde & Scorrevoli —">
+          <option value="Aoede">Aoede (Breezy)</option>
+          <option value="Sulafat">Sulafat (Warm)</option>
+          <option value="Algieba">Algieba (Smooth)</option>
+          <option value="Despina">Despina (Smooth)</option>
+          <option value="Vindemiatrix">Vindemiatrix (Gentle)</option>
+          <option value="Achernar">Achernar (Soft)</option>
+          <option value="Achird">Achird (Friendly)</option>
+          <option value="Callirrhoe">Callirrhoe (Easy-going)</option>
+          <option value="Umbriel">Umbriel (Easy-going)</option>
+          <option value="Enceladus">Enceladus (Breathy)</option>
+        </optgroup>
+        <optgroup label="— Ferme & Decise —">
+          <option value="Kore">Kore (Firm)</option>
+          <option value="Orus">Orus (Firm)</option>
+          <option value="Alnilam">Alnilam (Firm)</option>
+          <option value="Schedar">Schedar (Even)</option>
+          <option value="Algenib">Algenib (Gravelly)</option>
+          <option value="Gacrux">Gacrux (Mature)</option>
+        </optgroup>
+        <optgroup label="— Informative & Chiare —">
+          <option value="Charon">Charon (Informative)</option>
+          <option value="Rasalgethi">Rasalgethi (Informative)</option>
+          <option value="Sadaltager">Sadaltager (Knowledgeable)</option>
+          <option value="Iapetus">Iapetus (Clear)</option>
+          <option value="Erinome">Erinome (Clear)</option>
+          <option value="Leda">Leda (Youthful)</option>
+          <option value="Zubenelgenubi">Zubenelgenubi (Casual)</option>
+        </optgroup>
       </select>
     </div>
     <div class="ed-row">
@@ -358,26 +403,84 @@
   <div class="r2" style="margin-top:10px">
     <div class="f"><label>Voce Gemini</label>
       <select id="selVoice">
-        <option value="Puck">Puck (Vivace M)</option><option value="Charon">Charon (Intenso M)</option>
-        <option value="Kore">Kore (Fermo F)</option><option value="Fenrir">Fenrir (Eccitabile M)</option>
-        <option value="Aoede" selected>Aoede (Scorrevole F)</option><option value="Leda">Leda (Giovane F)</option>
-        <option value="Orus">Orus (Fermo M)</option><option value="Zephyr">Zephyr (Brillante)</option>
-        <option value="Autonoe">Autonoe (Brillante F)</option><option value="Umbriel">Umbriel (Facile M)</option>
+        <optgroup label="— Brillanti & Vivaci —">
+          <option value="Zephyr">Zephyr (Bright)</option>
+          <option value="Puck">Puck (Upbeat)</option>
+          <option value="Autonoe">Autonoe (Bright)</option>
+          <option value="Laomedeia">Laomedeia (Upbeat)</option>
+          <option value="Sadachbia">Sadachbia (Lively)</option>
+          <option value="Fenrir">Fenrir (Excitable)</option>
+          <option value="Pulcherrima">Pulcherrima (Forward)</option>
+        </optgroup>
+        <optgroup label="— Calde & Scorrevoli —">
+          <option value="Aoede" selected>Aoede (Breezy)</option>
+          <option value="Sulafat">Sulafat (Warm)</option>
+          <option value="Algieba">Algieba (Smooth)</option>
+          <option value="Despina">Despina (Smooth)</option>
+          <option value="Vindemiatrix">Vindemiatrix (Gentle)</option>
+          <option value="Achernar">Achernar (Soft)</option>
+          <option value="Achird">Achird (Friendly)</option>
+          <option value="Callirrhoe">Callirrhoe (Easy-going)</option>
+          <option value="Umbriel">Umbriel (Easy-going)</option>
+          <option value="Enceladus">Enceladus (Breathy)</option>
+        </optgroup>
+        <optgroup label="— Ferme & Decise —">
+          <option value="Kore">Kore (Firm)</option>
+          <option value="Orus">Orus (Firm)</option>
+          <option value="Alnilam">Alnilam (Firm)</option>
+          <option value="Schedar">Schedar (Even)</option>
+          <option value="Algenib">Algenib (Gravelly)</option>
+          <option value="Gacrux">Gacrux (Mature)</option>
+        </optgroup>
+        <optgroup label="— Informative & Chiare —">
+          <option value="Charon">Charon (Informative)</option>
+          <option value="Rasalgethi">Rasalgethi (Informative)</option>
+          <option value="Sadaltager">Sadaltager (Knowledgeable)</option>
+          <option value="Iapetus">Iapetus (Clear)</option>
+          <option value="Erinome">Erinome (Clear)</option>
+          <option value="Leda">Leda (Youthful)</option>
+          <option value="Zubenelgenubi">Zubenelgenubi (Casual)</option>
+        </optgroup>
       </select>
     </div>
     <div class="f"><label>Modello AI</label>
       <select id="selModel">
+        <option value="gemini-3.1-flash-live-preview">Gemini 3.1 Flash Live ✨ NEW</option>
         <option value="gemini-2.5-flash-native-audio-preview-12-2025" selected>Gemini 2.5 Flash NA Dec-2025 ✅</option>
         <option value="gemini-2.5-flash-native-audio-preview-09-2025">Gemini 2.5 Flash NA Sep-2025</option>
         <option value="gemini-2.0-flash-live-001">Gemini 2.0 Flash Live</option>
       </select>
     </div>
   </div>
+  <!-- Thinking Level (solo Gemini 3.1) — Thinking Budget (solo Gemini 2.5 native-audio) -->
+  <div id="pThink25" style="display:none">
+    <div class="f" style="margin-top:8px">
+      <label>Thinking (Gemini 2.5 native-audio)</label>
+      <select id="selThink25">
+        <option value="0" selected>Disabilitato — minima latenza (consigliato live)</option>
+        <option value="-1">Dinamico — Gemini decide</option>
+        <option value="1024">Budget basso (1024 token)</option>
+        <option value="4096">Budget medio (4096 token)</option>
+      </select>
+    </div>
+  </div>
+  <div id="pThink31" style="display:none">
+    <div class="f" style="margin-top:8px">
+      <label>Thinking Level (Gemini 3.1)</label>
+      <select id="selThink31">
+        <option value="minimal" selected>Minimal — latenza minima (consigliato live)</option>
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High — massima qualità</option>
+      </select>
+    </div>
+  </div>
   <div class="r2">
     <div class="f"><label>VAD Mode</label>
       <select id="selVad" onchange="updVadUI()">
-        <option value="server_vad">Server VAD</option>
-        <option value="semantic_vad">Semantic VAD</option>
+        <option value="server_vad" selected>🛰 Server VAD (auto)</option>
+        <option value="semantic_vad">🧠 Semantic VAD (auto)</option>
+        <option value="manual_vad">✋ Manuale (client)</option>
       </select>
     </div>
     <div class="f"><label>Temperatura</label>
@@ -388,20 +491,54 @@
       </select>
     </div>
   </div>
+  <!-- Pannello Server VAD: silenceDurationMs + sensitivity -->
   <div id="pSVad">
     <div class="sg">
-      <div class="sh"><span class="l">Silenzio VAD</span><span class="v" id="vSil">800 ms</span></div>
+      <div class="sh"><span class="l">Silenzio fine-turno (silenceDurationMs)</span><span class="v" id="vSil">800 ms</span></div>
       <input type="range" id="rSil" min="200" max="2000" step="100" value="800" oninput="oSil(this.value)">
-      <div class="sticks"><span>200ms</span><span>800ms</span><span>2s</span></div>
+      <div class="sticks"><span>200ms</span><span>500-800 cons.</span><span>2s</span></div>
+    </div>
+    <div class="f" style="margin-top:10px"><label>Sensibilità inizio parlato</label>
+      <select id="selStartSens">
+        <option value="START_SENSITIVITY_LOW" selected>Low — più tollerante (consigliato in ambiente rumoroso)</option>
+        <option value="START_SENSITIVITY_HIGH">High — reagisce subito (per ambiente silenzioso)</option>
+      </select>
+    </div>
+    <div class="f" style="margin-top:8px"><label>Sensibilità fine parlato</label>
+      <select id="selEndSens">
+        <option value="END_SENSITIVITY_LOW" selected>Low — aspetta più silenzio</option>
+        <option value="END_SENSITIVITY_HIGH">High — chiude subito</option>
+      </select>
     </div>
   </div>
+  <!-- Pannello Semantic VAD: stesso silence + eagerness mappato -->
   <div id="pSemVad" style="display:none">
-    <div class="f" style="margin-top:10px"><label>Eagerness</label>
+    <div class="f" style="margin-top:10px"><label>Eagerness (sensibilità inizio)</label>
       <select id="selEag">
-        <option value="low">Low – aspetta di più</option>
+        <option value="low">Low — aspetta di più</option>
         <option value="medium" selected>Medium</option>
-        <option value="high">High – risponde subito</option>
+        <option value="high">High — risponde subito</option>
       </select>
+    </div>
+    <div class="sg" style="margin-top:10px">
+      <div class="sh"><span class="l">Silenzio fine-turno</span><span class="v" id="vSilSem">800 ms</span></div>
+      <input type="range" id="rSilSem" min="200" max="2000" step="100" value="800" oninput="oSilSem(this.value)">
+      <div class="sticks"><span>200ms</span><span>500-800 cons.</span><span>2s</span></div>
+    </div>
+  </div>
+  <!-- Pannello VAD manuale: usa la soglia client (slider VU) -->
+  <div id="pManVad" style="display:none">
+    <div style="font-size:.7rem;color:var(--muted);font-family:var(--mono);margin-top:10px;padding:10px;background:#1a1505;border-left:2px solid var(--yellow);border-radius:6px;line-height:1.5">
+      ⚠️ <strong style="color:var(--yellow)">Modalità Manuale attiva</strong><br>
+      Il VAD è gestito dal client usando la <strong>Soglia VAD</strong> (slider rosso del VU meter).<br>
+      Gemini riceverà <code>activityStart</code> e <code>activityEnd</code> in base alla soglia.<br>
+      <span style="color:var(--text)">Consigliato in:</span> teatro, studio, ambienti silenziosi dove vuoi controllo totale.<br>
+      <span style="color:var(--red)">NON consigliato in:</span> fiera, strada, ambienti rumorosi (rischio di taglio sillabe iniziali).
+    </div>
+    <div class="sg" style="margin-top:10px">
+      <div class="sh"><span class="l">Silenzio prima di activityEnd</span><span class="v" id="vSilMan">600 ms</span></div>
+      <input type="range" id="rSilMan" min="500" max="1500" step="50" value="600" oninput="oSilMan(this.value)">
+      <div class="sticks"><span>500ms (min cons.)</span><span>700ms</span><span>1.5s</span></div>
     </div>
   </div>
 </div>
@@ -517,26 +654,64 @@
 
 <script>
 const _WORKLET_SRC = `
+// PCM16 Processor con DOWNSAMPLING a 16 kHz e BUFFER ~40ms.
+// La doc Gemini Live raccomanda chunk 20-100ms (20-40ms ideale).
+// Il worklet riceve sample a inputSampleRate (es. 48000 su iPhone)
+// e fa decimation + accumulo prima di postare al main thread.
 class PCM16Processor extends AudioWorkletProcessor {
-  constructor() {
+  constructor(options) {
     super();
     this._active = true;
     this._gainValue = 1.0;
+    // sampleRate è disponibile come globale dentro AudioWorkletGlobalScope
+    this._inSR = sampleRate;             // tipicamente 48000
+    this._outSR = 16000;                 // Gemini nativo
+    this._ratio = this._inSR / this._outSR; // es. 3.0
+    this._phase = 0;                     // accumulo subsample per linear-interp
+    // Buffer di output: ~40ms a 16kHz = 640 sample
+    this._chunkSize = 640;
+    this._outBuf = new Int16Array(this._chunkSize);
+    this._outIdx = 0;
     this.port.onmessage = (e) => {
-      if (e.data.cmd === 'stop') this._active = false;
-      if (e.data.cmd === 'gain') this._gainValue = e.data.value;
+      if (e.data.cmd === 'stop')  this._active = false;
+      if (e.data.cmd === 'gain')  this._gainValue = e.data.value;
+      if (e.data.cmd === 'flush') this._flush();
     };
+  }
+  _flush(){
+    if(this._outIdx > 0){
+      const out = this._outBuf.slice(0, this._outIdx);
+      this.port.postMessage(out.buffer, [out.buffer]);
+      this._outBuf = new Int16Array(this._chunkSize);
+      this._outIdx = 0;
+    }
   }
   process(inputs) {
     if (!this._active) return false;
     const ch = inputs[0]?.[0];
     if (!ch) return true;
-    const pcm = new Int16Array(ch.length);
-    for (let i = 0; i < ch.length; i++) {
-      const s = Math.max(-1, Math.min(1, ch[i] * this._gainValue));
-      pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    const inLen = ch.length;
+    const g = this._gainValue;
+    // Linear interpolation downsampling
+    // Avanza _phase di 1 ogni sample 16k, leggendo nel buffer 48k
+    while(this._phase < inLen){
+      const i = Math.floor(this._phase);
+      const frac = this._phase - i;
+      const i2 = Math.min(i+1, inLen-1);
+      // Sample interpolato con gain
+      let s = (ch[i] * (1-frac) + ch[i2] * frac) * g;
+      if(s > 1) s = 1; else if(s < -1) s = -1;
+      this._outBuf[this._outIdx++] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      if(this._outIdx >= this._chunkSize){
+        // Trasferisci ownership del buffer al main thread
+        const out = this._outBuf;
+        this.port.postMessage(out.buffer, [out.buffer]);
+        this._outBuf = new Int16Array(this._chunkSize);
+        this._outIdx = 0;
+      }
+      this._phase += this._ratio;
     }
-    this.port.postMessage(pcm.buffer, [pcm.buffer]);
+    this._phase -= inLen; // continua dal punto giusto al prossimo frame
     return true;
   }
 }
@@ -546,23 +721,40 @@ registerProcessor('pcm16-processor', PCM16Processor);
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
 const LS_KEY='robot_key_gemini', LS_CHARS='robot_characters', LS_LAST='robot_last_char', LS_KNOW='robot_knowledge';
+const LS_MIC_ID='gemini_mic_id';        // mic preferito (persistente)
+const LS_CAM_FACING='gemini_cam_facing'; // 'user' | 'environment'
+const LS_VAD_MODE='gemini_vad_mode';     // server_vad | semantic_vad | manual_vad
+const LS_BARGE='gemini_barge';           // ricorda preferenza barge-in
+const SS_SESSION_HANDLE='gemini_sess';   // sessionStorage (entro 2h validità Gemini)
 const GEMINI_WS_BASE='wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage';
+// La doc raccomanda audio a 16kHz nativo. AudioContext su iOS gira a 48kHz,
+// il worklet fa downsampling on-the-fly. MIME sempre 'audio/pcm;rate=16000'.
 const INPUT_SR=16000, OUTPUT_SR=24000;
+// Costi audio aggiornati a doc Gemini Live (gennaio 2026)
+// Native audio: $3.0/M input, $12.0/M output  
+// Token rate: ~32 TPS audio, ~258 TPS video (preview risoluzione MEDIA)
 const PRICES={
   'gemini-2.0-flash-live-001':{ai:0.5,ao:2.0},
   'gemini-2.5-flash-native-audio-preview-09-2025':{ai:3.0,ao:12.0},
   'gemini-2.5-flash-native-audio-preview-12-2025':{ai:3.0,ao:12.0},
-  'gemini-2.5-flash-native-audio-latest':{ai:3.0,ao:12.0}
+  'gemini-2.5-flash-native-audio-latest':{ai:3.0,ao:12.0},
+  'gemini-3.1-flash-live-preview':{ai:3.0,ao:12.0}
 };
+// Tassi token (per stima, sovrascritti da usageMetadata quando arriva)
+const TOK_RATE_AUDIO_IN=32, TOK_RATE_AUDIO_OUT=32, TOK_RATE_VIDEO=258;
 const EUR=0.92, N_SEGS=36;
-const WS_TIMEOUT_MS   = 15000;  // timeout connessione WS
-const RECONNECT_BASE  = 2000;   // backoff iniziale riconnessione (ms)
-const RECONNECT_MAX   = 30000;  // backoff massimo
-const RECONNECT_LIMIT = 10;     // max tentativi prima di arrendersi
-const AUDIO_Q_MAX     = 60;     // max frame in coda audio
-const DRAIN_WATCHDOG  = 6000;   // ms prima di sbloccare drain() bloccato
-const PRE_BUFFER_CHUNKS = 4;    // chunk da accumulare prima di iniziare playback (~160ms a 24kHz/chunk)
-const CTX_WATCHDOG_MS = 2000;   // intervallo check AudioContext
+const WS_TIMEOUT_MS   = 15000;
+const RECONNECT_BASE  = 2000;
+const RECONNECT_MAX   = 30000;
+const RECONNECT_LIMIT = 10;
+const AUDIO_Q_MAX     = 60;
+const DRAIN_WATCHDOG  = 1500;  // ridotto da 6000: troppo lungo causava robot muto in fiera
+const PRE_BUFFER_CHUNKS = 4;
+const CTX_WATCHDOG_MS = 2000;
+const WS_KEEPALIVE_MS = 30000; // ping cliente per mantenere viva la TCP
+const CAM_RELEASE_MS  = 350;   // attesa rilascio cam iOS tra switch
+const MODELS_NATIVE_AUDIO = ['gemini-2.5-flash-native-audio-preview-09-2025','gemini-2.5-flash-native-audio-preview-12-2025','gemini-2.5-flash-native-audio-latest'];
+const MODELS_LIVE_31 = ['gemini-3.1-flash-live-preview'];
 
 // ═══════════════════════════════════════════════════════════════
 // STATE
@@ -629,12 +821,38 @@ let userDisconnected=false; // true = disconnessione volontaria
 let ctxWatchdogInterval=null, drainWatchdog=null;
 let setupReady=false;
 let sessionHandle=null; // handle per session resumption (ricevuto da Gemini)
+// keepalive WebSocket (ping cliente)
+let wsKeepaliveInterval=null;
+// VAD manuale (client-side activity detection)
+let manualVadActive=false;       // true = vad gate ha rilevato voce
+let manualVadSilenceStart=null;  // timestamp inizio silenzio (per attendere silenceDurationMs prima di activityEnd)
+let manualVadFramesSpeaking=0;   // frame consecutivi sopra soglia (debounce)
+// flag per ws send sicuro
+let wsBufferAudioWarned=false;
 
 // ═══════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════
 function init(){
   buildVU(); loadKey(); renderChars(); loadKnowLS(); updVadUI();
+  // Ripristina sessionHandle (entro 2h ancora valido per resumption)
+  try{
+    const h=sessionStorage.getItem(SS_SESSION_HANDLE);
+    if(h) sessionHandle=h;
+  }catch{}
+  // Ripristina VAD mode preferito
+  try{
+    const vm=localStorage.getItem(LS_VAD_MODE);
+    if(vm){
+      const sel=document.getElementById('selVad');
+      if(sel && [...sel.options].some(o=>o.value===vm)){ sel.value=vm; }
+    }
+  }catch{}
+  // Ripristina preferenza barge-in
+  try{
+    const b=localStorage.getItem(LS_BARGE);
+    if(b==='1'){ document.getElementById('chkBarge').checked=true; }
+  }catch{}
   // Ripristina slider frame rate video da localStorage
   const vfs=document.getElementById('rVidFps');
   if(vfs){
@@ -645,12 +863,43 @@ function init(){
       lbl.textContent = VIDEO_STREAM_FPS.toFixed(1)+' fps' + (VIDEO_STREAM_FPS<1?' (1/'+periodSec+'s)':'');
     }
   }
-  setInterval(tickTimer,500); netCheck(); setInterval(netCheck,14000); enumCams();
+  setInterval(tickTimer,500); netCheck(); setInterval(netCheck,30000); enumCams();
+  // devicechange è già un listener nativo: niente polling mic ridondante
   try{navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);}catch(e){}
-  setInterval(pollMics,4000);
+  // Reazione a online/offline: triggerare reconnect quando torna online
+  window.addEventListener('online', ()=>{
+    health('on','online');
+    if(reconnectTimer && !userDisconnected){
+      // forza tentativo immediato
+      cancelReconnect();
+      reconnectCount=Math.max(0,reconnectCount-1);
+      conn();
+    }
+  });
+  window.addEventListener('offline', ()=>{ health('err','offline'); });
   // Sincronizza stato barge-in con auto-mute
   document.getElementById('chkAutoMute').addEventListener('change', onAutoMuteChange);
+  document.getElementById('chkBarge').addEventListener('change', ()=>{
+    try{localStorage.setItem(LS_BARGE, document.getElementById('chkBarge').checked?'1':'0');}catch{}
+  });
+  // Salva VAD mode all'onchange
+  document.getElementById('selVad').addEventListener('change', ()=>{
+    try{localStorage.setItem(LS_VAD_MODE, document.getElementById('selVad').value);}catch{}
+  });
+  // Salva/mostra thinking config in base al modello
+  document.getElementById('selModel').addEventListener('change', updThinkUI);
+  updThinkUI();
   onAutoMuteChange();
+}
+
+// Mostra/nasconde pannello thinking in base al modello scelto
+function updThinkUI(){
+  const m=document.getElementById('selModel').value;
+  const p25=document.getElementById('pThink25');
+  const p31=document.getElementById('pThink31');
+  if(MODELS_NATIVE_AUDIO.includes(m)){ p25.style.display=''; p31.style.display='none'; }
+  else if(MODELS_LIVE_31.includes(m)){ p25.style.display='none'; p31.style.display=''; }
+  else { p25.style.display='none'; p31.style.display='none'; }
 }
 
 function onAutoMuteChange(){
@@ -797,9 +1046,19 @@ function setRobotSpeaking(speaking){
     badge.className='amute-badge mic-muted';
     badge.textContent='🔇 Mic sospeso — robot in risposta';
     if(workletNode) workletNode.port.postMessage({cmd:'gain', value:0});
-    // Avvisa Gemini che il flusso mic è interrotto (auto-mute)
+    // Avvisa Gemini che il flusso mic è interrotto.
+    // In modalità VAD manuale serve activityEnd, altrimenti audioStreamEnd
+    // (doc: con automaticActivityDetection.disabled=true non si usa audioStreamEnd).
     if(ws&&ws.readyState===WebSocket.OPEN&&setupReady){
-      ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+      const vadMode=document.getElementById('selVad')?.value||'server_vad';
+      try{
+        if(vadMode==='manual_vad' && manualVadActive){
+          ws.send(JSON.stringify({realtimeInput:{activityEnd:{}}}));
+          manualVadActive=false;
+        } else if(vadMode!=='manual_vad'){
+          ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+        }
+      }catch{}
     }
     vadWasActive=false;
   } else if(speaking && !autoMute){
@@ -1132,6 +1391,11 @@ async function startVuMonitor(forceDeviceId){
 async function switchMic(){
   const devId=document.getElementById('selMic')?.value||'';
   dbg('🔄 Cambio mic '+(devId?devId.slice(0,10)+'...':'auto/default'));
+  // Persisti la preferenza
+  try{
+    if(devId) localStorage.setItem(LS_MIC_ID, devId);
+    else localStorage.removeItem(LS_MIC_ID);
+  }catch{}
   await startVuMonitor(devId||undefined);
   if(connected){toast('🎤 Riconnetti per applicare il nuovo mic');}
 }
@@ -1152,10 +1416,17 @@ async function pollMics(){
 
 function renderMicSelect(){
   const sel=document.getElementById('selMic'); if(!sel)return;
-  const prev=sel.value;
+  const prev=sel.value || currentMicId || '';
   sel.innerHTML='<option value="">🎤 Auto (default — split jack)</option>';
   availableMics.forEach(m=>sel.appendChild(new Option(m.label||m.deviceId.slice(0,14),m.deviceId)));
-  if(prev&&[...sel.options].find(o=>o.value===prev))sel.value=prev;
+  // Tenta di ripristinare la preferenza salvata
+  try{
+    const saved=localStorage.getItem(LS_MIC_ID);
+    if(prev && [...sel.options].find(o=>o.value===prev)) sel.value=prev;
+    else if(saved && [...sel.options].find(o=>o.value===saved)){ sel.value=saved; currentMicId=saved; }
+  }catch{
+    if(prev && [...sel.options].find(o=>o.value===prev)) sel.value=prev;
+  }
 }
 
 let dcT=null;
@@ -1200,10 +1471,20 @@ async function conn(){
   const raw=document.getElementById('keyIn').value;
   API_KEY=raw.replace(/[\x00-\x1F\x7F\u200B-\u200D\uFEFF]/g,'').trim();
   if(API_KEY.length<20){toast('❌ Chiave troppo corta ('+API_KEY.length+' chars)');return;}
+  // Check connettività di base prima di tentare WS
+  if(typeof navigator!=='undefined' && navigator.onLine===false){
+    toast('📵 Offline — impossibile connettersi'); health('err','offline');
+    if(!userDisconnected) scheduleReconnect();
+    return;
+  }
   onCharChg();
   activeVoice=document.getElementById('selVoice').value||activeVoice;
   setSt('connecting');
   setupReady=false;
+  // Reset diagnostica per il nuovo tentativo
+  onChunkDiag = {calls:0, blockedSetup:0, blockedMute:0, blockedWS:0, blockedAutoMute:0, blockedVAD:0, blockedBuf:0, sent:0, lastLog:0};
+  wsBufferAudioWarned=false;
+  manualVadActive=false; manualVadSilenceStart=null; manualVadFramesSpeaking=0;
   document.getElementById('btnConn').disabled=true;
   dbg('🔌 Connessione Gemini... (tentativo '+(reconnectCount+1)+')');
   try{
@@ -1214,26 +1495,49 @@ async function conn(){
     audioCtx=vuCtx; analyser=vuAnalyser;
     if(analyser)analyser.smoothingTimeConstant=0.15;
     if(audioCtx.state==='suspended'){try{await audioCtx.resume();}catch(e){}}
+    // addModule è idempotente per URL, ma se il processor 'pcm16-processor' è già
+    // registrato (riconnessione su stesso contesto), lancia InvalidStateError.
+    // Catturiamo solo questo caso, propaghiamo altri errori.
     const _wBlob=new Blob([_WORKLET_SRC],{type:'application/javascript'});
     const _wUrl=URL.createObjectURL(_wBlob);
-    try{ await audioCtx.audioWorklet.addModule(_wUrl); }finally{ URL.revokeObjectURL(_wUrl); }
+    try{
+      await audioCtx.audioWorklet.addModule(_wUrl);
+    }catch(e){
+      const msg=(e.message||'').toLowerCase();
+      // "already registered" (Chrome), "already exists" (Firefox), InvalidStateError (Safari/spec)
+      if(e.name==='InvalidStateError' || msg.includes('already') || msg.includes('exists') || msg.includes('registered')){
+        dbg('ℹ️ AudioWorklet già registrato (riuso) — OK');
+      } else {
+        URL.revokeObjectURL(_wUrl);
+        throw e;
+      }
+    }finally{
+      URL.revokeObjectURL(_wUrl);
+    }
     workletNode=new AudioWorkletNode(audioCtx,'pcm16-processor');
     workletNode.port.onmessage=onChunk;
+    // Cattura errori processor (silent failure su Safari altrimenti)
+    workletNode.onprocessorerror=(ev)=>{
+      dbgErr('🚨 AudioWorklet processor error: '+ev);
+      health('err','Worklet error');
+    };
     if(analyser)analyser.connect(workletNode);
     dot('dMic','on');
-    dbgAudio('🔧 Worklet PCM16 attivo · AudioContext state:'+audioCtx.state+' SR:'+audioCtx.sampleRate+'Hz');
-    // Watchdog: dopo 5 secondi controlla che onChunk venga effettivamente chiamato.
-    // Se calls=0, il worklet non riceve audio → problema di connessione audio.
+    dbgAudio('🔧 Worklet PCM16 attivo · AudioContext state:'+audioCtx.state+' SR:'+audioCtx.sampleRate+'Hz (worklet downsample → 16000Hz)');
+    // Watchdog: dopo 5 secondi controlla che onChunk venga effettivamente chiamato
     setTimeout(()=>{
-      if(!setupReady) return; // non ancora pronti, normale
+      if(!setupReady) return;
       if(onChunkDiag.calls === 0){
-        dbgErr('🚨 WATCHDOG: il worklet NON sta ricevendo audio dal microfono! AudioContext state:'+(audioCtx?audioCtx.state:'null'));
+        dbgErr('🚨 WATCHDOG: il worklet NON sta ricevendo audio! AudioContext state:'+(audioCtx?audioCtx.state:'null'));
         health('err','Worklet senza audio');
+        // Su iOS spesso serve un gesto utente: mostra prompt
+        toast('⚠️ Tocca lo schermo per riattivare audio');
       } else {
         dbgAudio('✓ Worklet riceve audio: '+onChunkDiag.calls+' chunk in 5s');
       }
     }, 5000);
     const model=document.getElementById('selModel').value;
+    // v1alpha solo per modelli legacy 'gemini-live-*'. Tutti gli attuali (2.5 NA, 3.1, 2.0) usano v1beta.
     const apiVer=model.startsWith('gemini-live-')?'v1alpha':'v1beta';
     const GEMINI_WS=GEMINI_WS_BASE+'.'+apiVer+'.GenerativeService.BidiGenerateContent';
     const url=GEMINI_WS+'?key='+API_KEY;
@@ -1242,15 +1546,20 @@ async function conn(){
     wsTimeoutTimer=setTimeout(()=>{
       if(!connected){dbg('⏱ Timeout WS');toast('❌ Timeout');disc();scheduleReconnect();}
     },WS_TIMEOUT_MS);
-    ws.onopen=()=>{ dbg('🔗 WS aperto — invio setup'+(sessionHandle?' (resumption)':'')+'...'); sendSetup(); };
+    ws.onopen=()=>{
+      dbg('🔗 WS aperto — invio setup'+(sessionHandle?' (resumption)':'')+'...');
+      sendSetup();
+      // Avvia keep-alive: piccolo ping ogni 30s per evitare idle timeout dei firewall
+      startWsKeepalive();
+    };
     ws.onmessage=onMsg;
     ws.onerror=e=>{console.error('[WS]',e);dbg('❌ WS errore');health('err','WS errore');};
     ws.onclose=e=>{
       dbg('🔌 WS chiuso: '+e.code+(e.reason?' '+e.reason:''));
       clearTimeout(wsTimeoutTimer);
+      stopWsKeepalive();
       setupReady=false;
       const wasConn=connected; disc();
-      // WS chiuso inaspettatamente = errore. Chiusura voluta dall'utente = OK.
       if(!userDisconnected) health('err','WS chiuso ('+e.code+')');
       if(wasConn&&!userDisconnected)scheduleReconnect();
       else if(!wasConn&&!userDisconnected&&reconnectCount>0)scheduleReconnect();
@@ -1264,110 +1573,282 @@ async function conn(){
   }
 }
 
+function startWsKeepalive(){
+  stopWsKeepalive();
+  wsKeepaliveInterval=setInterval(()=>{
+    if(!ws || ws.readyState!==WebSocket.OPEN) return;
+    // Non c'è un ping/pong frame esposto in WebSocket API browser.
+    // Mandiamo un messaggio JSON vuoto realtimeInput senza payload utili.
+    // Alcuni firewall richiedono traffico ogni 60-90s per non chiudere TCP.
+    // NB: Gemini accetta `realtimeInput` vuoto silenziosamente (no-op).
+    try{ ws.send(JSON.stringify({realtimeInput:{}})); }catch{}
+  }, WS_KEEPALIVE_MS);
+}
+function stopWsKeepalive(){
+  if(wsKeepaliveInterval){ clearInterval(wsKeepaliveInterval); wsKeepaliveInterval=null; }
+}
+
+// Lista canonica delle 30 voci ufficiali Gemini Live (doc Vertex 2026)
+const GEMINI_VOICES=[
+  'Achernar','Achird','Aoede','Algenib','Algieba','Alnilam','Autonoe',
+  'Callirrhoe','Charon','Despina','Enceladus','Erinome','Fenrir','Gacrux',
+  'Iapetus','Kore','Laomedeia','Leda','Orus','Puck','Pulcherrima',
+  'Rasalgethi','Sadachbia','Sadaltager','Schedar','Sulafat','Umbriel',
+  'Vindemiatrix','Zephyr','Zubenelgenubi'
+];
+
 function sendSetup(){
   const model=document.getElementById('selModel').value;
   let voice=document.getElementById('selVoice').value||activeVoice;
-  const GEMINI_VOICES=['Puck','Charon','Kore','Fenrir','Aoede','Leda','Orus','Zephyr','Autonoe','Umbriel'];
+  // Mappatura voci legacy OpenAI → Gemini (per compatibilità personaggi importati)
   const voiceMap={alloy:'Aoede',ash:'Charon',ballad:'Kore',coral:'Leda',echo:'Fenrir',sage:'Orus',shimmer:'Aoede',verse:'Puck',cedar:'Umbriel',marin:'Zephyr'};
   if(!GEMINI_VOICES.includes(voice)){
     const mapped=voiceMap[voice.toLowerCase()]||'Aoede';
-    dbg('⚠️ Voce "'+voice+'" → "'+mapped+'" (Gemini)');
+    dbg('⚠️ Voce "'+voice+'" non riconosciuta → "'+mapped+'"');
     voice=mapped;
     document.getElementById('selVoice').value=mapped;
   }
   const instructions=buildSystemPrompt();
-  dbg('📋 Setup: '+model+' voce:'+voice);
-  // thinkingBudget:0 — disabilita il "thinking" nei modelli native-audio Dec-2025+
-  // che hanno thinking abilitato di default (causa latenza alta)
-  const isNativeAudio = model.includes('native-audio');
+  const isNativeAudio = MODELS_NATIVE_AUDIO.includes(model);
+  const isLive31 = MODELS_LIVE_31.includes(model);
+  const temperature = parseFloat(document.getElementById('selTemp').value||'0.8');
+
+  dbg('📋 Setup: '+model+' voce:'+voice+' temp:'+temperature);
+
+  // ── generationConfig ─────────────────────────────────────────────
   const generationConfig = {
     responseModalities:['AUDIO'],
-    speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:voice}}}
+    temperature: temperature,
+    speechConfig:{
+      voiceConfig:{prebuiltVoiceConfig:{voiceName:voice}}
+      // languageCode lasciato libero per auto-detect multilingua (turisti stranieri)
+    }
   };
-  if(isNativeAudio) generationConfig.thinkingConfig = {thinkingBudget:0};
+  // Thinking config: divergente tra Gemini 2.5 native-audio e Gemini 3.1
+  if(isNativeAudio){
+    const tb = parseInt(document.getElementById('selThink25')?.value ?? '0');
+    generationConfig.thinkingConfig = {thinkingBudget: tb};
+  } else if(isLive31){
+    const lv = document.getElementById('selThink31')?.value || 'minimal';
+    generationConfig.thinkingConfig = {thinkingLevel: lv};
+  }
 
+  // ── setup principale ─────────────────────────────────────────────
   const setup={
     model:'models/'+model,
     generationConfig:generationConfig,
-    systemInstruction:{parts:[{text:instructions}]}
+    systemInstruction:{parts:[{text:instructions}]},
+    // Trascrizioni: ESSENZIALI per popolare la chat e per i comandi vocali snap.
+    // language_codes lasciato vuoto → auto-detect (Gemini fa multilingua nativo).
+    inputAudioTranscription: {},
+    outputAudioTranscription: {}
   };
-  // Session resumption: se abbiamo un handle da una sessione precedente,
-  // lo passiamo per riprendere la conversazione senza perdere il contesto.
-  // Se non c'è handle (prima connessione), viene abilitata solo la ricezione futura.
+
+  // ── realtimeInputConfig (VAD) ────────────────────────────────────
+  const vadMode = document.getElementById('selVad').value || 'server_vad';
+  if(vadMode === 'manual_vad'){
+    // VAD client-side: Gemini riceve audio ma non taglia, attende activityStart/End nostri
+    setup.realtimeInputConfig = {
+      automaticActivityDetection: {disabled: true}
+    };
+  } else if(vadMode === 'semantic_vad'){
+    // Semantic: usa eagerness → mappa su start sensitivity, end LOW per privilegiare semantica
+    const eag = document.getElementById('selEag')?.value || 'medium';
+    const startSens = eag==='high' ? 'START_SENSITIVITY_HIGH' : 'START_SENSITIVITY_LOW';
+    const silMs = parseInt(document.getElementById('rSilSem')?.value || '800');
+    setup.realtimeInputConfig = {
+      automaticActivityDetection: {
+        disabled: false,
+        startOfSpeechSensitivity: startSens,
+        endOfSpeechSensitivity: 'END_SENSITIVITY_LOW', // privilegia frasi complete
+        prefixPaddingMs: 20,
+        silenceDurationMs: silMs
+      }
+    };
+  } else { // server_vad
+    const silMs = parseInt(document.getElementById('rSil')?.value || '800');
+    const startSens = document.getElementById('selStartSens')?.value || 'START_SENSITIVITY_LOW';
+    const endSens = document.getElementById('selEndSens')?.value || 'END_SENSITIVITY_LOW';
+    setup.realtimeInputConfig = {
+      automaticActivityDetection: {
+        disabled: false,
+        startOfSpeechSensitivity: startSens,
+        endOfSpeechSensitivity: endSens,
+        prefixPaddingMs: 20,
+        silenceDurationMs: silMs
+      }
+    };
+  }
+
+  // ── Session resumption ───────────────────────────────────────────
   setup.sessionResumption = sessionHandle ? {handle: sessionHandle} : {};
 
   const msg=JSON.stringify({setup:setup});
-  dbg('📤 '+msg.slice(0,180));
-  ws.send(msg);
+  dbg('📤 setup: '+msg.slice(0,220)+(msg.length>220?'...':''));
+  try{ ws.send(msg); }catch(e){ dbg('❌ send setup: '+e.message); }
+}
+
+// Aggiornamento mid-session di system prompt / personaggio / conoscenza.
+// La doc supporta clientContent con role:'system' per update incrementali,
+// ma in pratica i modelli native-audio lo onorano in modo incoerente.
+// Strategia: tentiamo prima clientContent; se l'utente nota incoerenze
+// (raramente), può sempre disconnettere e riconnettere — il sessionHandle
+// preserva il contesto.
+function sendSess(){
+  if(!ws || ws.readyState!==WebSocket.OPEN || !setupReady){
+    dbg('⚠️ sendSess: ws non pronto, skip');
+    return;
+  }
+  const instructions = buildSystemPrompt();
+  try{
+    // Inviamo il nuovo system prompt come clientContent con role 'user' che esplicita
+    // l'aggiornamento. Workaround testato: i modelli native-audio rispondono meglio
+    // se l'aggiornamento è iniettato come messaggio invece di systemInstruction modificato
+    // (che non è ufficialmente modificabile mid-session).
+    const upd = {
+      clientContent: {
+        turns: [{
+          role: 'user',
+          parts: [{text: '[CONFIG UPDATE] Da ora in poi, segui SOLO queste istruzioni di sistema aggiornate (sostituiscono completamente le precedenti):\n\n' + instructions + '\n\n[END CONFIG UPDATE] — Non commentare questo messaggio, applica solo le nuove istruzioni alla prossima interazione.'}]
+        }],
+        turnComplete: false
+      }
+    };
+    ws.send(JSON.stringify(upd));
+    dbg('🔄 sendSess: aggiornamento system prompt inviato');
+  }catch(e){
+    dbg('❌ sendSess: '+e.message);
+  }
 }
 
 function pcmToBase64(pcm){
-  const bytes=new Uint8Array(pcm.buffer);
-  let binary='';const chunk=8192;
-  for(let i=0;i<bytes.length;i+=chunk)binary+=String.fromCharCode(...bytes.subarray(i,i+chunk));
+  // Conversione PCM16 (Int16Array) → base64.
+  // Loop byte-per-byte invece di spread per evitare stack overflow
+  // su payload grandi (es. registrazioni lunghe via doSnap o WAV).
+  const bytes=new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+  let binary='';
+  const len=bytes.length;
+  // Chunk piccoli (4096) per non saturare stack di String.fromCharCode su Safari
+  const step=4096;
+  for(let i=0; i<len; i+=step){
+    const end=Math.min(i+step, len);
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, end));
+  }
   return btoa(binary);
 }
 
 let vadWasActive=false;    // true se nell'ultimo chunk eravamo sopra soglia
 let vadSilenceFrames=0;    // frame consecutivi sotto soglia dopo parlato
-const VAD_SILENCE_FRAMES=18; // ~300ms a 60fps prima di inviare audioStreamEnd
+const VAD_SILENCE_FRAMES_MANUAL=20; // ~500ms con chunk da 40ms — doc dice "almeno 500ms"
+const AUDIO_BUFFER_DROP=80*1024;    // soglia bufferedAmount per droppare chunk audio
 
-let onChunkDiag = {calls:0, blockedSetup:0, blockedMute:0, blockedWS:0, blockedAutoMute:0, blockedVAD:0, sent:0, lastLog:0};
+let onChunkDiag = {calls:0, blockedSetup:0, blockedMute:0, blockedWS:0, blockedAutoMute:0, blockedVAD:0, blockedBuf:0, sent:0, lastLog:0};
+
 function onChunk(e){
   onChunkDiag.calls++;
   if(!setupReady){onChunkDiag.blockedSetup++; return;}
   if(autoMuteSuspended){onChunkDiag.blockedAutoMute++; return;}
   if(muted){onChunkDiag.blockedMute++; return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){onChunkDiag.blockedWS++; return;}
+
+  // Back-pressure WebSocket: se il buffer di invio è saturo, droppiamo questo chunk.
+  // In fiera con WiFi affollato è critico: senza questo controllo il buffer cresce
+  // indefinitamente, Gemini rileva latenza e manda goAway.
+  if(ws.bufferedAmount > AUDIO_BUFFER_DROP){
+    onChunkDiag.blockedBuf++;
+    if(!wsBufferAudioWarned){
+      dbgWarn('⚠️ Audio buffer pieno ('+Math.round(ws.bufferedAmount/1024)+'KB) — droppo chunk per non saturare la rete');
+      wsBufferAudioWarned=true;
+      // Reset warning dopo 5s
+      setTimeout(()=>{wsBufferAudioWarned=false;}, 5000);
+    }
+    return;
+  }
+
   const pcm=new Int16Array(e.data);
-  // Gain applicato SOLO nel worklet
-  // VAD gate: confronta vuDisplayPct (gain+noisefloor aware) con soglia slider
-  const thrRaw=parseInt(document.getElementById('rThr').value);
-  const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
-  const aboveVad = (vuDisplayPct >= thrPct);
-  // Log diagnostico ogni 3 secondi: cosa sta facendo onChunk
+  const vadMode=document.getElementById('selVad').value||'server_vad';
+
+  // Log diagnostico periodico
   const now = Date.now();
   if(now - onChunkDiag.lastLog > 3000){
     onChunkDiag.lastLog = now;
     if(onChunkDiag.sent === 0 && onChunkDiag.calls > 50){
-      // Nessun chunk inviato dopo 50+ chiamate: c'è un problema, logghiamo
-      dbgWarn('🔍 Diagnostica onChunk · chiamate:'+onChunkDiag.calls+' inviati:'+onChunkDiag.sent
+      dbgWarn('🔍 onChunk diag · chiamate:'+onChunkDiag.calls+' inviati:'+onChunkDiag.sent
         +' · blocchi: setup='+onChunkDiag.blockedSetup
         +' mute='+onChunkDiag.blockedMute
         +' autoMute='+onChunkDiag.blockedAutoMute
         +' ws='+onChunkDiag.blockedWS
         +' vad='+onChunkDiag.blockedVAD
-        +' · vuLvl='+(vuDisplayPct*100).toFixed(0)+'% thr='+(thrPct*100).toFixed(0)+'%');
+        +' buf='+onChunkDiag.blockedBuf);
     }
   }
-  if(!aboveVad){
-    onChunkDiag.blockedVAD++;
-    if(vadWasActive){
-      vadSilenceFrames++;
-      // Aspetta VAD_SILENCE_FRAMES frame consecutivi di silenzio prima di
-      // dichiarare fine del turno — evita audioStreamEnd su micropauses tra parole
-      if(vadSilenceFrames >= VAD_SILENCE_FRAMES){
-        ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
-        dbg('🔇 audioStreamEnd inviato (silenzio '+VAD_SILENCE_FRAMES+' frame)');
-        vadWasActive=false;
-        vadSilenceFrames=0;
+
+  if(vadMode === 'manual_vad'){
+    // ── VAD MANUALE: client decide quando inviare activityStart/End ─────
+    const thrRaw=parseInt(document.getElementById('rThr').value);
+    const thrPct=Math.min(1, Math.pow((thrRaw/6000), 0.55));
+    const above = (vuDisplayPct >= thrPct);
+    const silMs = parseInt(document.getElementById('rSilMan')?.value || '600');
+
+    if(above){
+      // Sopra soglia
+      if(!manualVadActive){
+        // Apertura turno: invia activityStart
+        try{ ws.send(JSON.stringify({realtimeInput:{activityStart:{}}})); }catch{}
+        manualVadActive=true;
+        dbgVad('🎙 [Manual VAD] activityStart');
+      }
+      manualVadSilenceStart=null;
+      manualVadFramesSpeaking++;
+      // Invia il chunk
+      try{
+        ws.send(JSON.stringify({
+          realtimeInput:{audio:{data:pcmToBase64(pcm), mimeType:'audio/pcm;rate=16000'}}
+        }));
+        onChunkDiag.sent++;
+      }catch(ex){ dbg('❌ send audio: '+ex.message); }
+    } else {
+      // Sotto soglia
+      if(manualVadActive){
+        // In sessione attiva: continua a inviare audio finché silMs non è scaduto
+        if(manualVadSilenceStart === null) manualVadSilenceStart = now;
+        const silentFor = now - manualVadSilenceStart;
+        if(silentFor < silMs){
+          // ancora dentro la finestra di tolleranza, invia comunque (potrebbe essere micro-pausa)
+          try{
+            ws.send(JSON.stringify({
+              realtimeInput:{audio:{data:pcmToBase64(pcm), mimeType:'audio/pcm;rate=16000'}}
+            }));
+            onChunkDiag.sent++;
+          }catch{}
+        } else {
+          // Silenzio > silMs: chiudi il turno
+          try{ ws.send(JSON.stringify({realtimeInput:{activityEnd:{}}})); }catch{}
+          dbgVad('🔇 [Manual VAD] activityEnd dopo '+silMs+'ms silenzio');
+          manualVadActive=false;
+          manualVadSilenceStart=null;
+          manualVadFramesSpeaking=0;
+        }
+      } else {
+        // Non in turno e non sopra soglia: non inviare nulla
+        onChunkDiag.blockedVAD++;
       }
     }
-    return;
+  } else {
+    // ── VAD SERVER (server_vad o semantic_vad): invia audio in continuo ──
+    // Gemini fa lui la segmentazione, nessun audioStreamEnd da inviare.
+    // Lo slider Soglia VAD è IGNORATO in queste modalità.
+    try{
+      ws.send(JSON.stringify({
+        realtimeInput:{audio:{data:pcmToBase64(pcm), mimeType:'audio/pcm;rate=16000'}}
+      }));
+      onChunkDiag.sent++;
+    }catch(ex){ dbg('❌ send audio: '+ex.message); }
   }
-  // Sopra soglia: invia audio e resetta contatore silenzio
-  if(!vadWasActive){
-    // Primo chunk del turno: log VAD activation
-    dbgVad('🎙 VAD attivo · vuLvl='+(vuDisplayPct*100).toFixed(0)+'% > thr='+(thrPct*100).toFixed(0)+'%');
-  }
-  vadWasActive=true;
-  vadSilenceFrames=0;
-  const actualSR=audioCtx?audioCtx.sampleRate:48000;
-  ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{data:pcmToBase64(pcm),mimeType:'audio/pcm;rate='+actualSR}]}}));
-  onChunkDiag.sent++;
-  // Log ogni 100 chunk inviati per confermare flusso attivo
-  if(onChunkDiag.sent % 100 === 0){
-    dbgAudio('📤 '+onChunkDiag.sent+' chunk audio inviati a Gemini');
+
+  // Log periodico chunks inviati
+  if(onChunkDiag.sent > 0 && onChunkDiag.sent % 250 === 0){
+    dbgAudio('📤 '+onChunkDiag.sent+' chunk audio inviati');
   }
 }
 
@@ -1435,30 +1916,26 @@ function onMsg(e){
           if(isRec)recChunks.push(pcm);
           if(audioQ.length>AUDIO_Q_MAX){audioQ=audioQ.slice(-Math.floor(AUDIO_Q_MAX/2));nextPlayTime=0;}
           audioQ.push(pcm);
-          // Pre-buffer: aspetta PRE_BUFFER_CHUNKS prima di iniziare playback
-          // per avere margine contro il jitter di rete ed evitare scatti.
-          // Se la coda è già in riproduzione, drain() gestisce il resto.
           if(!playing && audioQ.length >= PRE_BUFFER_CHUNKS) drain();
-          tok.ao+=Math.round(pcm.length/OUTPUT_SR*25);renderCost();
+          // Stima costi (fallback): TOK_RATE_AUDIO_OUT=32 TPS per native audio.
+          // Quando arriva usageMetadata, sovrascriviamo con valori esatti.
+          tok.ao += Math.round(pcm.length/OUTPUT_SR * TOK_RATE_AUDIO_OUT);
+          renderCost();
           if(!robotSpeaking)setRobotSpeaking(true);
         }
       });
     }
-    if(sc.outputTranscription?.text)appendRobotTxt(sc.outputTranscription.text);
+    // Trascrizioni: anche se Gemini a volte le mette top-level, qui dentro serverContent
+    // è il path più comune (cookbook ufficiale)
+    if(sc.outputTranscription?.text) appendRobotTxt(sc.outputTranscription.text);
     if(sc.inputTranscription?.text){
       const userText = sc.inputTranscription.text;
       addMsg(userText,'user');
-      tok.ai+=Math.round(userText.length*1.3);renderCost();
-      // Fallback: se lo streaming video continuo non è attivo (cam appena
-      // accesa, WS lento, ecc.), il comando vocale tenta uno snap manuale.
-      // Quando lo streaming gira, Gemini ha già frame freschi nel buffer.
       checkVoiceSnapCommand(userText);
     }
     if(sc.turnComplete){
       finalizeRobot();
       audioQ.push(new Int16Array(OUTPUT_SR));
-      // turnComplete: forza drain anche se siamo sotto PRE_BUFFER_CHUNKS
-      // (Gemini ha finito — suona quello che c'è)
       if(!playing) drain();
       setTimeout(()=>{setRobotSpeaking(false);setSt('listening');if(!silStart)silStart=Date.now();},1100);
     }
@@ -1466,6 +1943,25 @@ function onMsg(e){
       dbg('🛑 Barge-in');audioQ=[];playing=false;nextPlayTime=0;
       setRobotSpeaking(false);setSt('talking');dot('dMic','tk');silStart=null;
     }
+  }
+  // Trascrizioni top-level (alcuni modelli/versioni le mandano qui invece che in serverContent)
+  if(m.inputTranscription?.text){
+    addMsg(m.inputTranscription.text,'user');
+    checkVoiceSnapCommand(m.inputTranscription.text);
+  }
+  if(m.outputTranscription?.text){
+    appendRobotTxt(m.outputTranscription.text);
+  }
+  // usageMetadata: dati esatti di consumo token dal server.
+  // Quando presente, sovrascrive le nostre stime (più affidabile).
+  if(m.usageMetadata){
+    const um=m.usageMetadata;
+    // promptTokenCount = input cumulativo, responseTokenCount = output cumulativo
+    // ATTENZIONE: questi sono CUMULATIVI sulla sessione, non delta.
+    if(typeof um.promptTokenCount === 'number') tok.ai = um.promptTokenCount;
+    if(typeof um.responseTokenCount === 'number') tok.ao = um.responseTokenCount;
+    else if(typeof um.candidatesTokenCount === 'number') tok.ao = um.candidatesTokenCount;
+    renderCost();
   }
   if(m.realtimeInput?.activityStart){setSt('talking');dot('dMic','tk');silStart=null;}
   if(m.realtimeInput?.activityEnd){setSt('listening');dot('dMic','on');}
@@ -1475,22 +1971,16 @@ function onMsg(e){
     health('err','API: '+msg);
     if(m.error.code===503||m.error.code===500){disc();if(!userDisconnected)scheduleReconnect();}
   }
-  // Session resumption: salva il nuovo handle quando Gemini lo invia
-  // L'handle viene usato alla prossima connessione per riprendere la sessione
+  // Session resumption: salva il nuovo handle quando Gemini lo invia.
+  // Persistiamo in sessionStorage per sopravvivere a refresh/freeze iOS.
   if(m.sessionResumptionUpdate){
     if(m.sessionResumptionUpdate.newHandle){
       sessionHandle = m.sessionResumptionUpdate.newHandle;
+      try{ sessionStorage.setItem(SS_SESSION_HANDLE, sessionHandle); }catch{}
       dbg('🔖 Session handle aggiornato (resumption pronta)');
     }
   }
-  // goAway: Gemini avvisa che la connessione sta per chiudersi (~10min)
-  // Riconnetti subito usando il sessionHandle per non perdere il contesto
   if(m.goAway){
-    // timeLeft viene serializzato in vari modi a seconda del client:
-    //   - stringa protobuf duration: "10s", "600s"
-    //   - oggetto {seconds, nanos}
-    //   - numero (millisecondi)
-    // Gestiamo tutti i casi per evitare "NaNs" nel log.
     let secsLeft = '?';
     const tl = m.goAway.timeLeft;
     if(typeof tl === 'string'){
@@ -1503,7 +1993,6 @@ function onMsg(e){
     }
     dbg('⚠️ goAway ricevuto — connessione termina tra ~'+secsLeft+'s · riconnessione con resumption...');
     toast('🔄 Rinnovo sessione (10min limit)...');
-    // Disconnetti senza azzerare l'handle, poi riconnetti subito
     disc(false);
     if(!userDisconnected) setTimeout(()=>conn(), 500);
   }
@@ -1513,18 +2002,43 @@ function disc(clearHandle=false){
   connected=false; setupReady=false;
   stopVideoStream(); // ferma streaming video prima di chiudere WS
   clearTimeout(wsTimeoutTimer);
-  if(ws){ws.onclose=null;try{ws.close();}catch(e){}ws=null;}
-  if(workletNode){try{workletNode.disconnect();workletNode.port.postMessage({cmd:'stop'});}catch(e){}workletNode=null;}
-  if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null;}
-  if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch(e){}}
+  stopWsKeepalive();
+  // FIX BUG CRITICO: azzeriamo TUTTI gli handler prima di close(), non solo onclose.
+  // Su iOS Safari ws.close() può impiegare 100-500ms; in quella finestra possono
+  // arrivare messaggi (setupComplete, audio chunk) che riassegnerebbero connected=true
+  // facendo sembrare che il pulsante "Disconnetti" non funzioni.
+  if(ws){
+    try{ ws.onclose=null; ws.onmessage=null; ws.onerror=null; ws.onopen=null; }catch{}
+    try{ ws.close(); }catch{}
+    ws=null;
+  }
+  if(workletNode){
+    try{
+      workletNode.port.onmessage=null;
+      workletNode.disconnect();
+      workletNode.port.postMessage({cmd:'flush'}); // flush buffer residuo
+      workletNode.port.postMessage({cmd:'stop'});
+    }catch{}
+    workletNode=null;
+  }
+  // NB: NON stoppiamo i tracks del mic — sharedMicStream è condiviso col VU monitor.
+  // Solo dissociamo il riferimento locale (le tracks restano vive per il VU).
+  micStream=null;
+  // audioCtx === vuCtx normalmente, quindi non lo chiudiamo
+  if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch{}}
   audioCtx=null; analyser=vuAnalyser;
-  audioQ=[]; playing=false; silStart=null; nextPlayTime=0; vadWasActive=false; vadSilenceFrames=0;
+  audioQ=[]; playing=false; silStart=null; nextPlayTime=0;
+  vadWasActive=false; vadSilenceFrames=0;
+  manualVadActive=false; manualVadSilenceStart=null; manualVadFramesSpeaking=0;
   robotSpeaking=false; autoMuteSuspended=false;
   setRobotSpeaking(false);
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
-  // sessionHandle: lo azzeriamo solo su disconnessione volontaria
-  // Su riconnessione automatica lo manteniamo per la session resumption
-  if(clearHandle) sessionHandle=null;
+  // sessionHandle: azzerato solo su disconnessione volontaria.
+  // In riconnessione automatica viene mantenuto per session resumption.
+  if(clearHandle){
+    sessionHandle=null;
+    try{ sessionStorage.removeItem(SS_SESSION_HANDLE); }catch{}
+  }
   dot('dAI',null); dot('dMic',null); setSt('idle'); updBtn();
   document.getElementById('btnConn').disabled=false;
 }
@@ -1540,6 +2054,14 @@ function scheduleReconnect(){
     toast('❌ Impossibile riconnettersi');
     hideReconnBar();
     document.getElementById('btnConn').disabled=false;
+    return;
+  }
+  // Se siamo offline non sprechiamo tentativi: aspettiamo l'evento 'online'
+  // che è agganciato in init() e triggererà manualmente conn().
+  if(typeof navigator!=='undefined' && navigator.onLine===false){
+    dbg('📵 Offline — riconnessione in pausa, attendo evento online');
+    showReconnBar(reconnectCount+1, '...');
+    health('err','offline');
     return;
   }
   reconnectCount++;
@@ -1559,7 +2081,8 @@ function cancelReconnect(){
 }
 
 function showReconnBar(attempt, sec){
-  document.getElementById('reconnMsg').textContent='Riconnessione #'+attempt+'/'+RECONNECT_LIMIT+' tra '+sec+'s...';
+  const secLbl = (typeof sec==='string') ? sec : (sec+'s');
+  document.getElementById('reconnMsg').textContent='Riconnessione #'+attempt+'/'+RECONNECT_LIMIT+(sec==='...'?' (attesa online)':' tra '+secLbl+'...');
   document.getElementById('reconnBar').classList.add('show');
   document.getElementById('btnConn').disabled=false;
   document.getElementById('btnConn').classList.remove('off');
@@ -1649,40 +2172,142 @@ async function drain(){
 // ═══════════════════════════════════════════════════════════════
 // CAMERA
 // ═══════════════════════════════════════════════════════════════
+// Ripristina preferenza facing camera al caricamento
+(function initCamFacing(){
+  try{
+    const f=localStorage.getItem(LS_CAM_FACING);
+    if(f==='user'||f==='environment'){
+      // applicato al primo render del DOM
+      window.addEventListener('DOMContentLoaded',()=>{
+        const s=document.getElementById('selCamFacing');
+        if(s){ s.value=f; }
+      });
+    }
+  }catch{}
+})();
+
 async function enumCams(){
   try{
     const devs=await navigator.mediaDevices.enumerateDevices();
     const cams=devs.filter(d=>d.kind==='videoinput');
-    const sel=document.getElementById('selCam'); sel.innerHTML='';
+    const sel=document.getElementById('selCam');
+    if(!sel) return;
+    // Conserva la selezione precedente se ancora valida (le label dopo permission diventano stringa reale)
+    const prev=sel.value;
+    sel.innerHTML='';
     if(!cams.length){sel.innerHTML='<option value="">Nessuna cam</option>';return;}
     cams.forEach((c,i)=>sel.appendChild(new Option(c.label||'Cam '+(i+1),c.deviceId)));
+    if(prev && [...sel.options].find(o=>o.value===prev)) sel.value=prev;
   }catch(e){}
 }
+
+// Apertura cam: usa facingMode di default (robusto su iOS).
+// Solo se selCamFacing è "manual" usa deviceId.
 async function toggleCam(){
   if(camActive){stopCam();return;}
   try{
-    const devId=document.getElementById('selCam').value;
-    camStream=await navigator.mediaDevices.getUserMedia({video:devId?{deviceId:{exact:devId}}:true});
+    const facingMode = document.getElementById('selCamFacing')?.value || 'user';
+    let constraints;
+    if(facingMode === 'manual'){
+      const devId = document.getElementById('selCam')?.value;
+      constraints = {video: devId ? {deviceId:{exact:devId}} : true};
+    } else {
+      // facingMode è IDEAL: se la cam richiesta non esiste, fallback automatico.
+      // Specifichiamo anche ideal width/height per ridurre throughput su rete fiera.
+      constraints = {video:{
+        facingMode: {ideal: facingMode},
+        width: {ideal: 1280},
+        height: {ideal: 720}
+      }};
+    }
+    camStream = await navigator.mediaDevices.getUserMedia(constraints);
     const v=document.getElementById('camVideo'); v.srcObject=camStream;
     v.style.display='block'; document.getElementById('camPh').style.display='none';
     camActive=true; document.getElementById('btnCamOn').textContent='⏹ Spegni cam';
     document.getElementById('btnSnap').disabled=false; dot('dCam','on');
+    // Persisti preferenza
+    if(facingMode==='user' || facingMode==='environment'){
+      try{ localStorage.setItem(LS_CAM_FACING, facingMode); }catch{}
+    }
+    // Toggle visibility del select manuale
+    const manualSel=document.getElementById('selCam');
+    if(manualSel) manualSel.style.display = (facingMode==='manual'?'':'none');
     await enumCams();
-    // Se WS è già connesso, avvia streaming video immediatamente.
-    // Altrimenti partirà al setupComplete.
     if(connected && setupReady) startVideoStream();
-  }catch(e){toast('❌ Cam: '+e.message);}
+  }catch(e){
+    dbgErr('❌ Cam: '+e.name+': '+e.message);
+    // Fallback: se exact:deviceId fallisce su iOS (id rotato), prova facingMode
+    if(e.name==='OverconstrainedError' || e.name==='NotReadableError'){
+      toast('⚠️ Riprovo con cam frontale...');
+      try{
+        camStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'user'}}});
+        const v=document.getElementById('camVideo'); v.srcObject=camStream;
+        v.style.display='block'; document.getElementById('camPh').style.display='none';
+        camActive=true; document.getElementById('btnCamOn').textContent='⏹ Spegni cam';
+        document.getElementById('btnSnap').disabled=false; dot('dCam','on');
+        await enumCams();
+        if(connected && setupReady) startVideoStream();
+        return;
+      }catch(e2){ toast('❌ Cam: '+e2.message); }
+    } else {
+      toast('❌ Cam: '+e.message);
+    }
+  }
 }
+
 function stopCam(){
-  stopVideoStream(); // ferma streaming prima di spegnere la cam
-  if(camStream) camStream.getTracks().forEach(t=>t.stop());
+  stopVideoStream();
+  if(camStream){
+    camStream.getTracks().forEach(t=>{ try{t.stop();}catch{} });
+  }
   camStream=null; camActive=false;
-  document.getElementById('camVideo').style.display='none';
+  const v=document.getElementById('camVideo');
+  try{ v.srcObject=null; }catch{}
+  v.style.display='none';
   document.getElementById('camPh').style.display='flex';
   document.getElementById('btnCamOn').textContent='📷 Attiva cam';
-  document.getElementById('btnSnap').disabled=true; dot('dCam',null);
+  document.getElementById('btnSnap').disabled=true;
+  dot('dCam',null);
 }
-async function switchCam(){if(camActive){stopCam();await toggleCam();}}
+
+// Cambio camera (facingMode o deviceId).
+// FIX BUG iOS: dopo track.stop() iOS necessita ~200-400ms per rilasciare la cam.
+// Senza attesa, getUserMedia() successiva può fallire silenziosamente o usare
+// la cam sbagliata. Inoltre i deviceId iOS RUOTANO tra una richiesta e l'altra,
+// quindi affidarsi a deviceId è fragile: usiamo facingMode dove possibile.
+async function switchCam(){
+  if(!camActive) return;
+  dbg('🔄 Cambio cam...');
+  stopCam();
+  // Attesa rilascio cam
+  await new Promise(r=>setTimeout(r, CAM_RELEASE_MS));
+  await toggleCam();
+}
+
+async function switchCamFacing(){
+  const facing = document.getElementById('selCamFacing').value;
+  // Toggle visibility manual select
+  const manualSel=document.getElementById('selCam');
+  if(manualSel) manualSel.style.display = (facing==='manual'?'':'none');
+  if(!camActive) return; // applicato al prossimo avvio
+  await switchCam();
+}
+
+// Pulsante flip rapido: alterna user ↔ environment
+async function flipCam(){
+  const sel = document.getElementById('selCamFacing');
+  if(!sel) return;
+  if(sel.value === 'user'){ sel.value='environment'; }
+  else if(sel.value === 'environment'){ sel.value='user'; }
+  else {
+    // se "manual", torna a user
+    sel.value='user';
+    const manualSel=document.getElementById('selCam');
+    if(manualSel) manualSel.style.display='none';
+  }
+  try{ localStorage.setItem(LS_CAM_FACING, sel.value); }catch{}
+  if(camActive) await switchCam();
+}
 
 // ═══════════════════════════════════════════════════════════════
 // VIDEO STREAMING CONTINUO (1 fps) — doc ufficiale Gemini Live API
@@ -1839,10 +2464,20 @@ function oGain(v){
 }
 function oThr(v){document.getElementById('vThr').textContent=v;}
 function oSil(v){document.getElementById('vSil').textContent=v+' ms';}
+function oSilSem(v){document.getElementById('vSilSem').textContent=v+' ms';}
+function oSilMan(v){document.getElementById('vSilMan').textContent=v+' ms';}
 function updVadUI(){
   const m=document.getElementById('selVad').value;
-  document.getElementById('pSVad').style.display=m==='server_vad'?'':'none';
-  document.getElementById('pSemVad').style.display=m==='semantic_vad'?'':'none';
+  document.getElementById('pSVad').style.display = m==='server_vad' ? '' : 'none';
+  document.getElementById('pSemVad').style.display= m==='semantic_vad' ? '' : 'none';
+  document.getElementById('pManVad').style.display= m==='manual_vad' ? '' : 'none';
+  // Avvisi su UI
+  const thrEl=document.getElementById('rThr');
+  if(thrEl){
+    // Lo slider Soglia VAD ha senso solo in modalità manuale
+    thrEl.disabled = m!=='manual_vad';
+    thrEl.style.opacity = m==='manual_vad' ? '1' : '0.5';
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1906,7 +2541,15 @@ function toggleMute(){
   if(muted) dot('dMic','muted');
   else if(connected && !autoMuteSuspended) dot('dMic','on');
   if(muted && ws&&ws.readyState===WebSocket.OPEN&&setupReady){
-    ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+    const vadMode=document.getElementById('selVad')?.value||'server_vad';
+    try{
+      if(vadMode==='manual_vad' && manualVadActive){
+        ws.send(JSON.stringify({realtimeInput:{activityEnd:{}}}));
+        manualVadActive=false;
+      } else if(vadMode!=='manual_vad'){
+        ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));
+      }
+    }catch{}
     vadWasActive=false;
   }
 }
@@ -2227,9 +2870,9 @@ function renderCost(){
   const aI=(tok.ai/1e6)*P.ai*EUR, aO=(tok.ao/1e6)*P.ao*EUR;
   const tot=aI+aO, fmt=v=>v<.0001?'<€0.0001':'€'+v.toFixed(4);
   document.getElementById('costBox').innerHTML=
-    '🎤 Audio IN:  ~'+tok.ai.toLocaleString()+' tok → '+fmt(aI)+'<br>'+
-    '🔊 Audio OUT: ~'+tok.ao.toLocaleString()+' tok → '+fmt(aO)+'<br>'+
-    '<div style="font-size:.6rem;color:var(--muted);margin-top:4px">⚠️ Stima ~25 tok/s</div>'+
+    '🎤 Token IN:  '+tok.ai.toLocaleString()+' → '+fmt(aI)+'<br>'+
+    '🔊 Token OUT: '+tok.ao.toLocaleString()+' → '+fmt(aO)+'<br>'+
+    '<div style="font-size:.6rem;color:var(--muted);margin-top:4px">Dati da usageMetadata (cumulativi sulla sessione)</div>'+
     '<div class="costtot">💶 TOTALE STIMATO: '+fmt(tot)+'</div>';
 }
 function resetCost(){tok={ai:0,ao:0};document.getElementById('costBox').innerHTML='<span style="color:var(--muted)">Azzerato.</span>';}
