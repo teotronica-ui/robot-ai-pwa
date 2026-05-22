@@ -829,6 +829,8 @@ let manualVadSilenceStart=null;  // timestamp inizio silenzio (per attendere sil
 let manualVadFramesSpeaking=0;   // frame consecutivi sopra soglia (debounce)
 // flag per ws send sicuro
 let wsBufferAudioWarned=false;
+// contatore chunk audio in arrivo (per log diluito)
+let onMsgAudioCount=0;
 
 // ═══════════════════════════════════════════════════════════════
 // INIT
@@ -1483,6 +1485,7 @@ async function conn(){
   setupReady=false;
   // Reset diagnostica per il nuovo tentativo
   onChunkDiag = {calls:0, blockedSetup:0, blockedMute:0, blockedWS:0, blockedAutoMute:0, blockedVAD:0, blockedBuf:0, sent:0, lastLog:0};
+  onMsgAudioCount=0;
   wsBufferAudioWarned=false;
   manualVadActive=false; manualVadSilenceStart=null; manualVadFramesSpeaking=0;
   document.getElementById('btnConn').disabled=true;
@@ -1574,15 +1577,12 @@ async function conn(){
 }
 
 function startWsKeepalive(){
+  // NB: NON inviamo nulla a livello applicativo.
+  // Inviare {realtimeInput:{}} viene interpretato da Gemini come "fine turno utente"
+  // (equivalente implicito di audioStreamEnd), il che ABORTISCE i turni in corso ogni 30s.
+  // Il keep-alive WebSocket è già gestito dal browser a livello protocollo (PING/PONG).
+  // Lasciamo la funzione per compatibilità ma è no-op.
   stopWsKeepalive();
-  wsKeepaliveInterval=setInterval(()=>{
-    if(!ws || ws.readyState!==WebSocket.OPEN) return;
-    // Non c'è un ping/pong frame esposto in WebSocket API browser.
-    // Mandiamo un messaggio JSON vuoto realtimeInput senza payload utili.
-    // Alcuni firewall richiedono traffico ogni 60-90s per non chiudere TCP.
-    // NB: Gemini accetta `realtimeInput` vuoto silenziosamente (no-op).
-    try{ ws.send(JSON.stringify({realtimeInput:{}})); }catch{}
-  }, WS_KEEPALIVE_MS);
 }
 function stopWsKeepalive(){
   if(wsKeepaliveInterval){ clearInterval(wsKeepaliveInterval); wsKeepaliveInterval=null; }
@@ -1641,7 +1641,14 @@ function sendSetup(){
     // Trascrizioni: ESSENZIALI per popolare la chat e per i comandi vocali snap.
     // language_codes lasciato vuoto → auto-detect (Gemini fa multilingua nativo).
     inputAudioTranscription: {},
-    outputAudioTranscription: {}
+    outputAudioTranscription: {},
+    // Context window compression: ESSENZIALE per sessioni > 15 min.
+    // Senza, audio si accumula a ~25 tok/s e la sessione viene chiusa al limite.
+    // Con sliding window, Gemini comprime automaticamente il contesto vecchio.
+    // Doc: ai.google.dev/gemini-api/docs/live-api/session-management
+    contextWindowCompression: {
+      slidingWindow: {}  // configurazione di default: comprimi automaticamente
+    }
   };
 
   // ── realtimeInputConfig (VAD) ────────────────────────────────────
@@ -1740,7 +1747,11 @@ function pcmToBase64(pcm){
 let vadWasActive=false;    // true se nell'ultimo chunk eravamo sopra soglia
 let vadSilenceFrames=0;    // frame consecutivi sotto soglia dopo parlato
 const VAD_SILENCE_FRAMES_MANUAL=20; // ~500ms con chunk da 40ms — doc dice "almeno 500ms"
-const AUDIO_BUFFER_DROP=80*1024;    // soglia bufferedAmount per droppare chunk audio
+// Soglia per droppare chunk: con 25 chunk/sec a ~3KB l'uno servono ~75KB/sec di banda costante.
+// 80KB era troppo basso (scattava al primo micro-lag). 512KB = ~7 secondi di audio buffered,
+// molto più tollerante con lag temporanei della rete WiFi in fiera.
+const AUDIO_BUFFER_DROP=512*1024;
+const AUDIO_BUFFER_WARN=256*1024; // solo warning a 256KB, drop solo oltre 512KB
 
 let onChunkDiag = {calls:0, blockedSetup:0, blockedMute:0, blockedWS:0, blockedAutoMute:0, blockedVAD:0, blockedBuf:0, sent:0, lastLog:0};
 
@@ -1751,18 +1762,22 @@ function onChunk(e){
   if(muted){onChunkDiag.blockedMute++; return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){onChunkDiag.blockedWS++; return;}
 
-  // Back-pressure WebSocket: se il buffer di invio è saturo, droppiamo questo chunk.
-  // In fiera con WiFi affollato è critico: senza questo controllo il buffer cresce
-  // indefinitamente, Gemini rileva latenza e manda goAway.
+  // Back-pressure WebSocket a 2 livelli:
+  // - >= 256KB: warning (rete sta soffrendo, ma continuiamo a mandare)
+  // - >= 512KB (~7s buffered): droppiamo per non saturare ulteriormente
   if(ws.bufferedAmount > AUDIO_BUFFER_DROP){
     onChunkDiag.blockedBuf++;
     if(!wsBufferAudioWarned){
-      dbgWarn('⚠️ Audio buffer pieno ('+Math.round(ws.bufferedAmount/1024)+'KB) — droppo chunk per non saturare la rete');
+      dbgErr('🚨 Audio buffer SATURO ('+Math.round(ws.bufferedAmount/1024)+'KB) — droppo chunk');
       wsBufferAudioWarned=true;
-      // Reset warning dopo 5s
       setTimeout(()=>{wsBufferAudioWarned=false;}, 5000);
     }
     return;
+  }
+  if(ws.bufferedAmount > AUDIO_BUFFER_WARN && !wsBufferAudioWarned){
+    dbgWarn('⚠️ Audio buffer alto ('+Math.round(ws.bufferedAmount/1024)+'KB) — rete sotto stress');
+    wsBufferAudioWarned=true;
+    setTimeout(()=>{wsBufferAudioWarned=false;}, 10000);
   }
 
   const pcm=new Int16Array(e.data);
@@ -1846,8 +1861,8 @@ function onChunk(e){
     }catch(ex){ dbg('❌ send audio: '+ex.message); }
   }
 
-  // Log periodico chunks inviati
-  if(onChunkDiag.sent > 0 && onChunkDiag.sent % 250 === 0){
+  // Log periodico chunks inviati — ogni ~60s (1500 chunk @ 25/s) per non saturare il log
+  if(onChunkDiag.sent > 0 && onChunkDiag.sent % 1500 === 0){
     dbgAudio('📤 '+onChunkDiag.sent+' chunk audio inviati');
   }
 }
@@ -1861,8 +1876,16 @@ function onMsg(e){
   let m;
   try{m=JSON.parse(raw);}catch(ex){dbg('❌ JSON: '+ex.message+' | '+raw.slice(0,80));return;}
   const ls=JSON.stringify(m);
-  if(!ls.includes('"data"'))console.log('[RX]',ls.slice(0,200));
-  else dbg('🔊 Audio chunk ricevuto ('+Math.round(ls.length/1.33)+' bytes PCM)');
+  if(!ls.includes('"data"')){
+    console.log('[RX]',ls.slice(0,200));
+    dbg('📥 RX: '+ls.slice(0,140));
+  } else {
+    // Audio chunk: log solo ogni 25 chunk (~1s di audio) per non saturare il log
+    onMsgAudioCount++;
+    if(onMsgAudioCount % 25 === 1){
+      dbg('🔊 Audio in arrivo (#'+onMsgAudioCount+', '+Math.round(ls.length/1.33)+' bytes)');
+    }
+  }
 
   if('setupComplete' in m){
     clearTimeout(wsTimeoutTimer);
@@ -1927,30 +1950,47 @@ function onMsg(e){
     }
     // Trascrizioni: anche se Gemini a volte le mette top-level, qui dentro serverContent
     // è il path più comune (cookbook ufficiale)
-    if(sc.outputTranscription?.text) appendRobotTxt(sc.outputTranscription.text);
+    if(sc.outputTranscription?.text){
+      const t=sc.outputTranscription.text;
+      appendRobotTxt(t);
+      dbg('💬 [Gemini]: '+t.slice(0,60)+(t.length>60?'...':''));
+    }
     if(sc.inputTranscription?.text){
       const userText = sc.inputTranscription.text;
       addMsg(userText,'user');
+      dbg('🎤 [User]: '+userText.slice(0,60)+(userText.length>60?'...':''));
       checkVoiceSnapCommand(userText);
     }
     if(sc.turnComplete){
+      dbg('✅ turnComplete ricevuto');
       finalizeRobot();
       audioQ.push(new Int16Array(OUTPUT_SR));
       if(!playing) drain();
-      setTimeout(()=>{setRobotSpeaking(false);setSt('listening');if(!silStart)silStart=Date.now();},1100);
+      // FIX: silStart si azzera SEMPRE qui (era condizionato a !silStart e quindi
+      // non si resettava se era già attivo). Adesso ogni turn completed riavvia il timer.
+      setTimeout(()=>{
+        setRobotSpeaking(false);
+        setSt('listening');
+        silStart = Date.now();  // sempre, non solo se null
+      },1100);
     }
     if(sc.interrupted){
-      dbg('🛑 Barge-in');audioQ=[];playing=false;nextPlayTime=0;
+      dbg('🛑 Barge-in (interrupted)');audioQ=[];playing=false;nextPlayTime=0;
       setRobotSpeaking(false);setSt('talking');dot('dMic','tk');silStart=null;
+    }
+    if(sc.generationComplete){
+      dbg('🏁 generationComplete (Gemini ha finito di pensare)');
     }
   }
   // Trascrizioni top-level (alcuni modelli/versioni le mandano qui invece che in serverContent)
   if(m.inputTranscription?.text){
     addMsg(m.inputTranscription.text,'user');
+    dbg('🎤 [User-top]: '+m.inputTranscription.text.slice(0,60));
     checkVoiceSnapCommand(m.inputTranscription.text);
   }
   if(m.outputTranscription?.text){
     appendRobotTxt(m.outputTranscription.text);
+    dbg('💬 [Gemini-top]: '+m.outputTranscription.text.slice(0,60));
   }
   // usageMetadata: dati esatti di consumo token dal server.
   // Quando presente, sovrascrive le nostre stime (più affidabile).
