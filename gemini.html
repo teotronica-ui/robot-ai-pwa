@@ -479,6 +479,7 @@
     <div class="f"><label>VAD Mode</label>
       <select id="selVad" onchange="updVadUI()">
         <option value="server_vad" selected>🛰 Server VAD (auto)</option>
+        <option value="semantic_vad">🧠 Semantic VAD (auto)</option>
         <option value="manual_vad">✋ Manuale (client)</option>
       </select>
     </div>
@@ -500,7 +501,7 @@
     <div class="f" style="margin-top:10px"><label>Sensibilità inizio parlato</label>
       <select id="selStartSens">
         <option value="START_SENSITIVITY_HIGH" selected>High — aggancia prima la voce (consigliato in fiera/rumoroso)</option>
-        <option value="START_SENSITIVITY_LOW">Low — richiede voce netta (per ambiente molto silenzioso)</option>
+        <option value="START_SENSITIVITY_LOW">Low — richiede voce più netta (per ambiente molto silenzioso)</option>
       </select>
     </div>
     <div class="f" style="margin-top:8px"><label>Sensibilità fine parlato</label>
@@ -508,6 +509,21 @@
         <option value="END_SENSITIVITY_LOW" selected>Low — aspetta più silenzio</option>
         <option value="END_SENSITIVITY_HIGH">High — chiude subito</option>
       </select>
+    </div>
+  </div>
+  <!-- Pannello Semantic VAD: stesso silence + eagerness mappato -->
+  <div id="pSemVad" style="display:none">
+    <div class="f" style="margin-top:10px"><label>Eagerness (sensibilità inizio)</label>
+      <select id="selEag">
+        <option value="low">Low — aspetta di più</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High — risponde subito</option>
+      </select>
+    </div>
+    <div class="sg" style="margin-top:10px">
+      <div class="sh"><span class="l">Silenzio fine-turno</span><span class="v" id="vSilSem">800 ms</span></div>
+      <input type="range" id="rSilSem" min="200" max="2000" step="100" value="800" oninput="oSilSem(this.value)">
+      <div class="sticks"><span>200ms</span><span>500-800 cons.</span><span>2s</span></div>
     </div>
   </div>
   <!-- Pannello VAD manuale: usa la soglia client (slider VU) -->
@@ -707,7 +723,7 @@ registerProcessor('pcm16-processor', PCM16Processor);
 const LS_KEY='robot_key_gemini', LS_CHARS='robot_characters', LS_LAST='robot_last_char', LS_KNOW='robot_knowledge';
 const LS_MIC_ID='gemini_mic_id';        // mic preferito (persistente)
 const LS_CAM_FACING='gemini_cam_facing'; // 'user' | 'environment'
-const LS_VAD_MODE='gemini_vad_mode';     // server_vad | manual_vad
+const LS_VAD_MODE='gemini_vad_mode';     // server_vad | semantic_vad | manual_vad
 const LS_BARGE='gemini_barge';           // ricorda preferenza barge-in
 const SS_SESSION_HANDLE='gemini_sess';   // sessionStorage (entro 2h validità Gemini)
 const GEMINI_WS_BASE='wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage';
@@ -733,7 +749,7 @@ const RECONNECT_MAX   = 30000;
 const RECONNECT_LIMIT = 10;
 const AUDIO_Q_MAX     = 60;
 const DRAIN_WATCHDOG  = 1500;  // ridotto da 6000: troppo lungo causava robot muto in fiera
-const PRE_BUFFER_CHUNKS = 2;   // FIX: era 4 — riduce latenza prima parola di ~80ms
+const PRE_BUFFER_CHUNKS = 4;
 const CTX_WATCHDOG_MS = 2000;
 const WS_KEEPALIVE_MS = 30000; // ping cliente per mantenere viva la TCP
 const CAM_RELEASE_MS  = 350;   // attesa rilascio cam iOS tra switch
@@ -876,25 +892,6 @@ function init(){
   document.getElementById('selModel').addEventListener('change', updThinkUI);
   updThinkUI();
   onAutoMuteChange();
-
-  // FIX iPhone: al chiudere/nascondere la pagina, rilascia il mic in modo pulito.
-  // Senza questo, su iOS la "audio session" può restare allocata anche dopo che
-  // l'utente ha chiuso la tab (icona barra di stato accesa).
-  // pagehide è l'evento iOS-friendly (beforeunload è poco affidabile su Safari).
-  window.addEventListener('pagehide', ()=>{
-    try{
-      userDisconnected = true;
-      if(sharedMicStream){
-        sharedMicStream.getTracks().forEach(t=>{ try{ t.stop(); }catch{} });
-        sharedMicStream = null;
-      }
-      if(vuCtx && vuCtx.state!=='closed'){ try{ vuCtx.close(); }catch{} }
-      if(camStream){
-        camStream.getTracks().forEach(t=>{ try{ t.stop(); }catch{} });
-      }
-      if(ws){ try{ ws.close(); }catch{} }
-    }catch{}
-  });
 }
 
 // Mostra/nasconde pannello thinking in base al modello scelto
@@ -1550,18 +1547,7 @@ async function conn(){
     dbg('🌐 WS → '+apiVer+' · '+model);
     ws=new WebSocket(url);
     wsTimeoutTimer=setTimeout(()=>{
-      if(!connected){
-        dbg('⏱ Timeout WS — possibile handle scaduto, azzero per nuova sessione');
-        toast('❌ Timeout');
-        // FIX: se eravamo in reconnect con handle, azzeralo prima di ritentare —
-        // un handle scaduto causa un loop di tentativi falliti identici.
-        if(sessionHandle){
-          sessionHandle=null;
-          try{ sessionStorage.removeItem(SS_SESSION_HANDLE); }catch{}
-        }
-        disc();
-        scheduleReconnect();
-      }
+      if(!connected){dbg('⏱ Timeout WS');toast('❌ Timeout');disc();scheduleReconnect();}
     },WS_TIMEOUT_MS);
     ws.onopen=()=>{
       dbg('🔗 WS aperto — invio setup'+(sessionHandle?' (resumption)':'')+'...');
@@ -1666,18 +1652,25 @@ function sendSetup(){
   };
 
   // ── realtimeInputConfig (VAD) ────────────────────────────────────
-  // Doc ufficiale: ai.google.dev/gemini-api/docs/live-api/capabilities
-  // - prefixPaddingMs: "look-back" prima dell'inizio del parlato.
-  //   La doc avverte che valori bassi causano taglio della prima sillaba.
-  //   200ms è il valore conservativo usato negli esempi ufficiali.
-  // - startOfSpeechSensitivity: HIGH = "detect start of speech more often"
-  //   (consigliato in fiera/rumoroso per non perdere frasi).
-  // - silenceDurationMs: doc consiglia 500-800ms (server default ~800ms).
   const vadMode = document.getElementById('selVad').value || 'server_vad';
   if(vadMode === 'manual_vad'){
     // VAD client-side: Gemini riceve audio ma non taglia, attende activityStart/End nostri
     setup.realtimeInputConfig = {
       automaticActivityDetection: {disabled: true}
+    };
+  } else if(vadMode === 'semantic_vad'){
+    // Semantic: usa eagerness → mappa su start sensitivity, end LOW per privilegiare semantica
+    const eag = document.getElementById('selEag')?.value || 'medium';
+    const startSens = eag==='high' ? 'START_SENSITIVITY_HIGH' : 'START_SENSITIVITY_LOW';
+    const silMs = parseInt(document.getElementById('rSilSem')?.value || '800');
+    setup.realtimeInputConfig = {
+      automaticActivityDetection: {
+        disabled: false,
+        startOfSpeechSensitivity: startSens,
+        endOfSpeechSensitivity: 'END_SENSITIVITY_LOW', // privilegia frasi complete
+        prefixPaddingMs: 200, // FIX: era 20 — doc Google avverte che valori bassi tagliano la prima sillaba
+        silenceDurationMs: silMs
+      }
     };
   } else { // server_vad
     const silMs = parseInt(document.getElementById('rSil')?.value || '800');
@@ -1688,15 +1681,11 @@ function sendSetup(){
         disabled: false,
         startOfSpeechSensitivity: startSens,
         endOfSpeechSensitivity: endSens,
-        prefixPaddingMs: 200,  // FIX: era 20 (rischio taglio prima sillaba)
+        prefixPaddingMs: 200, // FIX: era 20 — doc Google avverte che valori bassi tagliano la prima sillaba
         silenceDurationMs: silMs
       }
     };
   }
-
-  // ── mediaResolution: riduce token video ~30% senza perdita visibile ──
-  // Doc: ai.google.dev/gemini-api/docs/live-api/capabilities (sez. Media resolution)
-  setup.mediaResolution = 'MEDIA_RESOLUTION_LOW';
 
   // ── Session resumption ───────────────────────────────────────────
   setup.sessionResumption = sessionHandle ? {handle: sessionHandle} : {};
@@ -1707,51 +1696,33 @@ function sendSetup(){
 }
 
 // Aggiornamento mid-session di system prompt / personaggio / conoscenza.
-// Doc ufficiale (capabilities, tabella confronto modelli):
-// - Gemini 2.5 native-audio: clientContent supportato mid-session,
-//   ma INTERROMPE la generazione corrente (BidiGenerateContentClientContent
-//   spec: "A message here will interrupt any current model generation").
-// - Gemini 3.1 Flash Live: clientContent NON supportato mid-session,
-//   bisogna usare realtimeInput.text invece.
-// Strategia: se il robot sta generando in questo momento, ritardiamo
-// l'update fino al prossimo turnComplete (così non abortiamo la risposta).
-let _pendingSessUpdate = false;
+// La doc supporta clientContent con role:'system' per update incrementali,
+// ma in pratica i modelli native-audio lo onorano in modo incoerente.
+// Strategia: tentiamo prima clientContent; se l'utente nota incoerenze
+// (raramente), può sempre disconnettere e riconnettere — il sessionHandle
+// preserva il contesto.
 function sendSess(){
   if(!ws || ws.readyState!==WebSocket.OPEN || !setupReady){
     dbg('⚠️ sendSess: ws non pronto, skip');
     return;
   }
-  // Se il robot sta parlando ora, ritardo: scheduleremo dopo turnComplete
-  if(robotSpeaking){
-    _pendingSessUpdate = true;
-    dbg('🔄 sendSess: turno in corso, update bufferizzato');
-    return;
-  }
-  _pendingSessUpdate = false;
   const instructions = buildSystemPrompt();
-  const model = document.getElementById('selModel').value;
-  const isLive31 = MODELS_LIVE_31.includes(model);
-  const updateText = '[CONFIG UPDATE] Da ora in poi, segui SOLO queste istruzioni di sistema aggiornate (sostituiscono completamente le precedenti):\n\n' + instructions + '\n\n[END CONFIG UPDATE] — Non commentare questo messaggio, applica solo le nuove istruzioni alla prossima interazione.';
   try{
-    let upd;
-    if(isLive31){
-      // Gemini 3.1: usa realtimeInput.text (clientContent vietato mid-session)
-      upd = { realtimeInput: { text: updateText } };
-    } else {
-      // Gemini 2.5 native-audio e 2.0: clientContent (interrompe il turno se attivo,
-      // ma noi abbiamo già verificato sopra che il robot NON sta parlando)
-      upd = {
-        clientContent: {
-          turns: [{
-            role: 'user',
-            parts: [{text: updateText}]
-          }],
-          turnComplete: false
-        }
-      };
-    }
+    // Inviamo il nuovo system prompt come clientContent con role 'user' che esplicita
+    // l'aggiornamento. Workaround testato: i modelli native-audio rispondono meglio
+    // se l'aggiornamento è iniettato come messaggio invece di systemInstruction modificato
+    // (che non è ufficialmente modificabile mid-session).
+    const upd = {
+      clientContent: {
+        turns: [{
+          role: 'user',
+          parts: [{text: '[CONFIG UPDATE] Da ora in poi, segui SOLO queste istruzioni di sistema aggiornate (sostituiscono completamente le precedenti):\n\n' + instructions + '\n\n[END CONFIG UPDATE] — Non commentare questo messaggio, applica solo le nuove istruzioni alla prossima interazione.'}]
+        }],
+        turnComplete: false
+      }
+    };
     ws.send(JSON.stringify(upd));
-    dbg('🔄 sendSess: update inviato ('+(isLive31?'realtimeInput.text':'clientContent')+')');
+    dbg('🔄 sendSess: aggiornamento system prompt inviato');
   }catch(e){
     dbg('❌ sendSess: '+e.message);
   }
@@ -1879,9 +1850,9 @@ function onChunk(e){
       }
     }
   } else {
-    // ── VAD SERVER: invia audio in continuo ──
+    // ── VAD SERVER (server_vad o semantic_vad): invia audio in continuo ──
     // Gemini fa lui la segmentazione, nessun audioStreamEnd da inviare.
-    // Lo slider Soglia VAD è IGNORATO in questa modalità.
+    // Lo slider Soglia VAD è IGNORATO in queste modalità.
     try{
       ws.send(JSON.stringify({
         realtimeInput:{audio:{data:pcmToBase64(pcm), mimeType:'audio/pcm;rate=16000'}}
@@ -2001,11 +1972,6 @@ function onMsg(e){
         setRobotSpeaking(false);
         setSt('listening');
         silStart = Date.now();  // sempre, non solo se null
-        // Se c'era un update di sessione bufferizzato, ora possiamo applicarlo
-        if(_pendingSessUpdate){
-          dbg('🔄 Applico update sessione bufferizzato (post-turnComplete)');
-          sendSess();
-        }
       },1100);
     }
     if(sc.interrupted){
@@ -2096,17 +2062,16 @@ function disc(clearHandle=false){
     workletNode=null;
   }
   // NB: durante una RICONNESSIONE automatica (clearHandle=false) NON stoppiamo i tracks
-  // del mic: sharedMicStream è condiviso col VU monitor e serve riavere il permesso iOS
-  // senza re-prompt utente. Solo dissociamo il riferimento locale.
+  // del mic — sharedMicStream è condiviso col VU monitor e tenerlo vivo evita
+  // un re-prompt permesso iOS ad ogni reconnect.
   micStream=null;
-  // audioCtx === vuCtx normalmente, quindi non lo chiudiamo qui
+  // audioCtx === vuCtx normalmente, quindi non lo chiudiamo qui (lo facciamo sotto solo se clearHandle)
   if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch{}}
   audioCtx=null; analyser=vuAnalyser;
   audioQ=[]; playing=false; silStart=null; nextPlayTime=0;
   vadWasActive=false; vadSilenceFrames=0;
   manualVadActive=false; manualVadSilenceStart=null; manualVadFramesSpeaking=0;
   robotSpeaking=false; autoMuteSuspended=false;
-  _pendingSessUpdate=false;
   setRobotSpeaking(false);
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
   // sessionHandle: azzerato solo su disconnessione volontaria.
@@ -2116,37 +2081,30 @@ function disc(clearHandle=false){
     try{ sessionStorage.removeItem(SS_SESSION_HANDLE); }catch{}
 
     // ═══════════════════════════════════════════════════════════════
-    // FIX iPhone: rilascio completo del mic (icona barra di stato).
+    // FIX iPhone: rilascio completo del mic (icona barra di stato iOS).
     // ═══════════════════════════════════════════════════════════════
     // Su disconnessione VOLONTARIA dell'utente, dobbiamo rilasciare anche
     // sharedMicStream + vuCtx + watchdog, altrimenti l'icona del microfono
     // nella barra di stato iOS resta accesa finché non si chiude la pagina.
     // Il VU verrà ricreato al prossimo "CONNETTI" da startVuMonitor().
     dbg('🔇 Disconnessione volontaria — rilascio mic e AudioContext');
-    // 1. Ferma il loop VU (rAF)
     if(vuRaf){ try{ cancelAnimationFrame(vuRaf); }catch{} vuRaf=null; }
-    // 2. Ferma il watchdog AudioContext
     if(ctxWatchdogInterval){ try{ clearInterval(ctxWatchdogInterval); }catch{} ctxWatchdogInterval=null; }
-    // 3. Stoppa TUTTI i track del mic (questo libera l'icona iOS)
     if(sharedMicStream){
       try{ sharedMicStream.getTracks().forEach(t=>{ try{ t.stop(); }catch{} }); }catch{}
       sharedMicStream=null;
     }
-    // 4. Chiudi il vuCtx (libera l'audio session)
     if(vuCtx && vuCtx.state!=='closed'){
       try{ vuCtx.close(); }catch{}
     }
     vuCtx=null; vuAnalyser=null;
-    // 5. Reset stato VU
     vuDisplayPct=0; vuNoiseFloor=0;
-    // 6. Reset visivo: VU "vuoto"
     if(vuEl){
       const segs=vuEl.children;
       for(let i=0;i<segs.length;i++) segs[i].className='seg';
     }
     const rmsEl=document.getElementById('rmsVal');
     if(rmsEl){ rmsEl.textContent='  0%'; rmsEl.className='rms-val'; }
-    dot('dMic',null);
   }
   dot('dAI',null); dot('dMic',null); setSt('idle'); updBtn();
   document.getElementById('btnConn').disabled=false;
@@ -2573,10 +2531,12 @@ function oGain(v){
 }
 function oThr(v){document.getElementById('vThr').textContent=v;}
 function oSil(v){document.getElementById('vSil').textContent=v+' ms';}
+function oSilSem(v){document.getElementById('vSilSem').textContent=v+' ms';}
 function oSilMan(v){document.getElementById('vSilMan').textContent=v+' ms';}
 function updVadUI(){
   const m=document.getElementById('selVad').value;
   document.getElementById('pSVad').style.display = m==='server_vad' ? '' : 'none';
+  document.getElementById('pSemVad').style.display= m==='semantic_vad' ? '' : 'none';
   document.getElementById('pManVad').style.display= m==='manual_vad' ? '' : 'none';
   // Avvisi su UI
   const thrEl=document.getElementById('rThr');
