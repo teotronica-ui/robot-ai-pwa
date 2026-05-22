@@ -153,17 +153,21 @@
 
     /* ═══════ CONSOLE DEBUG ═══════ */
     .dbgCard{margin-top:10px}
-    .dbgHd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:.66rem}
+    .dbgHd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:.66rem;cursor:pointer;user-select:none}
     .dbgHd .title{color:var(--green);font-weight:bold;letter-spacing:1px}
     .dbgHd .stats{color:var(--muted);font-size:.6rem}
-    .dbgBtns{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+    .dbgHd .chev{margin-left:auto;color:var(--muted);font-size:.8rem;transition:transform .2s}
+    .dbgCard.open .dbgHd .chev{transform:rotate(180deg)}
+    .dbgBody{display:none;margin-top:10px}
+    .dbgCard.open .dbgBody{display:block}
+    .dbgBtns{display:flex;gap:5px;flex-wrap:wrap}
     .dbgBtn{font-family:var(--mono);font-size:.58rem;padding:4px 8px;background:var(--surf);border:1px solid var(--bord);border-radius:6px;color:var(--muted);cursor:pointer;letter-spacing:.5px}
     .dbgBtn:active{background:var(--bord)}
     .dbgBtn.on{color:var(--green);border-color:var(--green)}
     .dbgBtn.warn{color:var(--yellow);border-color:var(--yellow)}
     .dbgFilters{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;padding:6px;background:var(--surf);border-radius:6px}
     .dbgFilters .dbgBtn{font-size:.55rem;padding:3px 7px}
-    .dbgBox{background:#020810;border:1px solid var(--bord);border-radius:7px;padding:8px;margin-top:7px;height:220px;overflow-y:auto;font-family:var(--mono);font-size:.6rem;line-height:1.5;color:#9bb}
+    .dbgBox{background:#020810;border:1px solid var(--bord);border-radius:7px;padding:8px;margin-top:7px;height:220px;overflow-y:auto;font-family:var(--mono);font-size:.6rem;line-height:1.5;color:#9bb;-webkit-overflow-scrolling:touch}
     .dbgBox.tall{height:380px}
     .dbgLine{white-space:pre-wrap;word-break:break-word;padding:1px 4px;border-radius:3px}
     .dbgLine.err{color:#ff6060;background:rgba(255,60,60,.08)}
@@ -482,28 +486,31 @@
 </div>
 
 <!-- CONSOLE DEBUG -->
-<div class="card dbgCard">
-  <div class="dbgHd">
+<div class="card dbgCard" id="dbgCard">
+  <div class="dbgHd" onclick="dbgToggleOpen()">
     <span class="title">🔧 CONSOLE DEBUG</span>
     <span class="stats" id="dbgStats">0 righe</span>
+    <span class="chev">▼</span>
   </div>
-  <div class="dbgBtns">
-    <button class="dbgBtn on" id="dbgBtnAuto" onclick="dbgToggleAuto()">▼ Auto-scroll</button>
-    <button class="dbgBtn" onclick="dbgToggleHeight()">⤢ Espandi</button>
-    <button class="dbgBtn" onclick="dbgCopy()">📋 Copia</button>
-    <button class="dbgBtn" onclick="dbgSave()">💾 Salva .txt</button>
-    <button class="dbgBtn warn" onclick="dbgClear()">🗑 Pulisci</button>
+  <div class="dbgBody">
+    <div class="dbgBtns">
+      <button class="dbgBtn on" id="dbgBtnAuto" onclick="dbgToggleAuto()">▼ Auto-scroll</button>
+      <button class="dbgBtn" onclick="dbgToggleHeight()">⤢ Espandi</button>
+      <button class="dbgBtn" onclick="dbgCopy()">📋 Copia</button>
+      <button class="dbgBtn" onclick="dbgSave()">💾 Salva .txt</button>
+      <button class="dbgBtn warn" onclick="dbgClear()">🗑 Pulisci</button>
+    </div>
+    <div class="dbgFilters">
+      <button class="dbgBtn on" data-cat="all" onclick="dbgFilter('all')">TUTTO</button>
+      <button class="dbgBtn" data-cat="err" onclick="dbgFilter('err')">ERR</button>
+      <button class="dbgBtn" data-cat="warn" onclick="dbgFilter('warn')">WARN</button>
+      <button class="dbgBtn" data-cat="ws" onclick="dbgFilter('ws')">WS</button>
+      <button class="dbgBtn" data-cat="audio" onclick="dbgFilter('audio')">AUDIO</button>
+      <button class="dbgBtn" data-cat="vad" onclick="dbgFilter('vad')">VAD</button>
+      <button class="dbgBtn" data-cat="video" onclick="dbgFilter('video')">VIDEO</button>
+    </div>
+    <div class="dbgBox" id="dbgBox"></div>
   </div>
-  <div class="dbgFilters">
-    <button class="dbgBtn on" data-cat="all" onclick="dbgFilter('all')">TUTTO</button>
-    <button class="dbgBtn" data-cat="err" onclick="dbgFilter('err')">ERR</button>
-    <button class="dbgBtn" data-cat="warn" onclick="dbgFilter('warn')">WARN</button>
-    <button class="dbgBtn" data-cat="ws" onclick="dbgFilter('ws')">WS</button>
-    <button class="dbgBtn" data-cat="audio" onclick="dbgFilter('audio')">AUDIO</button>
-    <button class="dbgBtn" data-cat="vad" onclick="dbgFilter('vad')">VAD</button>
-    <button class="dbgBtn" data-cat="video" onclick="dbgFilter('video')">VIDEO</button>
-  </div>
-  <div class="dbgBox" id="dbgBox"></div>
 </div>
 
 <div id="toast"></div>
@@ -886,7 +893,14 @@ function escapeHtml(s){
 }
 function dbgUpdateStats(){
   const el = document.getElementById('dbgStats');
-  if(el) el.textContent = dbgBuffer.length+' righe · '+dbgCounters.err+'❌ '+dbgCounters.warn+'⚠️';
+  if(el){
+    let s = dbgBuffer.length+' righe';
+    if(dbgCounters.err > 0) s += ' · '+dbgCounters.err+'❌';
+    if(dbgCounters.warn > 0) s += ' · '+dbgCounters.warn+'⚠️';
+    el.textContent = s;
+    // Colora se ci sono errori
+    el.style.color = dbgCounters.err > 0 ? 'var(--red)' : dbgCounters.warn > 0 ? 'var(--yellow)' : 'var(--muted)';
+  }
 }
 function dbgFilter(cat){
   dbgActiveFilter = cat;
@@ -917,6 +931,17 @@ function dbgToggleAuto(){
 function dbgToggleHeight(){
   const box = document.getElementById('dbgBox');
   if(box) box.classList.toggle('tall');
+}
+function dbgToggleOpen(){
+  const card = document.getElementById('dbgCard');
+  if(card){
+    card.classList.toggle('open');
+    // Quando si apre, scrolla in fondo
+    if(card.classList.contains('open')){
+      const box = document.getElementById('dbgBox');
+      if(box && dbgAutoScroll) box.scrollTop = box.scrollHeight;
+    }
+  }
 }
 function dbgClear(){
   dbgBuffer = [];
@@ -1367,6 +1392,25 @@ function onMsg(e){
     addMsg('✅ Gemini connesso · modello: '+document.getElementById('selModel').value+' · voce: '+(document.getElementById('selVoice').value||activeVoice),'sys');
     toast('✅ Gemini pronto');
     dbg('✅ setupComplete — invio audio abilitato. SR microfono: '+(audioCtx?audioCtx.sampleRate:'?')+'Hz');
+    // FIX BUG: dopo riconnessione automatica (es. goAway) autoMuteSuspended
+    // può restare bloccato a true se chunk audio in coda hanno chiamato
+    // setRobotSpeaking(true) dopo il disc. Forziamo il reset qui per essere
+    // sicuri che onChunk non venga bloccato.
+    if(autoMuteSuspended){
+      dbgWarn('🔧 autoMuteSuspended era bloccato a true post-riconnessione: reset forzato');
+      autoMuteSuspended = false;
+      robotSpeaking = false;
+      // Rimuovi overlay/badge mute se presenti
+      const overlay = document.getElementById('vuMuteOverlay');
+      if(overlay) overlay.classList.remove('show');
+      const badge = document.getElementById('amuteBadge');
+      if(badge) badge.className = 'amute-badge';
+      // Ripristina gain del worklet
+      if(workletNode){
+        const gainVal = parseInt(document.getElementById('rGain').value)/100;
+        workletNode.port.postMessage({cmd:'gain', value: gainVal});
+      }
+    }
     // Reset contatori diagnostica onChunk per la nuova sessione
     onChunkDiag = {calls:0, blockedSetup:0, blockedMute:0, blockedWS:0, blockedAutoMute:0, blockedVAD:0, sent:0, lastLog:0};
     // Stato iniziale per debug: cosa potrebbe bloccare l'invio audio?
