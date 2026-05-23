@@ -1470,6 +1470,9 @@ async function toggleConn(){
 }
 
 async function conn(){
+  // ═══ LOG DIAGNOSTICO: chi sta chiamando conn() e in che stato ═══
+  dbg('🔎 conn() CHIAMATA · userDisc='+userDisconnected+' connected='+connected+' reconnT='+(reconnectTimer?'sì':'no')+' rcCount='+reconnectCount+' wsState='+(ws?ws.readyState:'null'));
+  dbg('🔎 conn() STACK: '+(new Error().stack||'').split('\n').slice(2,5).map(s=>s.trim()).join(' ← '));
   const raw=document.getElementById('keyIn').value;
   API_KEY=raw.replace(/[\x00-\x1F\x7F\u200B-\u200D\uFEFF]/g,'').trim();
   if(API_KEY.length<20){toast('❌ Chiave troppo corta ('+API_KEY.length+' chars)');return;}
@@ -2039,6 +2042,9 @@ function onMsg(e){
 }
 
 function disc(clearHandle=false){
+  // ═══ LOG DIAGNOSTICO: chi sta chiamando disc() e in che stato ═══
+  dbg('🔎 disc() CHIAMATA · clearHandle='+clearHandle+' connected='+connected+' userDisc='+userDisconnected+' wsState='+(ws?ws.readyState:'null'));
+  dbg('🔎 disc() STACK: '+(new Error().stack||'').split('\n').slice(2,5).map(s=>s.trim()).join(' ← '));
   connected=false; setupReady=false;
   stopVideoStream(); // ferma streaming video prima di chiudere WS
   clearTimeout(wsTimeoutTimer);
@@ -2088,6 +2094,9 @@ function disc(clearHandle=false){
 // RECONNECT
 // ═══════════════════════════════════════════════════════════════
 function scheduleReconnect(){
+  // ═══ LOG DIAGNOSTICO: chi sta chiamando scheduleReconnect() e in che stato ═══
+  dbg('🔎 scheduleReconnect() CHIAMATA · userDisc='+userDisconnected+' rcCount='+reconnectCount+' connected='+connected+' reconnT='+(reconnectTimer?'sì':'no'));
+  dbg('🔎 scheduleReconnect() STACK: '+(new Error().stack||'').split('\n').slice(2,5).map(s=>s.trim()).join(' ← '));
   if(userDisconnected) return;
   if(reconnectCount >= RECONNECT_LIMIT){
     dbg('❌ Limite riconnessioni raggiunto');
