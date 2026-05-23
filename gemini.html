@@ -500,8 +500,8 @@
     </div>
     <div class="f" style="margin-top:10px"><label>Sensibilità inizio parlato</label>
       <select id="selStartSens">
-        <option value="START_SENSITIVITY_HIGH" selected>High — aggancia prima la voce (consigliato in fiera/rumoroso)</option>
-        <option value="START_SENSITIVITY_LOW">Low — richiede voce più netta (per ambiente molto silenzioso)</option>
+        <option value="START_SENSITIVITY_LOW" selected>Low — più tollerante (consigliato in ambiente rumoroso)</option>
+        <option value="START_SENSITIVITY_HIGH">High — reagisce subito (per ambiente silenzioso)</option>
       </select>
     </div>
     <div class="f" style="margin-top:8px"><label>Sensibilità fine parlato</label>
@@ -1668,20 +1668,20 @@ function sendSetup(){
         disabled: false,
         startOfSpeechSensitivity: startSens,
         endOfSpeechSensitivity: 'END_SENSITIVITY_LOW', // privilegia frasi complete
-        prefixPaddingMs: 200, // FIX: era 20 — doc Google avverte che valori bassi tagliano la prima sillaba
+        prefixPaddingMs: 20,
         silenceDurationMs: silMs
       }
     };
   } else { // server_vad
     const silMs = parseInt(document.getElementById('rSil')?.value || '800');
-    const startSens = document.getElementById('selStartSens')?.value || 'START_SENSITIVITY_HIGH';
+    const startSens = document.getElementById('selStartSens')?.value || 'START_SENSITIVITY_LOW';
     const endSens = document.getElementById('selEndSens')?.value || 'END_SENSITIVITY_LOW';
     setup.realtimeInputConfig = {
       automaticActivityDetection: {
         disabled: false,
         startOfSpeechSensitivity: startSens,
         endOfSpeechSensitivity: endSens,
-        prefixPaddingMs: 200, // FIX: era 20 — doc Google avverte che valori bassi tagliano la prima sillaba
+        prefixPaddingMs: 20,
         silenceDurationMs: silMs
       }
     };
@@ -2061,11 +2061,10 @@ function disc(clearHandle=false){
     }catch{}
     workletNode=null;
   }
-  // NB: durante una RICONNESSIONE automatica (clearHandle=false) NON stoppiamo i tracks
-  // del mic — sharedMicStream è condiviso col VU monitor e tenerlo vivo evita
-  // un re-prompt permesso iOS ad ogni reconnect.
+  // NB: NON stoppiamo i tracks del mic — sharedMicStream è condiviso col VU monitor.
+  // Solo dissociamo il riferimento locale (le tracks restano vive per il VU).
   micStream=null;
-  // audioCtx === vuCtx normalmente, quindi non lo chiudiamo qui (lo facciamo sotto solo se clearHandle)
+  // audioCtx === vuCtx normalmente, quindi non lo chiudiamo
   if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch{}}
   audioCtx=null; analyser=vuAnalyser;
   audioQ=[]; playing=false; silStart=null; nextPlayTime=0;
@@ -2079,32 +2078,6 @@ function disc(clearHandle=false){
   if(clearHandle){
     sessionHandle=null;
     try{ sessionStorage.removeItem(SS_SESSION_HANDLE); }catch{}
-
-    // ═══════════════════════════════════════════════════════════════
-    // FIX iPhone: rilascio completo del mic (icona barra di stato iOS).
-    // ═══════════════════════════════════════════════════════════════
-    // Su disconnessione VOLONTARIA dell'utente, dobbiamo rilasciare anche
-    // sharedMicStream + vuCtx + watchdog, altrimenti l'icona del microfono
-    // nella barra di stato iOS resta accesa finché non si chiude la pagina.
-    // Il VU verrà ricreato al prossimo "CONNETTI" da startVuMonitor().
-    dbg('🔇 Disconnessione volontaria — rilascio mic e AudioContext');
-    if(vuRaf){ try{ cancelAnimationFrame(vuRaf); }catch{} vuRaf=null; }
-    if(ctxWatchdogInterval){ try{ clearInterval(ctxWatchdogInterval); }catch{} ctxWatchdogInterval=null; }
-    if(sharedMicStream){
-      try{ sharedMicStream.getTracks().forEach(t=>{ try{ t.stop(); }catch{} }); }catch{}
-      sharedMicStream=null;
-    }
-    if(vuCtx && vuCtx.state!=='closed'){
-      try{ vuCtx.close(); }catch{}
-    }
-    vuCtx=null; vuAnalyser=null;
-    vuDisplayPct=0; vuNoiseFloor=0;
-    if(vuEl){
-      const segs=vuEl.children;
-      for(let i=0;i<segs.length;i++) segs[i].className='seg';
-    }
-    const rmsEl=document.getElementById('rmsVal');
-    if(rmsEl){ rmsEl.textContent='  0%'; rmsEl.className='rms-val'; }
   }
   dot('dAI',null); dot('dMic',null); setSt('idle'); updBtn();
   document.getElementById('btnConn').disabled=false;
