@@ -763,6 +763,7 @@ let API_KEY='', activePrompt='Sei un assistente vocale. Rispondi sempre in itali
 let localVadLevel=0;
 let ws=null, audioCtx=null, workletNode=null, micStream=null;
 let muted=false, connected=false, isRec=false, recChunks=[];
+let lastRxTime=0; // ═══ DIAGNOSTICO: timestamp ultimo messaggio dal server (per heartbeat) ═══
 let audioQ=[], playing=false, analyser=null, silStart=null;
 let nextPlayTime=0;   // scheduling preciso: quando finisce l'ultimo buffer pianificato
 let tok={ai:0,ao:0};
@@ -836,6 +837,13 @@ let onMsgAudioCount=0;
 // INIT
 // ═══════════════════════════════════════════════════════════════
 function init(){
+  // ═══ DIAGNOSTICO: heartbeat ogni 10s per individuare WebSocket zombie ═══
+  setInterval(()=>{
+    if(connected){
+      const secAgo = lastRxTime ? Math.round((Date.now()-lastRxTime)/1000) : -1;
+      dbg('🔎 HEARTBEAT · connected='+connected+' wsState='+(ws?ws.readyState:'null')+' lastRX='+(secAgo<0?'mai':secAgo+'s fa')+' setupReady='+setupReady);
+    }
+  }, 10000);
   buildVU(); loadKey(); renderChars(); loadKnowLS(); updVadUI();
   // Ripristina sessionHandle (entro 2h ancora valido per resumption)
   try{
@@ -1871,6 +1879,7 @@ function onChunk(e){
 }
 
 function onMsg(e){
+  lastRxTime = Date.now(); // ═══ DIAGNOSTICO: aggiorna timestamp ultimo RX ═══
   let raw;
   if(typeof e.data==='string'){raw=e.data;}
   else if(e.data instanceof ArrayBuffer){raw=new TextDecoder().decode(e.data);}
