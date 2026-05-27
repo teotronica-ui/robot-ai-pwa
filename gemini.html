@@ -138,6 +138,14 @@
     .bdel{background:#2a0808;color:var(--red);border:1px solid var(--red);border-radius:8px;font-size:.85rem;padding:10px 12px;cursor:pointer}
     .bcan{background:var(--card);color:var(--muted);border:1px solid var(--bord);border-radius:8px;font-size:.85rem;padding:10px 12px;cursor:pointer}
     .know-view{font-size:.75rem;color:var(--muted);background:#040c15;border:1px solid var(--bord);border-radius:8px;padding:10px;min-height:48px;font-family:var(--mono);white-space:pre-wrap;line-height:1.6;max-height:120px;overflow-y:auto}
+    /* Righe lista conoscenze (multi-select) */
+    .knowRow{display:flex;align-items:center;gap:8px;padding:7px 9px;background:var(--surf);border:1px solid var(--bord);border-radius:8px;font-size:.78rem;transition:border-color .15s}
+    .knowRow.active{border-color:var(--green);background:#001810}
+    .knowRow input[type=checkbox]{width:18px;height:18px;accent-color:var(--green);flex-shrink:0;cursor:pointer}
+    .knowRow .kname{flex:1;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .knowRow .ktitle{font-size:.62rem;color:var(--muted);font-family:var(--mono);font-weight:400;margin-top:1px}
+    .knowRow .kedit{background:transparent;border:none;color:var(--muted);font-size:1rem;cursor:pointer;padding:2px 6px;border-radius:5px}
+    .knowRow .kedit:active{background:var(--bord)}
     .brow{display:flex;gap:7px;flex-wrap:wrap}
     .bs{flex:1;min-width:80px;padding:10px 7px;background:var(--surf);border:1px solid var(--bord);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:.76rem;font-weight:700;cursor:pointer;text-align:center;transition:all .15s}
     .bs:active{background:var(--bord)}
@@ -552,27 +560,39 @@
   </div>
 </div>
 
-<!-- CONOSCENZA -->
+<!-- CONOSCENZA (MULTI) -->
 <div class="card">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <div class="card-hd" style="margin:0">📚 Conoscenza Evento</div>
-    <button class="btn-sm" id="btnKnowEd" onclick="toggleKnowEd()">✏️ Modifica</button>
+    <div class="card-hd" style="margin:0">📚 Conoscenze Evento <span style="color:var(--muted);font-size:.57rem">— multi-selezione</span></div>
+    <div style="display:flex;gap:6px">
+      <button class="btn-sm gr" onclick="openKnowEd(null)">➕</button>
+    </div>
   </div>
-  <div class="know-view" id="knowView">Nessuna conoscenza caricata.</div>
+  <!-- Lista conoscenze con checkbox per multi-selezione -->
+  <div id="knowList" style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px">
+    <div style="color:var(--muted);font-size:.7rem;font-family:var(--mono);text-align:center;padding:6px">Nessuna conoscenza salvata.</div>
+  </div>
+  <!-- Preview testo combinato delle attive -->
+  <div class="know-view" id="knowView">Nessuna conoscenza attiva.</div>
+  <!-- Editor (nuovo/modifica) -->
   <div class="ined" id="knowEd">
-    <div><label>Titolo</label><input type="text" id="knowTitle" placeholder="es. Fiera Automatica 2025..."></div>
+    <div style="font-size:.75rem;font-weight:800;color:var(--green)" id="knowEdTitle">✏️ Conoscenza</div>
+    <div><label>Nome (identificativo per selezione)</label><input type="text" id="knowName" placeholder="es. Fiera2026, ProdottoAlpha..."></div>
+    <div><label>Titolo (mostrato a Gemini)</label><input type="text" id="knowTitle" placeholder="es. Fiera Automatica 2026..."></div>
     <div><label>Testo (info evento, prodotti, FAQ...)</label><textarea id="knowText" rows="6" placeholder="Scrivi o incolla le informazioni..."></textarea></div>
     <div class="ed-row">
       <button class="bsave" onclick="saveKnow()">💾 Salva</button>
+      <button class="bdel" id="btnKnowDel" style="display:none" onclick="delKnow()">🗑</button>
       <button class="bcan" onclick="closeKnowEd()">✕</button>
     </div>
   </div>
   <div class="upl" onclick="document.getElementById('fKnow').click()" style="margin-top:8px">
     <input type="file" id="fKnow" accept=".txt" onchange="loadKnowFile(this)">
-    📂 Carica file .txt con info evento
+    📂 Carica file .txt come nuova conoscenza
   </div>
   <div class="brow" style="margin-top:8px">
-    <button class="bs dn" onclick="clearKnow()">🗑 Rimuovi conoscenza</button>
+    <button class="bs" onclick="exportActiveKnows()">📤 Esporta attiva/e</button>
+    <button class="bs dn" onclick="clearAllKnows()">🗑 Rimuovi tutte</button>
   </div>
 </div>
 
@@ -721,6 +741,11 @@ registerProcessor('pcm16-processor', PCM16Processor);
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
 const LS_KEY='robot_key_gemini', LS_CHARS='robot_characters', LS_LAST='robot_last_char', LS_KNOW='robot_knowledge';
+// ═══ MULTI-CONOSCENZA (STEP 2) ═══
+// LS_KNOW resta letto solo per migrazione una-tantum dal vecchio formato singolo {title,text}
+// LS_KNOW_LIST: array [{name, title, text}, ...]
+// LS_KNOW_ACTIVE: array di nomi attivi (multi-selezione)
+const LS_KNOW_LIST='robot_knowledge_list', LS_KNOW_ACTIVE='robot_knowledge_active';
 const LS_MIC_ID='gemini_mic_id';        // mic preferito (persistente)
 const LS_CAM_FACING='gemini_cam_facing'; // 'user' | 'environment'
 const LS_VAD_MODE='gemini_vad_mode';     // server_vad | semantic_vad | manual_vad
@@ -797,7 +822,12 @@ function updateVidFps(sliderVal){
     startVideoStream();
   }
 }
-let knowledge={title:'',text:''};
+// ═══ MULTI-CONOSCENZA (STEP 2) ═══
+// knowList: lista completa di tutte le conoscenze salvate
+// activeKnowNames: array di nomi attivi (multi-selezione: il prompt finale concatena tutte)
+let knowList=[];
+let activeKnowNames=[];
+let editingKnow=null; // nome conoscenza in editing (null = nuovo)
 let robotMsgEl=null, robotTxt='';
 // ═══ CHAT LOG (per export .txt al disconnetti) ═══
 // Accumula solo messaggi user/robot completi (no sys). Si azzera ad ogni nuova conn().
@@ -2838,8 +2868,11 @@ function exportBackup(){
     try{const v=localStorage.getItem(LS_CHARS); if(v) backup.data.characters=JSON.parse(v);}catch(e){}
     // Ultimo personaggio scelto
     try{const v=localStorage.getItem(LS_LAST); if(v) backup.data.lastChar=v;}catch(e){}
-    // Conoscenza
+    // Conoscenza (vecchio formato singolo): esportata se ancora in LS per retrocompatibilità
     try{const v=localStorage.getItem(LS_KNOW); if(v) backup.data.knowledge=JSON.parse(v);}catch(e){}
+    // ═══ MULTI-CONOSCENZA (STEP 2): lista completa + nomi attivi ═══
+    try{const v=localStorage.getItem(LS_KNOW_LIST); if(v) backup.data.knowledgeList=JSON.parse(v);}catch(e){}
+    try{const v=localStorage.getItem(LS_KNOW_ACTIVE); if(v) backup.data.activeKnowNames=JSON.parse(v);}catch(e){}
     // Soglia rumore
     try{const v=localStorage.getItem(LS_NOISE_GATE); if(v) backup.data.noiseGate=parseInt(v);}catch(e){}
     // Frame rate video
@@ -2855,7 +2888,8 @@ function exportBackup(){
     a.href=url; a.download='robot-ai-backup-'+stamp+'.json'; a.click();
     URL.revokeObjectURL(url);
     const nChar = backup.data.characters?.length || 0;
-    toast('📤 Backup esportato · '+nChar+' personaggi'+(includeKey?' · con API key':''));
+    const nKnow = backup.data.knowledgeList?.length || (backup.data.knowledge?.text ? 1 : 0);
+    toast('📤 Backup esportato · '+nChar+' personaggi · '+nKnow+' conoscenze'+(includeKey?' · con API key':''));
   }catch(e){
     toast('❌ Errore export: '+e.message);
     dbg('❌ exportBackup: '+e.message);
@@ -2879,7 +2913,7 @@ function importBackup(inp){
       // Conferma utente prima di sovrascrivere
       const existing = [];
       try{if(localStorage.getItem(LS_CHARS)) existing.push('personaggi');}catch(e){}
-      try{if(localStorage.getItem(LS_KNOW)) existing.push('conoscenza');}catch(e){}
+      try{if(localStorage.getItem(LS_KNOW_LIST) || localStorage.getItem(LS_KNOW)) existing.push('conoscenze');}catch(e){}
       if(existing.length > 0){
         if(!confirm('Importare il backup sovrascriverà: '+existing.join(', ')+'.\n\nContinuare?')){
           inp.value=''; return;
@@ -2894,13 +2928,35 @@ function importBackup(inp){
       if(typeof d.lastChar === 'string'){
         try{localStorage.setItem(LS_LAST, d.lastChar);}catch(e){}
       }
-      // Conoscenza
-      if(d.knowledge && typeof d.knowledge === 'object'){
+      // ═══ CONOSCENZA — priorità al nuovo formato (lista), fallback al vecchio singolo ═══
+      if(Array.isArray(d.knowledgeList)){
         try{
-          localStorage.setItem(LS_KNOW, JSON.stringify(d.knowledge));
-          knowledge = {title: d.knowledge.title||'', text: d.knowledge.text||''};
-          imported.push('conoscenza');
-        }catch(e){dbg('❌ import know: '+e.message);}
+          // Valida che ogni entry abbia name+text
+          const valid=d.knowledgeList.filter(k=>k && typeof k==='object' && k.name && k.text);
+          localStorage.setItem(LS_KNOW_LIST, JSON.stringify(valid));
+          knowList=valid;
+          imported.push(valid.length+' conoscenze');
+          // Pulisci la vecchia chiave singola per evitare doppia migrazione al prossimo loadKnowLS()
+          try{localStorage.removeItem(LS_KNOW);}catch{}
+        }catch(e){dbg('❌ import knowList: '+e.message);}
+      } else if(d.knowledge && typeof d.knowledge === 'object'){
+        // Vecchio formato singolo: lo importiamo nel nuovo come unica entry
+        try{
+          const k=d.knowledge;
+          let nm=(k.title||'').replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_\-]/g,'').slice(0,40) || 'Conoscenza_1';
+          knowList=[{name:nm, title:k.title||'', text:k.text||''}];
+          localStorage.setItem(LS_KNOW_LIST, JSON.stringify(knowList));
+          // Pulisci la chiave singola: ora vive nel nuovo formato
+          try{localStorage.removeItem(LS_KNOW);}catch{}
+          imported.push('1 conoscenza (migrata)');
+        }catch(e){dbg('❌ import know singola: '+e.message);}
+      }
+      // Nomi attivi (filtra quelli che esistono davvero nella lista appena importata)
+      if(Array.isArray(d.activeKnowNames)){
+        try{
+          activeKnowNames=d.activeKnowNames.filter(n=>knowList.some(k=>k.name===n));
+          localStorage.setItem(LS_KNOW_ACTIVE, JSON.stringify(activeKnowNames));
+        }catch(e){}
       }
       // Soglia rumore
       // Soglia rumore: chiave conservata per retro-compatibilità dei backup,
@@ -2936,6 +2992,7 @@ function importBackup(inp){
       }
       // Rinfresca UI senza toccare logiche esistenti: ricarica liste
       if(typeof renderChars === 'function') renderChars();
+      if(typeof renderKnowList === 'function') renderKnowList();
       if(typeof renderKnowView === 'function') renderKnowView();
       inp.value='';
       if(imported.length){
@@ -2955,55 +3012,252 @@ function importBackup(inp){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CONOSCENZA
+// CONOSCENZA (MULTI) — STEP 2
+// Lista di conoscenze indipendenti + multi-selezione attiva.
+// Il system prompt finale concatena TUTTE le attive.
+// Retrocompatibile: la vecchia LS_KNOW viene migrata una-tantum nella lista.
 // ═══════════════════════════════════════════════════════════════
-function loadKnowLS(){const s=localStorage.getItem(LS_KNOW);if(s)try{knowledge=JSON.parse(s);}catch{}renderKnowView();}
+
+// Carica lista da localStorage. Se non esiste e c'è la vecchia singola, migra.
+function loadKnowLS(){
+  // 1. Prova a leggere la lista nuova
+  try{
+    const s=localStorage.getItem(LS_KNOW_LIST);
+    if(s){ knowList=JSON.parse(s)||[]; }
+  }catch{ knowList=[]; }
+  // 2. Migrazione una-tantum dal vecchio formato singolo {title,text}
+  if(knowList.length===0){
+    try{
+      const old=localStorage.getItem(LS_KNOW);
+      if(old){
+        const k=JSON.parse(old);
+        if(k && (k.text||'').trim()){
+          // Nome dal titolo (sanitizzato), fallback a Conoscenza_1
+          let nm=(k.title||'').replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_\-]/g,'').slice(0,40);
+          if(!nm) nm='Conoscenza_1';
+          knowList=[{name:nm, title:k.title||'', text:k.text||''}];
+          saveKnowsLS();
+          // Attiva automaticamente quella migrata
+          activeKnowNames=[nm];
+          try{localStorage.setItem(LS_KNOW_ACTIVE, JSON.stringify(activeKnowNames));}catch{}
+          dbg('🔄 Migrazione conoscenza singola → "'+nm+'" (lista multi)');
+        }
+      }
+    }catch(e){ dbg('⚠️ Migrazione conoscenza: '+e.message); }
+  }
+  // 3. Carica i nomi attivi
+  try{
+    const a=localStorage.getItem(LS_KNOW_ACTIVE);
+    if(a){
+      const arr=JSON.parse(a);
+      if(Array.isArray(arr)) activeKnowNames=arr.filter(n=>knowList.some(k=>k.name===n));
+    }
+  }catch{ activeKnowNames=[]; }
+  renderKnowList();
+  renderKnowView();
+}
+
+function saveKnowsLS(){
+  try{localStorage.setItem(LS_KNOW_LIST, JSON.stringify(knowList));}
+  catch(e){toast('⚠️ Salvataggio fallito: '+e.message);}
+}
+function saveActiveLS(){
+  try{localStorage.setItem(LS_KNOW_ACTIVE, JSON.stringify(activeKnowNames));}catch{}
+}
+
+// Render della lista con checkbox per multi-selezione + bottone modifica
+function renderKnowList(){
+  const cont=document.getElementById('knowList');
+  if(!cont) return;
+  if(!knowList.length){
+    cont.innerHTML='<div style="color:var(--muted);font-size:.7rem;font-family:var(--mono);text-align:center;padding:6px">Nessuna conoscenza salvata. Tocca ➕ per crearne una.</div>';
+    return;
+  }
+  cont.innerHTML='';
+  knowList.forEach(k=>{
+    const isActive=activeKnowNames.includes(k.name);
+    const row=document.createElement('div');
+    row.className='knowRow'+(isActive?' active':'');
+    const safeId='kn_'+k.name.replace(/[^a-zA-Z0-9]/g,'_');
+    // escapeHtml per evitare problemi se il nome/titolo contiene caratteri speciali
+    const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    row.innerHTML=
+      '<input type="checkbox" id="'+safeId+'" '+(isActive?'checked':'')+'>'
+      +'<label for="'+safeId+'" style="flex:1;cursor:pointer;min-width:0">'
+        +'<div class="kname">'+esc(k.name)+'</div>'
+        +(k.title?'<div class="ktitle">'+esc(k.title)+'</div>':'')
+      +'</label>'
+      +'<button class="kedit" title="Modifica">✏️</button>';
+    // Eventi
+    const chk=row.querySelector('input[type=checkbox]');
+    chk.addEventListener('change',()=>onKnowToggle(k.name, chk.checked));
+    row.querySelector('.kedit').addEventListener('click',()=>openKnowEd(k.name));
+    cont.appendChild(row);
+  });
+}
+
+// Preview combinata di tutte le conoscenze attive
 function renderKnowView(){
   const v=document.getElementById('knowView');
-  if(knowledge.text){v.style.color='var(--text)';v.textContent=(knowledge.title?knowledge.title+'\n\n':'')+knowledge.text;}
-  else{v.style.color='var(--muted)';v.textContent='Nessuna conoscenza caricata.';}
+  if(!v) return;
+  const actives=knowList.filter(k=>activeKnowNames.includes(k.name));
+  if(!actives.length){
+    v.style.color='var(--muted)';
+    v.textContent='Nessuna conoscenza attiva.';
+    return;
+  }
+  v.style.color='var(--text)';
+  // Mostra max 600 char per non occupare troppo spazio
+  let combined=actives.map(k=>
+    (k.title?'【'+k.title+'】\n':'【'+k.name+'】\n')+k.text
+  ).join('\n\n---\n\n');
+  if(combined.length>600) combined=combined.slice(0,600)+'\n…(continua)';
+  v.textContent=combined;
 }
-function toggleKnowEd(){
-  const ed=document.getElementById('knowEd');
-  if(ed.classList.contains('open')){closeKnowEd();}
-  else{
-    document.getElementById('knowTitle').value=knowledge.title||'';
-    document.getElementById('knowText').value=knowledge.text||'';
-    ed.classList.add('open');
-    document.getElementById('btnKnowEd').textContent='✕ Chiudi';
-    setTimeout(()=>document.getElementById('knowText').focus(),50);
+
+// Toggle di una conoscenza attiva/inattiva
+function onKnowToggle(name, checked){
+  if(checked){
+    if(!activeKnowNames.includes(name)) activeKnowNames.push(name);
+  } else {
+    activeKnowNames=activeKnowNames.filter(n=>n!==name);
+  }
+  saveActiveLS();
+  renderKnowList();
+  renderKnowView();
+  if(connected){ sendSess(); addMsg('🔄 Conoscenza aggiornata ('+activeKnowNames.length+' attiva/e)','sys'); }
+}
+
+// Apre editor: name=null per nuovo, altrimenti modifica esistente
+function openKnowEd(name){
+  editingKnow=name||null;
+  const k=name?knowList.find(x=>x.name===name):null;
+  document.getElementById('knowEdTitle').textContent=k?'✏️ Modifica: '+name:'➕ Nuova conoscenza';
+  document.getElementById('knowName').value=k?.name||'';
+  document.getElementById('knowTitle').value=k?.title||'';
+  document.getElementById('knowText').value=k?.text||'';
+  document.getElementById('btnKnowDel').style.display=k?'':'none';
+  document.getElementById('knowEd').classList.add('open');
+  setTimeout(()=>{
+    const f=document.getElementById('knowName');
+    if(f) f.focus();
+  },50);
+}
+function closeKnowEd(){
+  document.getElementById('knowEd').classList.remove('open');
+  editingKnow=null;
+}
+
+function saveKnow(){
+  const nameRaw=document.getElementById('knowName').value.trim();
+  const title=document.getElementById('knowTitle').value.trim();
+  const text=document.getElementById('knowText').value.trim();
+  if(!nameRaw){toast('⚠️ Nome obbligatorio'); return;}
+  if(!text){toast('⚠️ Testo obbligatorio'); return;}
+  // Sanitizza il nome (no spazi/caratteri strani per usarlo come ID)
+  const name=nameRaw.replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_\-]/g,'').slice(0,40);
+  if(!name){toast('⚠️ Nome non valido (solo lettere/numeri/underscore)'); return;}
+  // Conflitto: se sto creando nuova e nome esiste già, oppure se sto rinominando in un nome esistente
+  const existing=knowList.findIndex(k=>k.name===name);
+  if(editingKnow && editingKnow!==name){
+    // Rinomina: rimuovi vecchia entry, aggiorna eventuale nome attivo
+    knowList=knowList.filter(k=>k.name!==editingKnow);
+    activeKnowNames=activeKnowNames.map(n=>n===editingKnow?name:n);
+  }
+  const newIdx=knowList.findIndex(k=>k.name===name);
+  if(newIdx>=0) knowList[newIdx]={name,title,text};
+  else knowList.push({name,title,text});
+  saveKnowsLS();
+  saveActiveLS();
+  renderKnowList(); renderKnowView();
+  closeKnowEd();
+  toast('✅ "'+name+'" salvata');
+  if(connected && activeKnowNames.includes(name)){
+    sendSess();
+    addMsg('🔄 Conoscenza aggiornata','sys');
   }
 }
-function closeKnowEd(){document.getElementById('knowEd').classList.remove('open');document.getElementById('btnKnowEd').textContent='✏️ Modifica';}
-function saveKnow(){
-  knowledge={title:document.getElementById('knowTitle').value.trim(),text:document.getElementById('knowText').value.trim()};
-  try{localStorage.setItem(LS_KNOW,JSON.stringify(knowledge));}
-  catch(e){toast('⚠️ Salvataggio fallito: '+e.message); return;}
-  renderKnowView(); closeKnowEd(); toast('✅ Conoscenza salvata');
-  if(connected){sendSess();addMsg('🔄 Conoscenza aggiornata','sys');}
+
+function delKnow(){
+  if(!editingKnow) return;
+  if(!confirm('Eliminare la conoscenza "'+editingKnow+'"?')) return;
+  knowList=knowList.filter(k=>k.name!==editingKnow);
+  const wasActive=activeKnowNames.includes(editingKnow);
+  activeKnowNames=activeKnowNames.filter(n=>n!==editingKnow);
+  saveKnowsLS(); saveActiveLS();
+  renderKnowList(); renderKnowView();
+  closeKnowEd();
+  toast('🗑 Eliminata');
+  if(connected && wasActive){
+    sendSess();
+    addMsg('🔄 Conoscenza aggiornata','sys');
+  }
 }
-function clearKnow(){
-  knowledge={title:'',text:''};
-  try{localStorage.removeItem(LS_KNOW);}catch(e){}
-  renderKnowView(); closeKnowEd(); toast('🗑 Rimossa');
-  if(connected) sendSess();
+
+function clearAllKnows(){
+  if(!knowList.length){toast('⚠️ Nessuna conoscenza da rimuovere'); return;}
+  if(!confirm('Eliminare TUTTE le conoscenze ('+knowList.length+')? L\'operazione è irreversibile.')) return;
+  knowList=[]; activeKnowNames=[];
+  try{localStorage.removeItem(LS_KNOW_LIST);}catch{}
+  try{localStorage.removeItem(LS_KNOW_ACTIVE);}catch{}
+  // Pulisco anche la vecchia chiave per non far rinascere conoscenze migrate alla prossima apertura
+  try{localStorage.removeItem(LS_KNOW);}catch{}
+  renderKnowList(); renderKnowView();
+  closeKnowEd();
+  toast('🗑 Tutte le conoscenze rimosse');
+  if(connected){ sendSess(); addMsg('🔄 Conoscenza aggiornata (0 attive)','sys'); }
 }
+
+// Carica .txt come NUOVA conoscenza: apre editor in modalità "nuovo" precompilato
 function loadKnowFile(inp){
   const file=inp.files[0]; if(!file)return;
   const r=new FileReader();
   r.onload=e=>{
-    document.getElementById('knowTitle').value=file.name.replace('.txt','');
+    // Nome di default dal filename (sanitizzato)
+    let baseName=file.name.replace(/\.txt$/i,'').replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_\-]/g,'').slice(0,40);
+    if(!baseName) baseName='Conoscenza';
+    // Evita conflitti: se il nome esiste già, appendi _2, _3, ...
+    let finalName=baseName, i=2;
+    while(knowList.some(k=>k.name===finalName)){ finalName=baseName+'_'+i; i++; }
+    editingKnow=null; // nuovo
+    document.getElementById('knowEdTitle').textContent='➕ Nuova conoscenza (da file)';
+    document.getElementById('knowName').value=finalName;
+    document.getElementById('knowTitle').value=file.name.replace(/\.txt$/i,'');
     document.getElementById('knowText').value=e.target.result.replace(/\r/g,'').trim();
+    document.getElementById('btnKnowDel').style.display='none';
     document.getElementById('knowEd').classList.add('open');
-    document.getElementById('btnKnowEd').textContent='✕ Chiudi';
-    inp.value=''; toast('📂 Caricato — premi Salva');
+    inp.value=''; toast('📂 Caricato — controlla e premi Salva');
   };
   r.readAsText(file);
 }
+
+// Esporta la/le conoscenza/e attiva/e in un file .txt
+function exportActiveKnows(){
+  const actives=knowList.filter(k=>activeKnowNames.includes(k.name));
+  if(!actives.length){toast('⚠️ Nessuna conoscenza attiva da esportare'); return;}
+  const txt=actives.map(k=>
+    '=== '+k.name+' ===\n'
+    +'TITOLO: '+(k.title||'')+'\n'
+    +'\n'+k.text
+  ).join('\n\n\n');
+  const stamp=new Date().toISOString().slice(0,10);
+  const fn='conoscenze-'+stamp+'.txt';
+  const url=URL.createObjectURL(new Blob([txt],{type:'text/plain;charset=utf-8'}));
+  const a=document.createElement('a'); a.href=url; a.download=fn; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast('📤 Esportate '+actives.length+' conoscenza/e');
+}
+
+// Costruisce il system prompt completo:
+// personaggio attivo + tutte le conoscenze attive concatenate
 function buildSystemPrompt(){
   const base=activePrompt;
-  if(!knowledge.text)return base;
-  return base+'\n\n---\nINFORMAZIONI EVENTO'+(knowledge.title?' ('+knowledge.title+')':'')+(':\n')+knowledge.text;
+  const actives=knowList.filter(k=>activeKnowNames.includes(k.name));
+  if(!actives.length) return base;
+  const blocks=actives.map(k=>
+    'INFORMAZIONI'+(k.title?' ('+k.title+')':' ('+k.name+')')+':\n'+k.text
+  ).join('\n\n---\n\n');
+  return base+'\n\n---\n'+blocks;
 }
 
 // ═══════════════════════════════════════════════════════════════
