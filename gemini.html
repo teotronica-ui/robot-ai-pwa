@@ -799,6 +799,11 @@ function updateVidFps(sliderVal){
 }
 let knowledge={title:'',text:''};
 let robotMsgEl=null, robotTxt='';
+// ═══ CHAT LOG (per export .txt al disconnetti) ═══
+// Accumula solo messaggi user/robot completi (no sys). Si azzera ad ogni nuova conn().
+// Formato: [{role:'user'|'robot', text:'...'}, ...]
+let chatLog=[];
+let chatLogStartedAt=null; // timestamp inizio sessione (per nome file)
 // mic/VU
 let sharedMicStream=null, vuCtx=null, vuAnalyser=null, vuRaf=null;
 let intentionalMicStop=false; // FIX iPhone: true = stop voluto da disc(), il listener 'ended' non riavvia
@@ -1099,6 +1104,9 @@ function addMsg(txt,type){
   const box=document.getElementById('chatBox');
   const d=document.createElement('div'); d.className='msg '+type; d.textContent=txt;
   box.appendChild(d); box.scrollTop=box.scrollHeight;
+  // Accumula solo i messaggi utente nel log (i robot vengono accumulati in finalizeRobot
+  // perché arrivano in streaming via appendRobotTxt).
+  if(type==='user' && txt){ chatLog.push({role:'user', text:txt}); }
 }
 function appendRobotTxt(delta){
   robotTxt+=delta;
@@ -1106,7 +1114,62 @@ function appendRobotTxt(delta){
   robotMsgEl.textContent=robotTxt;
   document.getElementById('chatBox').scrollTop=document.getElementById('chatBox').scrollHeight;
 }
-function finalizeRobot(){robotMsgEl=null;robotTxt='';}
+function finalizeRobot(){
+  // Frase robot completa: salvala nel log prima di azzerare il buffer streaming
+  if(robotTxt && robotTxt.trim()){ chatLog.push({role:'robot', text:robotTxt.trim()}); }
+  robotMsgEl=null;robotTxt='';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SALVATAGGIO CHAT SU .txt — chiamato al disconnetti (vedi disc())
+// Salva solo se la chat ha almeno 1 scambio reale (no file vuoti).
+// Nome file: chat-NomePersonaggio-YYYY-MM-DD_HH-MM.txt
+// Formato: solo user + robot (no messaggi di sistema), una riga per messaggio.
+// ═══════════════════════════════════════════════════════════════
+function saveChatToFile(reason){
+  if(!chatLog || chatLog.length === 0){
+    dbg('💬 saveChatToFile skip: chat vuota');
+    return;
+  }
+  // Nome personaggio attivo (per il filename). Sanitizza i caratteri non validi.
+  let charName='NoChar';
+  try{
+    const sel=document.getElementById('selChar');
+    if(sel && sel.value) charName=sel.value;
+  }catch{}
+  // Sanitizza: solo alfanumerici, underscore, dash. Spazi → underscore.
+  const safeChar = charName.replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_\-]/g,'').slice(0,40) || 'NoChar';
+  // Timestamp inizio sessione (se disponibile) o ora corrente
+  const startTs = chatLogStartedAt ? new Date(chatLogStartedAt) : new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const stamp = startTs.getFullYear()+'-'+pad(startTs.getMonth()+1)+'-'+pad(startTs.getDate())
+              +'_'+pad(startTs.getHours())+'-'+pad(startTs.getMinutes());
+  const filename = 'chat-'+safeChar+'-'+stamp+'.txt';
+  // Costruisci il testo: header + righe alternate
+  const header = '=== Chat Robot AI — Gemini ==='
+    +'\nPersonaggio: '+charName
+    +'\nInizio sessione: '+startTs.toLocaleString('it-IT')
+    +'\nFine sessione:   '+new Date().toLocaleString('it-IT')
+    +'\nMotivo chiusura: '+(reason||'?')
+    +'\nMessaggi: '+chatLog.length
+    +'\n=============================\n\n';
+  const body = chatLog.map(m => {
+    const label = m.role==='user' ? 'UTENTE' : 'ROBOT ';
+    return label+': '+m.text;
+  }).join('\n\n');
+  const txt = header + body + '\n';
+  try{
+    const url = URL.createObjectURL(new Blob([txt],{type:'text/plain;charset=utf-8'}));
+    const a = document.createElement('a');
+    a.href=url; a.download=filename; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+    dbg('💾 Chat salvata: '+filename+' ('+chatLog.length+' messaggi)');
+    toast('💾 Chat salvata ('+chatLog.length+' msg)');
+  }catch(e){
+    dbg('❌ Salvataggio chat fallito: '+e.message);
+    toast('❌ Salvataggio chat: '+e.message);
+  }
+}
 // ═══════════════════════════════════════════════════════════════
 // CONSOLE DEBUG — buffer 500 righe, categorizzazione, copia/salva
 // La funzione dbg() resta retrocompatibile (un solo arg = info).
@@ -1482,6 +1545,9 @@ async function toggleConn(){
   } else {
     userDisconnected=false;
     reconnectCount=0;
+    // Nuova sessione manuale: azzera il log chat e segna inizio
+    chatLog=[];
+    chatLogStartedAt=Date.now();
     await conn();
   }
 }
@@ -2123,6 +2189,10 @@ function disc(clearHandle=false){
   // sessionHandle: azzerato solo su disconnessione volontaria.
   // In riconnessione automatica viene mantenuto per session resumption.
   if(clearHandle){
+    // ═══ SALVATAGGIO CHAT su .txt: solo a fine sessione vera (disconnetti manuale).
+    // Le riconnessioni automatiche (goAway, errori transitori) NON salvano qui
+    // perché la sessione continua. Il salvataggio "limit raggiunto" è in scheduleReconnect().
+    try{ saveChatToFile('disconnessione manuale'); }catch(e){ dbg('❌ saveChatToFile: '+e.message); }
     sessionHandle=null;
     try{ sessionStorage.removeItem(SS_SESSION_HANDLE); }catch{}
     // FIX iPhone: rilascia anche sharedMicStream + vuCtx per spegnere l'icona arancione iOS.
@@ -2158,6 +2228,8 @@ function scheduleReconnect(){
     toast('❌ Impossibile riconnettersi');
     hideReconnBar();
     document.getElementById('btnConn').disabled=false;
+    // Sessione persa definitivamente: salva la chat raccolta fin qui
+    try{ saveChatToFile('limite riconnessioni raggiunto'); }catch(e){ dbg('❌ saveChatToFile: '+e.message); }
     return;
   }
   // Se siamo offline non sprechiamo tentativi: aspettiamo l'evento 'online'
