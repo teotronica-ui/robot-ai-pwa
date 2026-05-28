@@ -801,6 +801,15 @@ let muted=false, connected=false, isRec=false, recChunks=[];
 let lastRxTime=0; // ═══ DIAGNOSTICO: timestamp ultimo messaggio dal server (per heartbeat) ═══
 let audioQ=[], playing=false, analyser=null, silStart=null;
 let nextPlayTime=0;   // scheduling preciso: quando finisce l'ultimo buffer pianificato
+// ═══ STEP 4 — BARGE-IN ═══
+// activeSources: tiene traccia di TUTTI i BufferSourceNode schedulati e non ancora
+// terminati. Necessario perché src.start() schedula l'audio nel futuro e svuotare
+// audioQ NON ferma i nodi già schedulati (causa del "non si ferma" + "doppia voce").
+// Su interrupted chiamiamo stopAllSources() per fermarli tutti (flush, come da doc Google).
+let activeSources=new Set();
+// Lock breve dopo un interrupted: ignora i chunk audio residui del turno interrotto
+// che potrebbero ancora arrivare dopo il flag interrupted, per evitare che ripartano.
+let bargeInLockUntil=0;
 let tok={ai:0,ao:0,aoEstimateTurn:0};
 let editingChar=null, camStream=null, camActive=false;
 let videoStreamInterval=null; // streaming video continuo per Gemini Live API
@@ -866,6 +875,7 @@ let reconnectCount=0, reconnectTimer=null, wsTimeoutTimer=null;
 let userDisconnected=false; // true = disconnessione volontaria
 // watchdog
 let ctxWatchdogInterval=null, drainWatchdog=null;
+let turnEndTimer=null; // STEP 4: handle del setTimeout post-turnComplete, per cancellarlo su interrupted
 let setupReady=false;
 let sessionHandle=null; // handle per session resumption (ricevuto da Gemini)
 // keepalive WebSocket (ping cliente)
@@ -2068,6 +2078,13 @@ function onMsg(e){
         if(part.inlineData?.mimeType?.startsWith('audio/pcm')){
           const bytes=Uint8Array.from(atob(part.inlineData.data),c=>c.charCodeAt(0));
           const pcm=new Int16Array(bytes.buffer);
+          // STEP 4 BARGE-IN: durante il lock post-interrupted, scarta i chunk residui
+          // del turno appena interrotto (arrivano in coda dopo il flag interrupted e,
+          // se riprodotti, causano la "seconda voce" sovrapposta).
+          if(Date.now() < bargeInLockUntil){
+            // i chunk scartati NON vanno nemmeno in registrazione (sono audio annullato dal server)
+            return; // salta questo part
+          }
           if(isRec)recChunks.push(pcm);
           if(audioQ.length>AUDIO_Q_MAX){audioQ=audioQ.slice(-Math.floor(AUDIO_Q_MAX/2));nextPlayTime=0;}
           audioQ.push(pcm);
@@ -2108,15 +2125,36 @@ function onMsg(e){
       if(!playing) drain();
       // FIX: silStart si azzera SEMPRE qui (era condizionato a !silStart e quindi
       // non si resettava se era già attivo). Adesso ogni turn completed riavvia il timer.
-      setTimeout(()=>{
+      // STEP 4: usa handle turnEndTimer così un interrupted può cancellarlo (no race).
+      if(turnEndTimer) clearTimeout(turnEndTimer);
+      turnEndTimer=setTimeout(()=>{
+        turnEndTimer=null;
         setRobotSpeaking(false);
         setSt('listening');
         silStart = Date.now();  // sempre, non solo se null
       },1100);
     }
     if(sc.interrupted){
-      dbg('🛑 Barge-in (interrupted)');audioQ=[];playing=false;nextPlayTime=0;
-      setRobotSpeaking(false);setSt('talking');dot('dMic','tk');silStart=null;
+      // ═══ STEP 4 — BARGE-IN ═══
+      // Doc Gemini: al segnale interrupted bisogna svuotare SUBITO il playback buffer,
+      // altrimenti il modello "continua a parlare" e si sovrappone alla nuova risposta.
+      // 1) Ferma i source già schedulati (flush vero), 2) svuota la coda,
+      // 3) reset scheduling, 4) cancella il timer di fine-turno pendente,
+      // 5) attiva un lock breve per ignorare chunk residui del turno interrotto.
+      const flushed = stopAllSources();
+      audioQ=[];
+      playing=false;
+      nextPlayTime=0;
+      if(turnEndTimer){ clearTimeout(turnEndTimer); turnEndTimer=null; }
+      if(drainWatchdog){ clearTimeout(drainWatchdog); drainWatchdog=null; }
+      bargeInLockUntil = Date.now() + 150; // ignora chunk residui in volo per 150ms (sufficiente su WiFi, non taglia nuove risposte)
+      finalizeRobot(); // chiude in chat l'eventuale frase robot parziale
+      dbg('🛑 Barge-in (interrupted) · flush '+flushed+' source · lock 150ms');
+      // Stato: l'utente ha interrotto → torniamo in ascolto (NON 'talking', che era errato).
+      setRobotSpeaking(false);
+      setSt('listening');
+      dot('dMic','on');
+      silStart=null;
     }
     if(sc.generationComplete){
       dbg('🏁 generationComplete (Gemini ha finito di pensare)');
@@ -2224,6 +2262,10 @@ function disc(clearHandle=false){
   if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch{}}
   audioCtx=null; analyser=vuAnalyser;
   audioQ=[]; playing=false; silStart=null; nextPlayTime=0;
+  // STEP 4: ferma eventuali source ancora schedulati e azzera il lock barge-in
+  try{ stopAllSources(); }catch{}
+  bargeInLockUntil=0;
+  if(turnEndTimer){ clearTimeout(turnEndTimer); turnEndTimer=null; }
   vadWasActive=false; vadSilenceFrames=0;
   manualVadActive=false; manualVadSilenceStart=null; manualVadFramesSpeaking=0;
   robotSpeaking=false; autoMuteSuspended=false;
@@ -2321,6 +2363,26 @@ function hideReconnBar(){
 // La registrazione avviene al momento della ricezione dalla rete,
 // non al momento della riproduzione — così il WAV è sempre continuo.
 
+// ═══════════════════════════════════════════════════════════════
+// STEP 4 — BARGE-IN: flush immediato del playback buffer
+// La doc ufficiale Gemini (troubleshooting Live API) prescrive di svuotare
+// il buffer di riproduzione appena arriva interrupt, altrimenti il modello
+// "continua a parlare". In WebAudio significa fermare tutti i BufferSourceNode
+// già schedulati: svuotare audioQ NON basta perché src.start() pianifica nel futuro.
+// ═══════════════════════════════════════════════════════════════
+function stopAllSources(){
+  let n=0;
+  activeSources.forEach(src=>{
+    try{ src.onended=null; }catch{}   // evita che onended modifichi il Set durante l'iterazione
+    try{ src.stop(); }catch{}          // .stop() su nodo già terminato lancia: ignora
+    try{ src.disconnect(); }catch{}
+    n++;
+  });
+  activeSources.clear();
+  if(n>0) dbg('🔇 Flush playback: fermati '+n+' source attivi');
+  return n;
+}
+
 async function drain(){
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
   if(!audioCtx||!audioQ.length){playing=false;return;}
@@ -2370,6 +2432,10 @@ async function drain(){
       }
       src.start(startAt);
       nextPlayTime = startAt + buf.duration;
+      // STEP 4 BARGE-IN: registra il source attivo per poterlo fermare su interrupted.
+      // onended lo rimuove dal Set quando finisce naturalmente (così il Set non cresce).
+      activeSources.add(src);
+      src.onended = ()=>{ activeSources.delete(src); };
 
       // Watchdog sull'ultimo buffer pianificato: se dopo la durata attesa
       // la coda è ancora vuota e playing=true, sblocchiamo lo stato
