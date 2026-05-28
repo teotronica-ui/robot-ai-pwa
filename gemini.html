@@ -499,6 +499,17 @@
       </select>
     </div>
   </div>
+  <!-- STEP 3: profilo compressione contesto (gestisce durata sessione vs cutoff finale) -->
+  <div class="r2">
+    <div class="f" style="flex:1"><label>Durata sessione / Compressione contesto</label>
+      <select id="selCompress" onchange="onCompressChange()">
+        <option value="balanced" selected>⚖️ Bilanciata — sessione illimitata (consigliata)</option>
+        <option value="fiera">🛡 Fiera lunga — finestra ampia, meno interruzioni</option>
+        <option value="off">🎤 Demo breve — no compressione, audio max pulito</option>
+      </select>
+    </div>
+  </div>
+  <div id="compressInfo" style="font-size:.68rem;color:var(--muted);font-family:var(--mono);margin-top:6px;padding:8px 10px;background:#040c15;border-left:2px solid var(--green);border-radius:6px;line-height:1.5"></div>
   <!-- Pannello Server VAD: silenceDurationMs + sensitivity -->
   <div id="pSVad">
     <div class="sg">
@@ -750,6 +761,7 @@ const LS_MIC_ID='gemini_mic_id';        // mic preferito (persistente)
 const LS_CAM_FACING='gemini_cam_facing'; // 'user' | 'environment'
 const LS_VAD_MODE='gemini_vad_mode';     // server_vad | semantic_vad | manual_vad
 const LS_BARGE='gemini_barge';           // ricorda preferenza barge-in
+const LS_COMPRESS='gemini_compress';     // STEP 3: profilo compressione contesto (off | balanced | fiera)
 const SS_SESSION_HANDLE='gemini_sess';   // sessionStorage (entro 2h validità Gemini)
 const GEMINI_WS_BASE='wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage';
 // La doc raccomanda audio a 16kHz nativo. AudioContext su iOS gira a 48kHz,
@@ -919,6 +931,13 @@ function init(){
     const b=localStorage.getItem(LS_BARGE);
     if(b==='1'){ document.getElementById('chkBarge').checked=true; }
   }catch{}
+  // STEP 3: ripristina profilo compressione contesto
+  try{
+    const c=localStorage.getItem(LS_COMPRESS);
+    const selC=document.getElementById('selCompress');
+    if(c && selC && [...selC.options].some(o=>o.value===c)){ selC.value=c; }
+  }catch{}
+  if(typeof onCompressChange==='function') onCompressChange(true);
   // Ripristina slider frame rate video da localStorage
   const vfs=document.getElementById('rVidFps');
   if(vfs){
@@ -1773,15 +1792,34 @@ function sendSetup(){
     // Trascrizioni: ESSENZIALI per popolare la chat e per i comandi vocali snap.
     // language_codes lasciato vuoto → auto-detect (Gemini fa multilingua nativo).
     inputAudioTranscription: {},
-    outputAudioTranscription: {},
-    // Context window compression: ESSENZIALE per sessioni > 15 min.
-    // Senza, audio si accumula a ~25 tok/s e la sessione viene chiusa al limite.
-    // Con sliding window, Gemini comprime automaticamente il contesto vecchio.
-    // Doc: ai.google.dev/gemini-api/docs/live-api/session-management
-    contextWindowCompression: {
-      slidingWindow: {}  // configurazione di default: comprimi automaticamente
-    }
+    outputAudioTranscription: {}
   };
+
+  // ── Context window compression (STEP 3) ──────────────────────────
+  // Profilo scelto dall'utente. Gestisce il trade-off durata-sessione vs cutoff finale.
+  // Doc ufficiale: senza compression audio-only=15min, audio-video=2min.
+  //   - 'off'      → nessuna compression (sessioni cortissime, audio più pulito)
+  //   - 'balanced' → slidingWindow default (sessione illimitata, comportamento doc)
+  //   - 'fiera'    → trigger alto + finestra ampia: meno eviction = potenzialmente
+  //                  meno turnComplete prematuro + il robot ricorda di più
+  // Sintassi camelCase confermata da Google Cloud docs (triggerTokens/targetTokens).
+  const compressMode = document.getElementById('selCompress')?.value || 'balanced';
+  if(compressMode === 'off'){
+    dbg('🎤 Compression OFF (sessione max 15min audio / 2min con video)');
+    // nessuna chiave contextWindowCompression nel setup
+  } else if(compressMode === 'fiera'){
+    setup.contextWindowCompression = {
+      triggerTokens: 32000,
+      slidingWindow: { targetTokens: 16000 }
+    };
+    dbg('🛡 Compression FIERA (trigger 32k / window 16k)');
+  } else {
+    // balanced (default): slidingWindow di default come da doc
+    setup.contextWindowCompression = {
+      slidingWindow: {}
+    };
+    dbg('⚖️ Compression BILANCIATA (slidingWindow default)');
+  }
 
   // ── realtimeInputConfig (VAD) ────────────────────────────────────
   const vadMode = document.getElementById('selVad').value || 'server_vad';
@@ -2518,6 +2556,7 @@ async function toggleCam(){
     v.style.display='block'; document.getElementById('camPh').style.display='none';
     camActive=true; document.getElementById('btnCamOn').textContent='⏹ Spegni cam';
     document.getElementById('btnSnap').disabled=false; dot('dCam','on');
+    if(typeof onCompressChange==='function') onCompressChange(true); // aggiorna avviso "Demo breve"+cam
     // Persisti preferenza
     if(facingMode==='user' || facingMode==='environment'){
       try{ localStorage.setItem(LS_CAM_FACING, facingMode); }catch{}
@@ -2538,6 +2577,7 @@ async function toggleCam(){
         v.style.display='block'; document.getElementById('camPh').style.display='none';
         camActive=true; document.getElementById('btnCamOn').textContent='⏹ Spegni cam';
         document.getElementById('btnSnap').disabled=false; dot('dCam','on');
+        if(typeof onCompressChange==='function') onCompressChange(true);
         await enumCams();
         if(connected && setupReady) startVideoStream();
         return;
@@ -2561,6 +2601,7 @@ function stopCam(){
   document.getElementById('btnCamOn').textContent='📷 Attiva cam';
   document.getElementById('btnSnap').disabled=true;
   dot('dCam',null);
+  if(typeof onCompressChange==='function') onCompressChange(true); // aggiorna avviso (cam ora spenta)
 }
 
 // Cambio camera (facingMode o deviceId).
@@ -2759,6 +2800,41 @@ function oThr(v){document.getElementById('vThr').textContent=v;}
 function oSil(v){document.getElementById('vSil').textContent=v+' ms';}
 function oSilSem(v){document.getElementById('vSilSem').textContent=v+' ms';}
 function oSilMan(v){document.getElementById('vSilMan').textContent=v+' ms';}
+// STEP 3: gestione profilo compressione contesto
+// Aggiorna l'info-box, salva la preferenza, e avvisa se "Demo breve" + camera attiva.
+function onCompressChange(silent){
+  const sel=document.getElementById('selCompress');
+  const info=document.getElementById('compressInfo');
+  if(!sel||!info) return;
+  const mode=sel.value;
+  // Salva preferenza
+  try{ localStorage.setItem(LS_COMPRESS, mode); }catch{}
+  let txt='', border='var(--green)';
+  if(mode==='off'){
+    // Avviso forte se la camera è attiva: con video la sessione muore a 2 minuti
+    if(camActive){
+      txt='⚠️ ATTENZIONE: camera attiva! Senza compressione la sessione si chiude dopo ~2 minuti. Usa "Demo breve" solo SENZA camera (limite ~15 min audio).';
+      border='var(--red,#ff4444)';
+    }else{
+      txt='🎤 Audio più pulito, meno interruzioni a fine frase. Sessione limitata a ~15 min (solo audio). Se accendi la camera scende a ~2 min!';
+      border='var(--yellow,#e0a800)';
+    }
+  }else if(mode==='fiera'){
+    txt='🛡 Finestra di contesto ampia (trigger 32k / window 16k). Sessione illimitata, il robot ricorda di più e le interruzioni a fine frase dovrebbero ridursi. Ideale per fiere di ore.';
+    border='var(--green)';
+  }else{
+    txt='⚖️ Compressione standard consigliata da Google. Sessione di durata illimitata. Buon compromesso per uso normale (15-60 min).';
+    border='var(--green)';
+  }
+  info.textContent=txt;
+  info.style.borderLeftColor=border;
+  // Se connesso, il cambio ha effetto solo alla prossima connessione (la compression
+  // è un parametro di setup, non modificabile mid-sessione).
+  if(!silent && connected){
+    addMsg('ℹ️ Profilo compressione cambiato: avrà effetto alla prossima riconnessione.','sys');
+  }
+}
+
 function updVadUI(){
   const m=document.getElementById('selVad').value;
   document.getElementById('pSVad').style.display = m==='server_vad' ? '' : 'none';
