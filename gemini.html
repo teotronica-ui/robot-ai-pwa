@@ -2300,8 +2300,12 @@ function disc(clearHandle=false){
   if(audioCtx&&audioCtx!==vuCtx){try{audioCtx.close();}catch{}}
   audioCtx=null; analyser=vuAnalyser;
   audioQ=[]; playing=false; silStart=null; nextPlayTime=0;
-  // STEP 4: ferma eventuali source ancora schedulati e azzera il lock barge-in
-  try{ stopAllSources(); }catch{}
+  // STEP 4 + FIX iOS: NON chiamiamo stopAllSources() qui perché audioCtx.close() (riga sopra)
+  // ferma e libera tutti i BufferSourceNode collegati automaticamente (comportamento WebAudio).
+  // Su iPhone, iterare su molti src.stop()+disconnect() bloccava il main thread per centinaia
+  // di ms → bottone "Disconnetti" non rispondeva mentre il robot parlava.
+  // Svuotiamo solo il Set: i nodi sono già morti col context.
+  activeSources.clear();
   bargeInLockUntil=0;
   if(turnEndTimer){ clearTimeout(turnEndTimer); turnEndTimer=null; }
   vadWasActive=false; vadSilenceFrames=0;
