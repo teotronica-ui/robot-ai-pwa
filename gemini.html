@@ -499,17 +499,17 @@
       </select>
     </div>
   </div>
-  <!-- STEP 3: profilo compressione contesto (gestisce durata sessione vs cutoff finale) -->
-  <div class="r2">
-    <div class="f" style="flex:1"><label>Durata sessione / Compressione contesto</label>
-      <select id="selCompress" onchange="onCompressChange()">
-        <option value="balanced" selected>⚖️ Bilanciata — sessione illimitata (consigliata)</option>
-        <option value="fiera">🛡 Fiera lunga — finestra ampia, meno interruzioni</option>
-        <option value="off">🎤 Demo breve — no compressione, audio max pulito</option>
+  <!-- STEP 5: profilo buffer audio (gestisce trade-off latenza vs scatti riproduzione) -->
+  <div class="r2" style="margin-top:8px">
+    <div class="f" style="flex:1"><label>Profilo buffer audio (anti-scatti)</label>
+      <select id="selAudioProfile" onchange="onAudioProfileChange()">
+        <option value="reactive">⚡ Reattivo — latenza minima (~320ms), possibili scatti</option>
+        <option value="balanced" selected>⚖️ Bilanciato — compromesso (~480ms)</option>
+        <option value="antiscatti">🛡 Anti-scatti — latenza ~800ms, riproduzione fluida</option>
       </select>
     </div>
   </div>
-  <div id="compressInfo" style="font-size:.68rem;color:var(--muted);font-family:var(--mono);margin-top:6px;padding:8px 10px;background:#040c15;border-left:2px solid var(--green);border-radius:6px;line-height:1.5"></div>
+  <div id="audioProfileInfo" style="font-size:.68rem;color:var(--muted);font-family:var(--mono);margin-top:6px;padding:8px 10px;background:#040c15;border-left:2px solid var(--green);border-radius:6px;line-height:1.5"></div>
   <!-- Pannello Server VAD: silenceDurationMs + sensitivity -->
   <div id="pSVad">
     <div class="sg">
@@ -761,7 +761,7 @@ const LS_MIC_ID='gemini_mic_id';        // mic preferito (persistente)
 const LS_CAM_FACING='gemini_cam_facing'; // 'user' | 'environment'
 const LS_VAD_MODE='gemini_vad_mode';     // server_vad | semantic_vad | manual_vad
 const LS_BARGE='gemini_barge';           // ricorda preferenza barge-in
-const LS_COMPRESS='gemini_compress';     // STEP 3: profilo compressione contesto (off | balanced | fiera)
+const LS_AUDIO_PROFILE='gemini_audio_profile'; // STEP 5: profilo buffer audio (reactive | balanced | antiscatti)
 const SS_SESSION_HANDLE='gemini_sess';   // sessionStorage (entro 2h validità Gemini)
 const GEMINI_WS_BASE='wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage';
 // La doc raccomanda audio a 16kHz nativo. AudioContext su iOS gira a 48kHz,
@@ -789,14 +789,12 @@ const RECONNECT_BASE  = 2000;
 const RECONNECT_MAX   = 30000;
 const RECONNECT_LIMIT = 10;
 const AUDIO_Q_MAX     = 60;
-// STEP 3: alzato da 1500 a 2500ms per dare più tempo agli ultimi chunk in arrivo
-// dopo turnComplete prima di considerare la riproduzione finita.
-// 1500ms a volte chiudeva playing=false mentre arrivava ancora coda residua,
-// causando il prossimo chunk a ripartire con reset di nextPlayTime (stacco udibile).
-const DRAIN_WATCHDOG  = 2500;  // ridotto da 6000 a 1500 (troppo lungo causava robot muto in fiera), poi alzato a 2500 in STEP 3 per ridurre il cutoff finale
-// STEP 3: alzato da 8 a 12 chunk (~480ms di pre-buffer @ 25 chunks/sec)
-// per assorbire meglio il jitter di rete WiFi in fiera e ridurre micro-gap.
-const PRE_BUFFER_CHUNKS = 12;
+// ═══ PROFILO AUDIO (STEP 5) — variabili mutabili in base al toggle UI ═══
+// I valori di default sono quelli del profilo "Bilanciato" (= STEP 3 precedente).
+// Vengono sovrascritti da applyAudioProfile() in base al selettore selAudioProfile.
+let DRAIN_WATCHDOG  = 2500;  // ms di attesa post-fine-coda prima di chiudere playing
+let PRE_BUFFER_CHUNKS = 12;  // chunk da accumulare prima di iniziare a riprodurre
+let REBUFFER_THRESHOLD = 0;  // se >0, drain si ferma quando audioQ scende sotto questa soglia (anti-scatti)
 const CTX_WATCHDOG_MS = 2000;
 const WS_KEEPALIVE_MS = 30000; // ping cliente per mantenere viva la TCP
 const CAM_RELEASE_MS  = 350;   // attesa rilascio cam iOS tra switch
@@ -822,6 +820,10 @@ let activeSources=new Set();
 // Lock breve dopo un interrupted: ignora i chunk audio residui del turno interrotto
 // che potrebbero ancora arrivare dopo il flag interrupted, per evitare che ripartano.
 let bargeInLockUntil=0;
+// STEP 5: flag per re-buffering. Quando true, il drain NON applica la soglia REBUFFER_THRESHOLD
+// (cioè può svuotare la coda fino in fondo), perché ci aspettiamo che non arriveranno
+// altri chunk. Settato true su turnComplete/generationComplete, false quando arriva audio nuovo.
+let turnRecentlyComplete=true;
 let tok={ai:0,ao:0,aoEstimateTurn:0};
 let editingChar=null, camStream=null, camActive=false;
 let videoStreamInterval=null; // streaming video continuo per Gemini Live API
@@ -931,13 +933,13 @@ function init(){
     const b=localStorage.getItem(LS_BARGE);
     if(b==='1'){ document.getElementById('chkBarge').checked=true; }
   }catch{}
-  // STEP 3: ripristina profilo compressione contesto
+  // STEP 5: ripristina profilo buffer audio
   try{
-    const c=localStorage.getItem(LS_COMPRESS);
-    const selC=document.getElementById('selCompress');
-    if(c && selC && [...selC.options].some(o=>o.value===c)){ selC.value=c; }
+    const a=localStorage.getItem(LS_AUDIO_PROFILE);
+    const selA=document.getElementById('selAudioProfile');
+    if(a && selA && [...selA.options].some(o=>o.value===a)){ selA.value=a; }
   }catch{}
-  if(typeof onCompressChange==='function') onCompressChange(true);
+  if(typeof onAudioProfileChange==='function') onAudioProfileChange(true);
   // Ripristina slider frame rate video da localStorage
   const vfs=document.getElementById('rVidFps');
   if(vfs){
@@ -1795,31 +1797,14 @@ function sendSetup(){
     outputAudioTranscription: {}
   };
 
-  // ── Context window compression (STEP 3) ──────────────────────────
-  // Profilo scelto dall'utente. Gestisce il trade-off durata-sessione vs cutoff finale.
-  // Doc ufficiale: senza compression audio-only=15min, audio-video=2min.
-  //   - 'off'      → nessuna compression (sessioni cortissime, audio più pulito)
-  //   - 'balanced' → slidingWindow default (sessione illimitata, comportamento doc)
-  //   - 'fiera'    → trigger alto + finestra ampia: meno eviction = potenzialmente
-  //                  meno turnComplete prematuro + il robot ricorda di più
-  // Sintassi camelCase confermata da Google Cloud docs (triggerTokens/targetTokens).
-  const compressMode = document.getElementById('selCompress')?.value || 'balanced';
-  if(compressMode === 'off'){
-    dbg('🎤 Compression OFF (sessione max 15min audio / 2min con video)');
-    // nessuna chiave contextWindowCompression nel setup
-  } else if(compressMode === 'fiera'){
-    setup.contextWindowCompression = {
-      triggerTokens: 32000,
-      slidingWindow: { targetTokens: 16000 }
-    };
-    dbg('🛡 Compression FIERA (trigger 32k / window 16k)');
-  } else {
-    // balanced (default): slidingWindow di default come da doc
-    setup.contextWindowCompression = {
-      slidingWindow: {}
-    };
-    dbg('⚖️ Compression BILANCIATA (slidingWindow default)');
-  }
+  // ── Context window compression (hardcoded Bilanciata) ────────────
+  // ESSENZIALE per sessioni > 15 min. Senza, l'audio si accumula a ~25 tok/s
+  // e Gemini chiude la sessione al limite di contesto. Con sliding window di default
+  // comprime automaticamente il contesto vecchio mantenendo sessioni illimitate.
+  // Doc: ai.google.dev/gemini-api/docs/live-api/session-management
+  setup.contextWindowCompression = {
+    slidingWindow: {}  // configurazione di default raccomandata
+  };
 
   // ── realtimeInputConfig (VAD) ────────────────────────────────────
   const vadMode = document.getElementById('selVad').value || 'server_vad';
@@ -2126,7 +2111,15 @@ function onMsg(e){
           if(isRec)recChunks.push(pcm);
           if(audioQ.length>AUDIO_Q_MAX){audioQ=audioQ.slice(-Math.floor(AUDIO_Q_MAX/2));nextPlayTime=0;}
           audioQ.push(pcm);
+          // STEP 5: nuovo chunk = siamo in mezzo a un turno, re-buffering ATTIVO
+          turnRecentlyComplete = false;
           if(!playing && audioQ.length >= PRE_BUFFER_CHUNKS) drain();
+          // STEP 5: se siamo in re-buffering attivo (playing=true ma drain fermo per soglia),
+          // appena la coda risale sopra la soglia, riavvia drain. Senza questa riga
+          // il drain potrebbe restare in attesa anche se ci sono chunk a sufficienza.
+          else if(playing && REBUFFER_THRESHOLD > 0 && audioQ.length >= REBUFFER_THRESHOLD && !drainWatchdog){
+            drain();
+          }
           // Stima costi (fallback) per FEEDBACK VISIVO durante la riproduzione.
           // Viene azzerata a ogni usageMetadata, dove il valore esatto del turno
           // si aggiunge a tok.ao. Senza azzeramento avremmo doppio conteggio.
@@ -2158,6 +2151,8 @@ function onMsg(e){
         const schedAheadMs = audioCtx ? Math.round(Math.max(0, (nextPlayTime - audioCtx.currentTime)*1000)) : 0;
         dbg('✅ turnComplete · audioQ='+qLen+' chunk · schedAhead='+schedAheadMs+'ms · playing='+playing);
       }catch{ dbg('✅ turnComplete ricevuto'); }
+      // STEP 5: fine turno → re-buffering OFF (svuota tutto fino in fondo, non trattenere)
+      turnRecentlyComplete = true;
       finalizeRobot();
       audioQ.push(new Int16Array(OUTPUT_SR));
       if(!playing) drain();
@@ -2183,6 +2178,8 @@ function onMsg(e){
       audioQ=[];
       playing=false;
       nextPlayTime=0;
+      // STEP 5: turno annullato → re-buffering OFF (non c'è più nulla da accumulare)
+      turnRecentlyComplete = true;
       if(turnEndTimer){ clearTimeout(turnEndTimer); turnEndTimer=null; }
       if(drainWatchdog){ clearTimeout(drainWatchdog); drainWatchdog=null; }
       bargeInLockUntil = Date.now() + 150; // ignora chunk residui in volo per 150ms (sufficiente su WiFi, non taglia nuove risposte)
@@ -2196,6 +2193,8 @@ function onMsg(e){
     }
     if(sc.generationComplete){
       dbg('🏁 generationComplete (Gemini ha finito di pensare)');
+      // STEP 5: anche generationComplete è segnale di fine flusso audio
+      turnRecentlyComplete = true;
     }
   }
   // Trascrizioni top-level (alcuni modelli/versioni le mandano qui invece che in serverContent)
@@ -2307,6 +2306,7 @@ function disc(clearHandle=false){
   // Svuotiamo solo il Set: i nodi sono già morti col context.
   activeSources.clear();
   bargeInLockUntil=0;
+  turnRecentlyComplete=true; // STEP 5: reset re-buffering al disconnect
   if(turnEndTimer){ clearTimeout(turnEndTimer); turnEndTimer=null; }
   vadWasActive=false; vadSilenceFrames=0;
   manualVadActive=false; manualVadSilenceStart=null; manualVadFramesSpeaking=0;
@@ -2447,6 +2447,31 @@ async function drain(){
   // Svuota tutta la coda in un ciclo sincrono, pianificando ogni buffer
   // con timestamp preciso — nessun gap, nessuna latenza di callback
   while(audioQ.length > 0){
+    // ═══ STEP 5 — RE-BUFFERING (anti-scatti) ═══
+    // Se il profilo Anti-scatti è attivo (REBUFFER_THRESHOLD>0) e la coda scende
+    // sotto soglia mid-frase (turnRecentlyComplete=false), ferma il drain in modo
+    // controllato: aspetta che arrivino altri chunk prima di continuare.
+    // Questo previene gli scatti tipo "ci vediamo prossima...mente" causati da
+    // chunk in ritardo: invece di esaurire la coda e ricominciare, freniamo qui.
+    // Il drain riprende automaticamente via setTimeout o quando arriva un nuovo chunk.
+    if(REBUFFER_THRESHOLD > 0 && audioQ.length < REBUFFER_THRESHOLD && !turnRecentlyComplete){
+      dbg('⏸ re-buffering: coda='+audioQ.length+' < soglia='+REBUFFER_THRESHOLD+' · aspetto chunk');
+      // Non azzeriamo playing: gli onChunk continuano a entrare in audioQ.
+      // Ri-controlliamo tra 80ms (un chunk a 40ms = 2 chunk di tempo).
+      if(drainWatchdog){clearTimeout(drainWatchdog);}
+      drainWatchdog=setTimeout(()=>{
+        drainWatchdog=null;
+        // riavvia drain solo se ancora in attesa (playing=true e coda non vuota)
+        if(playing && audioQ.length > 0) drain();
+        else if(audioQ.length === 0){
+          // se la coda è ancora vuota dopo 80ms, probabilmente è fine turno
+          // (anche senza flag turnComplete formale): sblocca lo stato.
+          playing=false;
+          nextPlayTime=0;
+        }
+      }, 80);
+      return; // esce dal drain, riprenderà dal setTimeout
+    }
     const pcm = audioQ.shift();
     const f = new Float32Array(pcm.length);
     for(let i=0;i<pcm.length;i++) f[i]=pcm[i]/(pcm[i]<0?0x8000:0x7FFF);
@@ -2560,7 +2585,6 @@ async function toggleCam(){
     v.style.display='block'; document.getElementById('camPh').style.display='none';
     camActive=true; document.getElementById('btnCamOn').textContent='⏹ Spegni cam';
     document.getElementById('btnSnap').disabled=false; dot('dCam','on');
-    if(typeof onCompressChange==='function') onCompressChange(true); // aggiorna avviso "Demo breve"+cam
     // Persisti preferenza
     if(facingMode==='user' || facingMode==='environment'){
       try{ localStorage.setItem(LS_CAM_FACING, facingMode); }catch{}
@@ -2581,7 +2605,6 @@ async function toggleCam(){
         v.style.display='block'; document.getElementById('camPh').style.display='none';
         camActive=true; document.getElementById('btnCamOn').textContent='⏹ Spegni cam';
         document.getElementById('btnSnap').disabled=false; dot('dCam','on');
-        if(typeof onCompressChange==='function') onCompressChange(true);
         await enumCams();
         if(connected && setupReady) startVideoStream();
         return;
@@ -2605,7 +2628,6 @@ function stopCam(){
   document.getElementById('btnCamOn').textContent='📷 Attiva cam';
   document.getElementById('btnSnap').disabled=true;
   dot('dCam',null);
-  if(typeof onCompressChange==='function') onCompressChange(true); // aggiorna avviso (cam ora spenta)
 }
 
 // Cambio camera (facingMode o deviceId).
@@ -2804,38 +2826,57 @@ function oThr(v){document.getElementById('vThr').textContent=v;}
 function oSil(v){document.getElementById('vSil').textContent=v+' ms';}
 function oSilSem(v){document.getElementById('vSilSem').textContent=v+' ms';}
 function oSilMan(v){document.getElementById('vSilMan').textContent=v+' ms';}
-// STEP 3: gestione profilo compressione contesto
-// Aggiorna l'info-box, salva la preferenza, e avvisa se "Demo breve" + camera attiva.
-function onCompressChange(silent){
-  const sel=document.getElementById('selCompress');
-  const info=document.getElementById('compressInfo');
+
+// ═══════════════════════════════════════════════════════════════
+// STEP 5 — PROFILO BUFFER AUDIO (anti-scatti)
+// I 3 profili modulano: pre-buffer (chunk accumulati prima di iniziare),
+// watchdog (tolleranza fine coda), re-buffering (pausa se coda si svuota mid-frase).
+// Effetto immediato: nessuna riconnessione necessaria (sono solo parametri client).
+// ═══════════════════════════════════════════════════════════════
+function applyAudioProfile(name){
+  switch(name){
+    case 'reactive':
+      PRE_BUFFER_CHUNKS = 8;
+      DRAIN_WATCHDOG    = 1500;
+      REBUFFER_THRESHOLD= 0;       // OFF: drain non si ferma mai mid-flusso
+      break;
+    case 'antiscatti':
+      PRE_BUFFER_CHUNKS = 20;
+      DRAIN_WATCHDOG    = 4000;
+      REBUFFER_THRESHOLD= 3;        // ON: se la coda scende sotto 3 chunk mid-frase, drain si ferma e aspetta
+      break;
+    case 'balanced':
+    default:
+      PRE_BUFFER_CHUNKS = 12;
+      DRAIN_WATCHDOG    = 2500;
+      REBUFFER_THRESHOLD= 0;
+      break;
+  }
+  dbg('🎚 Profilo audio: '+name+' · pre-buffer='+PRE_BUFFER_CHUNKS+' chunk · watchdog='+DRAIN_WATCHDOG+'ms · rebuffer='+(REBUFFER_THRESHOLD||'off'));
+}
+
+function onAudioProfileChange(silent){
+  const sel=document.getElementById('selAudioProfile');
+  const info=document.getElementById('audioProfileInfo');
   if(!sel||!info) return;
   const mode=sel.value;
-  // Salva preferenza
-  try{ localStorage.setItem(LS_COMPRESS, mode); }catch{}
+  try{ localStorage.setItem(LS_AUDIO_PROFILE, mode); }catch{}
+  applyAudioProfile(mode);
   let txt='', border='var(--green)';
-  if(mode==='off'){
-    // Avviso forte se la camera è attiva: con video la sessione muore a 2 minuti
-    if(camActive){
-      txt='⚠️ ATTENZIONE: camera attiva! Senza compressione la sessione si chiude dopo ~2 minuti. Usa "Demo breve" solo SENZA camera (limite ~15 min audio).';
-      border='var(--red,#ff4444)';
-    }else{
-      txt='🎤 Audio più pulito, meno interruzioni a fine frase. Sessione limitata a ~15 min (solo audio). Se accendi la camera scende a ~2 min!';
-      border='var(--yellow,#e0a800)';
-    }
-  }else if(mode==='fiera'){
-    txt='🛡 Finestra di contesto ampia (trigger 32k / window 16k). Sessione illimitata, il robot ricorda di più e le interruzioni a fine frase dovrebbero ridursi. Ideale per fiere di ore.';
+  if(mode==='reactive'){
+    txt='⚡ Pre-buffer 320ms · watchdog 1.5s · NO re-buffering. Reattività massima ma se la rete è instabile potresti sentire micro-pause in mezzo alle frasi.';
+    border='var(--yellow,#e0a800)';
+  }else if(mode==='antiscatti'){
+    txt='🛡 Pre-buffer 800ms · watchdog 4s · re-buffering ON (soglia 3). Riproduzione fluida senza scatti, al costo di ~300ms in più di latenza iniziale. Consigliato in caso di WiFi instabile o se senti micro-pause mid-frase.';
     border='var(--green)';
   }else{
-    txt='⚖️ Compressione standard consigliata da Google. Sessione di durata illimitata. Buon compromesso per uso normale (15-60 min).';
+    txt='⚖️ Pre-buffer 480ms · watchdog 2.5s · NO re-buffering. Compromesso standard, latenza moderata. Se vedi scatti mid-frase, prova "Anti-scatti".';
     border='var(--green)';
   }
   info.textContent=txt;
   info.style.borderLeftColor=border;
-  // Se connesso, il cambio ha effetto solo alla prossima connessione (la compression
-  // è un parametro di setup, non modificabile mid-sessione).
   if(!silent && connected){
-    addMsg('ℹ️ Profilo compressione cambiato: avrà effetto alla prossima riconnessione.','sys');
+    addMsg('🎚 Profilo audio: '+mode+' (effetto immediato)','sys');
   }
 }
 
