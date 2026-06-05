@@ -10,6 +10,13 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Robot AI">
   <meta name="theme-color" content="#070d18">
+  <!-- PWA per Android/Chrome: il manifest abilita icona home + modalità standalone
+       (senza barra indirizzi), equivalente di "Aggiungi a Home" di Safari.
+       È inline (data URI) così resta tutto in un unico file, senza file esterni.
+       Convive senza problemi con i meta apple-mobile-web-app-* qui sopra:
+       iOS legge quelli, Android legge il manifest. Nessuno disturba l'altro.
+       L'icona è un SVG inline (data URI) → niente file PNG esterni da gestire. -->
+  <link rel="manifest" href='data:application/manifest+json,{"name":"Robot AI — Gemini","short_name":"Robot AI","start_url":".","display":"standalone","orientation":"portrait","background_color":"#070d18","theme_color":"#070d18","icons":[{"src":"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2236%22 fill=%22%23070d18%22/%3E%3Ctext x=%2296%22 y=%22130%22 font-size=%22110%22 text-anchor=%22middle%22%3E%F0%9F%A4%96%3C/text%3E%3C/svg%3E","sizes":"192x192","type":"image/svg+xml","purpose":"any maskable"},{"src":"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22%3E%3Crect width=%22512%22 height=%22512%22 rx=%2296%22 fill=%22%23070d18%22/%3E%3Ctext x=%22256%22 y=%22350%22 font-size=%22300%22 text-anchor=%22middle%22%3E%F0%9F%A4%96%3C/text%3E%3C/svg%3E","sizes":"512x512","type":"image/svg+xml","purpose":"any maskable"}]}'>
   <title>Robot AI — Gemini v3</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
@@ -280,6 +287,13 @@
     <div><div class="tlbl">🛑 Barge-in</div><div class="tsub">Puoi interrompere il robot parlando · disabilitato con Auto-mute ON</div></div>
     <label class="tsw"><input type="checkbox" id="chkBarge"><span class="ts"></span></label>
   </div>
+  <div class="trow">
+    <div>
+      <div class="tlbl">🎛 Elaborazione audio di sistema (iOS)</div>
+      <div class="tsub">Eco/rumore/AGC del sistema · spegnila per testare il dimezzamento volume iOS o se l'interfaccia ha già il suo DSP</div>
+    </div>
+    <label class="tsw"><input type="checkbox" id="chkSysDsp" checked onchange="updateSysDsp(this)"><span class="ts"></span></label>
+  </div>
 </div>
 
 <!-- CHAT -->
@@ -308,6 +322,17 @@
       <button id="btnCamFlip" onclick="flipCam()" style="padding:6px 10px;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:6px;cursor:pointer" title="Inverti frontale/posteriore">🔄</button>
     </div>
     <select id="selCam" onchange="switchCam()" style="margin-top:6px;display:none"></select>
+  </div>
+  <!-- Modalità di cattura video: tradeoff risparmio token ↔ consapevolezza visiva continua.
+       · continuo: invia frame sempre mentre la cam è attiva (comportamento storico, testato).
+       · voce:     invia frame SOLO mentre c'è attività vocale → taglia i token nei silenzi.
+       In entrambe le modalità, se la camera è spenta NON viene inviato nulla (nessun errore). -->
+  <div class="f" style="margin-top:9px"><label>Modalità cattura video</label>
+    <select id="selVidMode" onchange="updateVidMode(this.value)">
+      <option value="continuous">🎥 Continuo (sempre, mentre cam attiva)</option>
+      <option value="voice">🗣 Solo quando senti parlare (auto, risparmio token)</option>
+      <option value="manual">✋ Manuale (solo col pulsante SNAP)</option>
+    </select>
   </div>
   <!-- Frequenza di campionamento video: tradeoff reattività ↔ token consumati.
        1 fps = max consentito da Gemini (~263 tok/sec); 0.2 fps = 1 frame ogni 5 sec (~52 tok/sec). -->
@@ -797,13 +822,77 @@ let PRE_BUFFER_CHUNKS = 12;  // chunk da accumulare prima di iniziare a riprodur
 let REBUFFER_THRESHOLD = 0;  // se >0, drain si ferma quando audioQ scende sotto questa soglia (anti-scatti)
 const CTX_WATCHDOG_MS = 2000;
 const WS_KEEPALIVE_MS = 30000; // ping cliente per mantenere viva la TCP
-const CAM_RELEASE_MS  = 350;   // attesa rilascio cam iOS tra switch
+// Attesa rilascio camera tra uno switch e l'altro. iOS è lento a liberare
+// l'hardware camera (~350ms); Android di solito basta meno. Valore scelto a runtime.
+let CAM_RELEASE_MS    = 350;
 const MODELS_NATIVE_AUDIO = ['gemini-2.5-flash-native-audio-preview-09-2025','gemini-2.5-flash-native-audio-preview-12-2025','gemini-2.5-flash-native-audio-latest'];
 const MODELS_LIVE_31 = ['gemini-3.1-flash-live-preview'];
 
 // ═══════════════════════════════════════════════════════════════
+// PLATFORM — rilevamento OS una tantum (file unico universale)
+// ═══════════════════════════════════════════════════════════════
+// Un solo file per iOS e Android: i pochi comportamenti che differiscono
+// (default auto-mute, regex riconoscimento mic, tempi di rilascio camera)
+// vengono scelti a runtime in base a questo oggetto. Nessuna azione manuale
+// da parte dell'utente: l'app capisce da sola dove sta girando.
+const PLATFORM = (function(){
+  const ua = (navigator.userAgent||'').toLowerCase();
+  const isAndroid = /android/.test(ua);
+  // iPadOS recente si maschera da Mac: lo riconosciamo dal touch.
+  const isIOS = /iphone|ipad|ipod/.test(ua)
+              || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  // standalone = lanciata dall'icona home (PWA), iOS o Android
+  const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+                    || (navigator.standalone===true);
+  return {isAndroid, isIOS, isStandalone, ua};
+})();
+
+// Regex per riconoscere un microfono INTERNO (built-in), così da preferire
+// un eventuale microfono ESTERNO (cuffie con filo / Bluetooth / USB).
+// Copre sia le label iOS ("iPhone Microphone", "Receiver"...) sia quelle
+// Android/Chrome ("Built-in microphone", "Default", "Phone microphone"...).
+// I pattern Bluetooth/wired/headset NON sono qui: quelli sono ciò che vogliamo
+// trovare come "esterno", quindi devono NON matchare questa regex.
+const BUILTIN_MIC_RE=/iphone|built.?in|receiver|interno|microfono\s+iphone|phone microphone|default|predefinito|internal mic/i;
+
+// ═══════════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════════
+let wakeLock=null;        // Screen Wake Lock (Android: evita sospensione mic/AudioContext a schermo spento)
+
+// ═══ ELABORAZIONE AUDIO DI SISTEMA (echoCancellation/noiseSuppression/AGC) ═══
+// Su iOS l'attivazione di echoCancellation fa entrare il sistema in "modalità
+// telefonata" (voice-processing), che DIMEZZA il volume in uscita. Poiché l'app
+// usa già l'auto-mute (mic spento mentre il robot parla) come anti-eco, questo
+// DSP è in gran parte ridondante: spegnerlo è il test per eliminare il dimezzamento.
+// Va spento anche quando l'interfaccia/array audio ha già il proprio DSP hardware.
+// Default ON = comportamento storico. Lo stato è iOS-rilevante ma applicato ovunque
+// (su Android disattivarlo è innocuo e talvolta utile con interfacce esterne).
+const LS_SYS_DSP='gemini_sys_dsp';
+let sysAudioDSP=(()=>{ try{return localStorage.getItem(LS_SYS_DSP)!=='0';}catch{return true;} })();
+
+// Costruisce i constraint audio per getUserMedia in base all'interruttore.
+// Centralizzato così VU monitor e worklet usano sempre gli stessi flag.
+function micAudioConstraints(devId){
+  const dsp = sysAudioDSP;
+  const base = { echoCancellation:dsp, noiseSuppression:dsp, autoGainControl:dsp };
+  if(devId) base.deviceId = { exact: devId };
+  return { audio: base };
+}
+
+function updateSysDsp(cb){
+  sysAudioDSP = !!cb.checked;
+  try{ localStorage.setItem(LS_SYS_DSP, sysAudioDSP?'1':'0'); }catch{}
+  dbg('🎛 Elaborazione audio di sistema: '+(sysAudioDSP?'ON (eco+rumore+AGC)':'OFF (segnale grezzo)'));
+  // Riapplica subito riacquisendo il microfono, se è già attivo.
+  if(sharedMicStream){
+    dbg('🔄 Riavvio microfono per applicare il nuovo setting DSP...');
+    startVuMonitor().catch(()=>{});
+    if(connected){
+      toast(sysAudioDSP?'DSP ON — riconnetti per applicarlo allo stream':'DSP OFF — riconnetti per applicarlo allo stream');
+    }
+  }
+}
 let API_KEY='', activePrompt='Sei un assistente vocale. Rispondi sempre in italiano.', activeVoice='Aoede';
 let localVadLevel=0;
 let ws=null, audioCtx=null, workletNode=null, micStream=null;
@@ -835,6 +924,71 @@ let VIDEO_STREAM_FPS=(()=>{
   catch{return 1.0;}
 })();
 const VIDEO_STREAM_QUALITY=0.7; // jpeg quality per ridurre bandwidth nel continuo
+
+// ═══ MODALITÀ CATTURA VIDEO ═══
+// 'continuous' = invia frame sempre mentre cam attiva (storico, testato a fondo)
+// 'voice'      = invia frame SOLO durante attività vocale → risparmio token nei silenzi
+// 'manual'     = NESSUNO streaming automatico: i frame partono solo col pulsante SNAP
+//                (o col comando vocale "guarda/cosa vedi"). Esclude le altre due.
+// In tutte: se camActive è false, nessun invio (guard a inizio loop / in doSnap).
+const LS_VID_MODE='gemini_vid_mode';
+let VIDEO_CAPTURE_MODE=(()=>{
+  try{const v=localStorage.getItem(LS_VID_MODE);return (v==='voice'||v==='continuous'||v==='manual')?v:'continuous';}
+  catch{return 'continuous';}
+})();
+
+// ═══ GATE VOCE ADATTIVO (modalità 'voice') ═══
+// Niente soglia fissa da tarare a mano: il sistema stima in continuo il rumore
+// di fondo (vidBgNoise) e considera "voce" solo ciò che lo supera di un margine.
+// In fiera col caos il fondo sale → la soglia sale da sola (non spariamo frame
+// sull'ambiente). Quando torna la calma il fondo scende → torna sensibile.
+// Tutto automatico: l'operatore non deve toccare nulla durante l'evento.
+//
+// vidBgNoise e vidEnvFast sono aggiornati ad ALTA frequenza nel loop VU (~60fps),
+// non nel lento interval dei frame, così la stima è stabile e non "a scatti".
+let vidBgNoise = 0.05;   // stima rumore di fondo (0-1), parte bassa
+let vidEnvFast = 0;      // inviluppo veloce del livello corrente (voce)
+// Margini del gate: la voce deve superare il fondo di MULT volte E di ABS in assoluto.
+// Sono robusti e indipendenti dall'ambiente (non vanno tarati): è il FONDO che si muove.
+const VOICE_MARGIN_MULT = 1.8;   // voce ≥ 1.8× il rumore di fondo stimato
+const VOICE_MARGIN_ABS  = 0.05;  // …e comunque almeno +0.05 sopra il fondo (anti-jitter nel silenzio)
+const VOICE_HOLD_MS=1500;        // coda di 1.5s dopo l'ultima voce: il frame resta nel turno
+let lastVoiceActivityAt=0;       // timestamp ultima voce rilevata
+
+// Aggiornamento adattivo del fondo + inviluppo. Chiamata dal loop VU ad ogni frame.
+// Asimmetrico: scende in fretta (ambiente che si calma) e sale piano (così una voce
+// o un transiente non gonfiano il fondo facendo "sparire" la voce stessa).
+function updateVoiceGateEstimate(pct){
+  // inviluppo veloce della voce (smussa il jitter di singolo frame)
+  vidEnvFast += (pct - vidEnvFast) * 0.30;
+  if(pct < vidBgNoise){
+    vidBgNoise += (pct - vidBgNoise) * 0.05;   // scende: ~0.3s a 60fps
+  }else{
+    vidBgNoise += (pct - vidBgNoise) * 0.0025;  // sale: ~7s a 60fps (lento di proposito)
+  }
+  if(vidBgNoise < 0.02) vidBgNoise = 0.02;
+  if(vidBgNoise > 0.6)  vidBgNoise = 0.6;
+}
+
+function updateVidMode(mode){
+  VIDEO_CAPTURE_MODE = (mode==='voice'||mode==='continuous'||mode==='manual') ? mode : 'continuous';
+  try{localStorage.setItem(LS_VID_MODE, VIDEO_CAPTURE_MODE);}catch{}
+  const nice = VIDEO_CAPTURE_MODE==='voice'?'solo quando si parla (adattivo)'
+             : VIDEO_CAPTURE_MODE==='manual'?'manuale (solo SNAP)':'continuo';
+  dbg('🎚 Modalità video: '+nice);
+  // Gestione transizioni a sessione attiva:
+  // - verso 'manual': se c'è uno streaming attivo, fermalo (no auto-frame).
+  // - verso 'continuous'/'voice': se cam+WS pronti e non sta già girando, avvialo.
+  if(VIDEO_CAPTURE_MODE==='manual'){
+    if(videoStreamInterval) stopVideoStream();
+    const lbl=document.getElementById('eyeLbl'); if(lbl) lbl.textContent='👁 visione: manuale (usa 📸)';
+  }else{
+    if(camActive && ws && ws.readyState===WebSocket.OPEN && setupReady && !videoStreamInterval){
+      startVideoStream();
+    }
+  }
+}
+
 function updateVidFps(sliderVal){
   // slider value 2..10 → fps 0.2..1.0
   const fps = Math.max(0.2, Math.min(1.0, parseInt(sliderVal)/10));
@@ -940,6 +1094,12 @@ function init(){
     if(a && selA && [...selA.options].some(o=>o.value===a)){ selA.value=a; }
   }catch{}
   if(typeof onAudioProfileChange==='function') onAudioProfileChange(true);
+  // Ripristina modalità cattura video nel selettore
+  const selVM=document.getElementById('selVidMode');
+  if(selVM){ selVM.value = VIDEO_CAPTURE_MODE; }
+  // Ripristina interruttore elaborazione audio di sistema
+  const chkDsp=document.getElementById('chkSysDsp');
+  if(chkDsp){ chkDsp.checked = sysAudioDSP; }
   // Ripristina slider frame rate video da localStorage
   const vfs=document.getElementById('rVidFps');
   if(vfs){
@@ -977,6 +1137,29 @@ function init(){
   document.getElementById('selModel').addEventListener('change', updThinkUI);
   updThinkUI();
   onAutoMuteChange();
+
+  // ═══ ADATTAMENTI DI PIATTAFORMA (file unico universale) ═══
+  // Camera: Android libera l'hardware più in fretta di iOS.
+  CAM_RELEASE_MS = PLATFORM.isAndroid ? 200 : 350;
+  dbg('📱 Piattaforma: '+(PLATFORM.isAndroid?'Android':PLATFORM.isIOS?'iOS':'Desktop/altro')
+      +(PLATFORM.isStandalone?' · PWA standalone':' · browser')
+      +' · WakeLock '+(('wakeLock' in navigator)?'disponibile':'non supportato'));
+
+  // visibilitychange: tornando in foreground su Android lo schermo era spento,
+  // quindi Wake Lock + AudioContext vanno riattivati. Su iOS è innocuo.
+  document.addEventListener('visibilitychange', async ()=>{
+    if(document.visibilityState==='visible'){
+      if(connected){
+        // Riacquisisci il wake lock (il sistema lo rilascia automaticamente
+        // quando la pagina diventa nascosta).
+        acquireWakeLock();
+        // Risveglia gli AudioContext eventualmente sospesi dal sistema.
+        try{ if(audioCtx && audioCtx.state==='suspended') await audioCtx.resume(); }catch{}
+        try{ if(vuCtx && vuCtx.state==='suspended') await vuCtx.resume(); }catch{}
+        dbg('👁 App tornata in foreground — wake lock e audio riattivati');
+      }
+    }
+  });
 }
 
 // Mostra/nasconde pannello thinking in base al modello scelto
@@ -1408,10 +1591,8 @@ async function startVuMonitor(forceDeviceId){
 
     if(!devId){
       // FASE 1: apri con default per sbloccare il permesso e rendere visibili le label
-      dbg('🎤 getUserMedia (default — permesso + detect wired)...');
-      const tempStream=await navigator.mediaDevices.getUserMedia({
-        audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}
-      });
+      dbg('🎤 getUserMedia (default — permesso + detect wired)'+(sysAudioDSP?'':' · DSP OFF')+'...');
+      const tempStream=await navigator.mediaDevices.getUserMedia(micAudioConstraints(''));
       const tempLabel=tempStream.getAudioTracks()[0]?.label||'';
       dbg('📋 Mic default: "'+tempLabel+'"');
 
@@ -1422,13 +1603,13 @@ async function startVuMonitor(forceDeviceId){
 
       // Il default era già quello giusto se il suo label NON è built-in
       const defaultLabel=tempLabel.toLowerCase();
-      const defaultIsBuiltin=/iphone|built.?in|receiver|interno|microfono\s+iphone/i.test(defaultLabel);
+      const defaultIsBuiltin=BUILTIN_MIC_RE.test(defaultLabel);
 
       // Cerca microfono esterno tra tutti i disponibili
       // Strategia: escludi quelli built-in, prendi il primo rimasto
       const external=mics.find(m=>
         m.deviceId && m.deviceId!=='' &&
-        !/iphone|built.?in|receiver|interno|microfono\s+iphone/i.test(m.label) &&
+        !BUILTIN_MIC_RE.test(m.label) &&
         m.label // deve avere una label visibile
       );
 
@@ -1449,10 +1630,8 @@ async function startVuMonitor(forceDeviceId){
 
     if(!sharedMicStream){
       // Apri con deviceId specifico (selezionato manualmente o trovato nella fase 2)
-      const constraint=devId
-        ?{audio:{deviceId:{exact:devId}, echoCancellation:true, noiseSuppression:true, autoGainControl:true}}
-        :{audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}};
-      dbg('🎤 getUserMedia '+(devId?'exact:'+devId.slice(0,12)+'...':'(default)')+'...');
+      const constraint=micAudioConstraints(devId);
+      dbg('🎤 getUserMedia '+(devId?'exact:'+devId.slice(0,12)+'...':'(default)')+(sysAudioDSP?'':' · DSP OFF')+'...');
       sharedMicStream=await navigator.mediaDevices.getUserMedia(constraint);
     }
 
@@ -1523,6 +1702,9 @@ async function startVuMonitor(forceDeviceId){
         }
       }
       drawVU(boosted);
+      // Stima adattiva del rumore di fondo per il gate video "modalità voce".
+      // Gira qui (~60fps) per essere stabile; usa vuDisplayPct già normalizzato (0-1).
+      updateVoiceGateEstimate(vuDisplayPct);
       const now=Date.now();
       if(now-vuLogT>3000){vuLogT=now;console.log('[VU] peak:'+peak+' boosted:'+Math.round(boosted)+' floor:'+Math.round(vuNoiseFloor));}
     })();
@@ -1707,6 +1889,8 @@ async function conn(){
       sendSetup();
       // Avvia keep-alive: piccolo ping ogni 30s per evitare idle timeout dei firewall
       startWsKeepalive();
+      // Tieni lo schermo attivo finché la sessione vive (essenziale su Android)
+      acquireWakeLock();
     };
     ws.onmessage=onMsg;
     ws.onerror=e=>{console.error('[WS]',e);dbg('❌ WS errore');health('err','WS errore');};
@@ -1739,6 +1923,36 @@ function startWsKeepalive(){
 }
 function stopWsKeepalive(){
   if(wsKeepaliveInterval){ clearInterval(wsKeepaliveInterval); wsKeepaliveInterval=null; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SCREEN WAKE LOCK — critico su Android (impatto principale del porting)
+// ═══════════════════════════════════════════════════════════════
+// Su Android Chrome, a schermo spento o app in background il sistema sospende
+// la cattura microfono + AudioContext e può chiudere il WebSocket: la sessione
+// vocale cade di continuo. Il Wake Lock tiene lo schermo attivo durante l'uso.
+// Su iOS Safari recente l'API esiste; se non c'è, falliamo in silenzio (no-op):
+// nessun errore, nessuna differenza di comportamento. Stesso codice, due OS.
+async function acquireWakeLock(){
+  try{
+    if(!('wakeLock' in navigator)) return; // non supportato → no-op
+    if(wakeLock) return;                    // già acquisito
+    wakeLock = await navigator.wakeLock.request('screen');
+    dbg('🔆 Wake Lock attivo (schermo non si spegne durante la sessione)');
+    wakeLock.addEventListener('release', ()=>{
+      dbg('🔅 Wake Lock rilasciato');
+      wakeLock=null;
+    });
+  }catch(e){
+    // Su alcuni device fallisce se la pagina non è visibile o non è user-gesture:
+    // non è un errore bloccante, riproveremo al prossimo visibilitychange.
+    dbg('ℹ️ Wake Lock non acquisito: '+(e.message||e.name));
+    wakeLock=null;
+  }
+}
+async function releaseWakeLock(){
+  try{ if(wakeLock){ await wakeLock.release(); } }catch{}
+  wakeLock=null;
 }
 
 // Lista canonica delle 30 voci ufficiali Gemini Live (doc Vertex 2026)
@@ -2099,8 +2313,18 @@ function onMsg(e){
     if(sc.modelTurn?.parts){
       sc.modelTurn.parts.forEach(part=>{
         if(part.inlineData?.mimeType?.startsWith('audio/pcm')){
-          const bytes=Uint8Array.from(atob(part.inlineData.data),c=>c.charCodeAt(0));
-          const pcm=new Int16Array(bytes.buffer);
+          let bytes, pcm;
+          try{
+            bytes=Uint8Array.from(atob(part.inlineData.data),c=>c.charCodeAt(0));
+            // Int16Array richiede byteLength pari: se per qualunque motivo arriva
+            // un chunk dispari (rete, decodifica parziale), tagliamo l'ultimo byte
+            // invece di lanciare RangeError e bloccare tutto il playback.
+            const usable = bytes.byteLength - (bytes.byteLength % 2);
+            pcm=new Int16Array(bytes.buffer, 0, usable/2);
+          }catch(ex){
+            dbgErr('❌ Decodifica chunk audio fallita (saltato): '+ex.message);
+            return; // salta questo part, la sessione continua
+          }
           // STEP 4 BARGE-IN: durante il lock post-interrupted, scarta i chunk residui
           // del turno appena interrotto (arrivano in coda dopo il flag interrupted e,
           // se riprodotti, causano la "seconda voce" sovrapposta).
@@ -2312,6 +2536,7 @@ function disc(clearHandle=false){
   manualVadActive=false; manualVadSilenceStart=null; manualVadFramesSpeaking=0;
   robotSpeaking=false; autoMuteSuspended=false;
   setRobotSpeaking(false);
+  releaseWakeLock(); // rilascia lo schermo (verrà riacquisito al prossimo onopen)
   if(drainWatchdog){clearTimeout(drainWatchdog);drainWatchdog=null;}
   // sessionHandle: azzerato solo su disconnessione volontaria.
   // In riconnessione automatica viene mantenuto per session resumption.
@@ -2678,13 +2903,21 @@ async function flipCam(){
 // ═══════════════════════════════════════════════════════════════
 function startVideoStream(){
   if(videoStreamInterval) return; // già attivo
+  // MODALITÀ MANUALE: nessuno streaming automatico. I frame partono solo da doSnap
+  // (pulsante 📸 o comando vocale). Non creiamo l'interval → zero frame auto, zero CPU.
+  if(VIDEO_CAPTURE_MODE === 'manual'){
+    dbg('✋ Modalità manuale: streaming automatico non avviato (usa 📸 SNAP)');
+    const lbl=document.getElementById('eyeLbl'); if(lbl) lbl.textContent='👁 visione: manuale (usa 📸)';
+    return;
+  }
   if(!camActive){dbg('⚠️ startVideoStream: cam non attiva');return;}
   if(!ws||ws.readyState!==WebSocket.OPEN||!setupReady){dbg('⚠️ startVideoStream: WS non pronto');return;}
-  dbg('🎥 Streaming video avviato (1 fps, max 640px)');
+  dbg('🎥 Streaming video avviato ('+(VIDEO_CAPTURE_MODE==='voice'?'modalità voce adattiva':'continuo')+', '+VIDEO_STREAM_FPS.toFixed(1)+' fps, max 640px)');
   const intervalMs = Math.round(1000/VIDEO_STREAM_FPS);
   let frameCount = 0;
   let droppedCount = 0;
   let lastBufferLog = 0;
+  let voiceSkipLogAt = 0;
   // Soglie backpressure:
   // - BUFFER_DROP: oltre questa soglia il singolo frame viene saltato
   // - BUFFER_PANIC: oltre questa soglia lo streaming viene SOSPESO per N ms
@@ -2694,10 +2927,38 @@ function startVideoStream(){
   const PANIC_COOLDOWN_MS = 5000; // pausa 5s dopo panico
   let panicUntil = 0;
   videoStreamInterval = setInterval(()=>{
+    // GUARD #1 (priorità assoluta): camera spenta → ferma tutto, niente invii, niente errori.
     if(!camActive){stopVideoStream();return;}
     if(!ws||ws.readyState!==WebSocket.OPEN||!setupReady){stopVideoStream();return;}
-    const buf = ws.bufferedAmount;
+
+    // GATE MODALITÀ VOCE: in 'voice' invia frame solo se c'è attività vocale recente.
+    // È un semplice "skip" del tick: non tocca la camera (che resta accesa e pronta),
+    // quindi è impossibile che generi errori a cam accesa, e a cam spenta non si arriva
+    // nemmeno qui per via della GUARD #1 sopra.
     const now = Date.now();
+    if(VIDEO_CAPTURE_MODE === 'voice'){
+      // Soglia ADATTIVA: la voce deve superare il rumore di fondo stimato (vidBgNoise)
+      // di un margine. La soglia segue l'ambiente: caos → sale, calma → scende.
+      // Nessuna costante da tarare a mano durante l'evento.
+      // Conta come "parla" anche mentre il robot risponde, così un'interruzione
+      // dell'utente con domanda visiva ha già il frame nel turno.
+      const speakThresh = Math.max(vidBgNoise * VOICE_MARGIN_MULT, vidBgNoise + VOICE_MARGIN_ABS);
+      if(vidEnvFast >= speakThresh){ lastVoiceActivityAt = now; }
+      const withinHold = (now - lastVoiceActivityAt) <= VOICE_HOLD_MS;
+      if(!withinHold){
+        // Silenzio (relativo al fondo corrente): non inviare. Indicatore "in attesa".
+        const lbl=document.getElementById('eyeLbl');
+        if(lbl && lbl.textContent.indexOf('attesa')===-1) lbl.textContent='👁 visione: in attesa di voce';
+        const v0=document.getElementById('camVideo'); if(v0) v0.classList.remove('vision-pulse');
+        if(now - voiceSkipLogAt > 15000){
+          voiceSkipLogAt=now;
+          dbg('🤫 Voce: silenzio · fondo='+vidBgNoise.toFixed(2)+' soglia='+speakThresh.toFixed(2)+' liv='+vidEnvFast.toFixed(2)+' (cam attiva, 0 frame)');
+        }
+        return;
+      }
+    }
+
+    const buf = ws.bufferedAmount;
     // PANICO: buffer enorme → sospensione temporanea per dare tempo alla rete
     if(buf > BUFFER_PANIC || now < panicUntil){
       if(now >= panicUntil){
@@ -2781,6 +3042,7 @@ function doSnap(){
   if(!camActive){toast('❌ Attiva prima la cam');return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connetti prima Gemini');return;}
   const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
+  if(!v||!v.videoWidth||!v.videoHeight){toast('⏳ Cam non ancora pronta');return;}
   c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
   const b64=c.toDataURL('image/jpeg',.85).split(',')[1];
   const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
@@ -3085,6 +3347,8 @@ function exportBackup(){
     try{const v=localStorage.getItem(LS_NOISE_GATE); if(v) backup.data.noiseGate=parseInt(v);}catch(e){}
     // Frame rate video
     try{const v=localStorage.getItem(LS_VID_FPS); if(v) backup.data.vidFps=parseFloat(v);}catch(e){}
+    // Modalità cattura video (continuous | voice)
+    try{const v=localStorage.getItem(LS_VID_MODE); if(v) backup.data.vidMode=v;}catch(e){}
     // API key SOLO se richiesto esplicitamente
     if(includeKey){
       try{const v=localStorage.getItem(LS_KEY); if(v) backup.data.apiKey=v;}catch(e){}
@@ -3185,6 +3449,15 @@ function importBackup(inp){
             lbl.textContent = d.vidFps.toFixed(1)+' fps' + (d.vidFps<1?' (1/'+periodSec+'s)':'');
           }
           imported.push('frame rate video');
+        }catch(e){}
+      }
+      // Modalità cattura video (continuous | voice | manual)
+      if(d.vidMode === 'voice' || d.vidMode === 'continuous' || d.vidMode === 'manual'){
+        try{
+          localStorage.setItem(LS_VID_MODE, d.vidMode);
+          VIDEO_CAPTURE_MODE = d.vidMode;
+          const selVM = document.getElementById('selVidMode'); if(selVM) selVM.value = d.vidMode;
+          imported.push('modalità video');
         }catch(e){}
       }
       // API key (solo se presente nel backup)
