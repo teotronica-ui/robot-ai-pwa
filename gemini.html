@@ -326,13 +326,23 @@
   <!-- Modalità di cattura video: tradeoff risparmio token ↔ consapevolezza visiva continua.
        · continuo: invia frame sempre mentre la cam è attiva (comportamento storico, testato).
        · voce:     invia frame SOLO mentre c'è attività vocale → taglia i token nei silenzi.
-       In entrambe le modalità, se la camera è spenta NON viene inviato nulla (nessun errore). -->
+       · keyword:  STEP 7 — zero streaming automatico: la foto parte SOLO quando una frase
+                   trigger ("cosa vedi?"...) compare nella trascrizione. Consumo token ~zero.
+       · manuale:  solo pulsante SNAP (+ comandi vocali legacy).
+       In tutte le modalità, se la camera è spenta NON viene inviato nulla (nessun errore). -->
   <div class="f" style="margin-top:9px"><label>Modalità cattura video</label>
     <select id="selVidMode" onchange="updateVidMode(this.value)">
       <option value="continuous">🎥 Continuo (sempre, mentre cam attiva)</option>
       <option value="voice">🗣 Solo quando senti parlare (auto, risparmio token)</option>
+      <option value="keyword">🔑 Solo a comando vocale ("cosa vedi?") — max risparmio</option>
       <option value="manual">✋ Manuale (solo col pulsante SNAP)</option>
     </select>
+  </div>
+  <!-- STEP 7: frasi trigger personalizzabili per la modalità keyword (persistite in localStorage) -->
+  <div class="f" id="pSnapPhrases" style="margin-top:7px;display:none">
+    <label>Frasi trigger foto (separate da virgola)</label>
+    <input type="text" id="inSnapPhrases" oninput="updateSnapPhrases(this.value)" placeholder="cosa vedi, cosa stai guardando" autocomplete="off">
+    <div style="font-size:.58rem;color:var(--muted);margin-top:3px;font-family:var(--mono)">Foto + descrizione immediata appena una frase compare nella trascrizione · cooldown 3s anti-doppio scatto</div>
   </div>
   <!-- Frequenza di campionamento video: tradeoff reattività ↔ token consumati.
        1 fps = max consentito da Gemini (~263 tok/sec); 0.2 fps = 1 frame ogni 5 sec (~52 tok/sec). -->
@@ -951,9 +961,34 @@ const VIDEO_STREAM_QUALITY=0.7; // jpeg quality per ridurre bandwidth nel contin
 // In tutte: se camActive è false, nessun invio (guard a inizio loop / in doSnap).
 const LS_VID_MODE='gemini_vid_mode';
 let VIDEO_CAPTURE_MODE=(()=>{
-  try{const v=localStorage.getItem(LS_VID_MODE);return (v==='voice'||v==='continuous'||v==='manual')?v:'continuous';}
+  try{const v=localStorage.getItem(LS_VID_MODE);return (v==='voice'||v==='continuous'||v==='manual'||v==='keyword')?v:'continuous';}
   catch{return 'continuous';}
 })();
+
+// ═══ STEP 7 — VISIONE A COMANDO VOCALE (modalità 'keyword') ═══
+// Frasi trigger personalizzabili: quando una di queste compare nella trascrizione
+// dell'utente, parte SUBITO uno snap + un "nudge" testuale che fa descrivere
+// l'immagine a Gemini nello stesso scambio (fix del bug "inventa alla prima richiesta":
+// prima il frame arrivava quando il modello aveva GIÀ iniziato a rispondere senza foto).
+const LS_SNAP_PHRASES='gemini_snap_phrases';
+const SNAP_PHRASES_DEFAULT='cosa vedi, cosa stai guardando, che cosa vedi, che cosa stai guardando, guarda qui, what do you see';
+function parseSnapPhrases(raw){
+  return String(raw||'').split(',').map(s=>s.trim().toLowerCase()).filter(s=>s.length>=4);
+  // min 4 caratteri: evita trigger accidentali da parole troppo corte/generiche
+}
+let SNAP_PHRASES=(()=>{
+  try{const v=localStorage.getItem(LS_SNAP_PHRASES); return parseSnapPhrases(v||SNAP_PHRASES_DEFAULT);}
+  catch{return parseSnapPhrases(SNAP_PHRASES_DEFAULT);}
+})();
+// Accumulatore frammenti di trascrizione: Gemini manda la trascrizione A PEZZI
+// ("cosa" in un messaggio, "stai guardando?" nel successivo) → il match sul singolo
+// frammento fallirebbe. Concateniamo gli ultimi ~6s e matchiamo sulla stringa unita.
+let snapTranscriptBuf='';
+let snapTranscriptAt=0;
+const SNAP_BUF_WINDOW_MS=6000;   // dopo 6s di silenzio il buffer riparte da zero
+const SNAP_BUF_MAX_CHARS=220;    // tieni solo la coda recente (rolling)
+let snapCooldownUntil=0;         // anti-doppio scatto (la stessa frase può comparire in 2 frammenti)
+const SNAP_COOLDOWN_MS=3000;
 
 // ═══ GATE VOCE ADATTIVO (modalità 'voice') ═══
 // Niente soglia fissa da tarare a mano: il sistema stima in continuo il rumore
@@ -989,21 +1024,31 @@ function updateVoiceGateEstimate(pct){
 }
 
 function updateVidMode(mode){
-  VIDEO_CAPTURE_MODE = (mode==='voice'||mode==='continuous'||mode==='manual') ? mode : 'continuous';
+  VIDEO_CAPTURE_MODE = (mode==='voice'||mode==='continuous'||mode==='manual'||mode==='keyword') ? mode : 'continuous';
   try{localStorage.setItem(LS_VID_MODE, VIDEO_CAPTURE_MODE);}catch{}
   const nice = VIDEO_CAPTURE_MODE==='voice'?'solo quando si parla (adattivo)'
-             : VIDEO_CAPTURE_MODE==='manual'?'manuale (solo SNAP)':'continuo';
+             : VIDEO_CAPTURE_MODE==='manual'?'manuale (solo SNAP)'
+             : VIDEO_CAPTURE_MODE==='keyword'?'a comando vocale (frasi trigger)':'continuo';
   dbg('🎚 Modalità video: '+nice);
+  // STEP 7: mostra il campo frasi trigger solo in modalità keyword
+  const pp=document.getElementById('pSnapPhrases');
+  if(pp) pp.style.display = (VIDEO_CAPTURE_MODE==='keyword') ? 'block' : 'none';
   // Gestione transizioni a sessione attiva:
-  // - verso 'manual': se c'è uno streaming attivo, fermalo (no auto-frame).
+  // - verso 'manual'/'keyword': se c'è uno streaming attivo, fermalo (no auto-frame).
   // - verso 'continuous'/'voice': se cam+WS pronti e non sta già girando, avvialo.
-  if(VIDEO_CAPTURE_MODE==='manual'){
+  if(VIDEO_CAPTURE_MODE==='manual' || VIDEO_CAPTURE_MODE==='keyword'){
     if(videoStreamInterval) stopVideoStream();
-    const lbl=document.getElementById('eyeLbl'); if(lbl) lbl.textContent='👁 visione: manuale (usa 📸)';
+    const lbl=document.getElementById('eyeLbl');
+    if(lbl) lbl.textContent = (VIDEO_CAPTURE_MODE==='keyword') ? '👁 visione: a comando vocale 🔑' : '👁 visione: manuale (usa 📸)';
   }else{
     if(camActive && ws && ws.readyState===WebSocket.OPEN && setupReady && !videoStreamInterval){
       startVideoStream();
     }
+  }
+  // STEP 7: le regole visione nel system prompt dipendono dalla modalità → se siamo
+  // connessi, aggiorna le istruzioni live (sendSess usa il canale corretto per modello)
+  if(connected && typeof sendSess==='function'){
+    try{ sendSess(); }catch(e){ dbg('⚠️ refresh istruzioni post-cambio modalità: '+e.message); }
   }
 }
 
@@ -1115,6 +1160,15 @@ function init(){
   // Ripristina modalità cattura video nel selettore
   const selVM=document.getElementById('selVidMode');
   if(selVM){ selVM.value = VIDEO_CAPTURE_MODE; }
+  // STEP 7: ripristina frasi trigger e visibilità del pannello in modalità keyword
+  const inSP=document.getElementById('inSnapPhrases');
+  if(inSP){
+    let savedPhrases='';
+    try{ savedPhrases=localStorage.getItem(LS_SNAP_PHRASES)||''; }catch{}
+    inSP.value = savedPhrases || SNAP_PHRASES_DEFAULT;
+  }
+  const pSP=document.getElementById('pSnapPhrases');
+  if(pSP){ pSP.style.display = (VIDEO_CAPTURE_MODE==='keyword') ? 'block' : 'none'; }
   // Ripristina interruttore elaborazione audio di sistema
   const chkDsp=document.getElementById('chkSysDsp');
   if(chkDsp){ chkDsp.checked = sysAudioDSP; }
@@ -2984,11 +3038,14 @@ function blobToBase64(blob){
 
 function startVideoStream(){
   if(videoStreamInterval) return; // già attivo
-  // MODALITÀ MANUALE: nessuno streaming automatico. I frame partono solo da doSnap
-  // (pulsante 📸 o comando vocale). Non creiamo l'interval → zero frame auto, zero CPU.
-  if(VIDEO_CAPTURE_MODE === 'manual'){
-    dbg('✋ Modalità manuale: streaming automatico non avviato (usa 📸 SNAP)');
-    const lbl=document.getElementById('eyeLbl'); if(lbl) lbl.textContent='👁 visione: manuale (usa 📸)';
+  // MODALITÀ MANUALE/KEYWORD: nessuno streaming automatico. I frame partono solo da
+  // doSnap (pulsante 📸 o comando vocale). Non creiamo l'interval → zero frame auto, zero CPU.
+  if(VIDEO_CAPTURE_MODE === 'manual' || VIDEO_CAPTURE_MODE === 'keyword'){
+    const kw = VIDEO_CAPTURE_MODE === 'keyword';
+    dbg(kw ? '🔑 Modalità a comando vocale: streaming automatico non avviato (foto solo su frase trigger)'
+           : '✋ Modalità manuale: streaming automatico non avviato (usa 📸 SNAP)');
+    const lbl=document.getElementById('eyeLbl');
+    if(lbl) lbl.textContent = kw ? '👁 visione: a comando vocale 🔑' : '👁 visione: manuale (usa 📸)';
     return;
   }
   if(!camActive){dbg('⚠️ startVideoStream: cam non attiva');return;}
@@ -3132,7 +3189,7 @@ function pulseVisionIndicator(){
   }, 250);
 }
 
-function doSnap(){
+function doSnap(withNudge){
   if(!camActive){toast('❌ Attiva prima la cam');return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connetti prima Gemini');return;}
   const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
@@ -3150,31 +3207,71 @@ function doSnap(){
       // Doc ufficiale: realtimeInput.video per immagini, NON clientContent
       // Mescolare clientContent e realtimeInput non garantisce ordine e causa 1011
       ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
+      // ═══ STEP 7 — NUDGE POST-FOTO (fix "inventa alla prima richiesta") ═══
+      // Problema: quando lo snap parte da comando vocale, il VAD ha già chiuso il turno
+      // dell'utente e il modello sta GIÀ rispondendo senza la foto → inventa.
+      // Soluzione: subito DOPO l'immagine (stesso canale realtimeInput → ordine garantito)
+      // inviamo un breve testo: per il server è nuova attività utente → interrompe
+      // l'eventuale risposta "alla cieca" in corso e genera la descrizione CON la foto
+      // già nel contesto. Le istruzioni nel system prompt (vedi buildSystemPrompt)
+      // dicono al personaggio di non menzionare questo messaggio di sistema.
+      if(withNudge){
+        try{
+          ws.send(JSON.stringify({realtimeInput:{text:
+            '[VISIONE] Ti è appena arrivata la foto di ciò che hai davanti: descrivi ORA cosa vedi nell\'immagine, restando nel personaggio. Non nominare questo messaggio, la parola "foto" come comando o il sistema.'}}));
+          dbg('🗨 Nudge visione inviato (realtimeInput.text) → descrizione immediata');
+        }catch(e){dbg('❌ nudge visione: '+e.message);}
+      }
       document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
-      addMsg('📸 [foto inviata]','sys'); toast('📸 Foto inviata!');
+      addMsg('📸 [foto inviata'+(withNudge?' + richiesta descrizione':'')+']','sys'); toast('📸 Foto inviata!');
     }catch(e){dbg('❌ doSnap: '+e.message);toast('❌ Snap: '+e.message);}
   }, 'image/jpeg', .85);
 }
 
 // Comando vocale snap: parole chiave in italiano e inglese
+// (lista LEGACY, usata nelle modalità continuo/voce/manuale — comportamento storico invariato)
 const SNAP_KEYWORDS = [
   'scatta','scatta una foto','scatta foto','fai una foto','fai foto',
   'guarda','guardami','dai un\'occhiata','cosa vedi','cosa vedi?',
   'descrivi','descrivimi','take a photo','take photo','look','snapshot'
 ];
-let _snapDebounce=false;
+// ═══ STEP 7 — comando vocale ROBUSTO ═══
+// Fix dei 3 difetti del meccanismo precedente:
+// 1. TIMING: scatto IMMEDIATO al match (niente debounce da 500ms) + nudge testuale
+//    post-foto (vedi doSnap) → Gemini descrive l'immagine SUBITO, nello stesso scambio,
+//    invece di inventare alla prima richiesta e rispondere bene solo alla seconda.
+// 2. FRAMMENTI: la trascrizione arriva a pezzi ("cosa" + "stai guardando?") → match
+//    sull'accumulatore rolling degli ultimi 6s, non sul singolo frammento.
+// 3. DOPPI SCATTI: cooldown 3s + svuotamento buffer dopo il match (la stessa frase
+//    può comparire in due trascrizioni consecutive parziale+completa).
 function checkVoiceSnapCommand(text){
   if(!camActive){return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){return;}
-  if(_snapDebounce){return;} // anti-doppio trigger
-  const t = text.toLowerCase().trim();
-  const triggered = SNAP_KEYWORDS.some(kw => t.includes(kw));
-  if(triggered){
-    _snapDebounce=true;
-    dbg('📸 Comando vocale: "'+text+'" → snap');
-    toast('📸 Scatto...');
-    setTimeout(()=>{ doSnap(); _snapDebounce=false; }, 500);
-  }
+  const now=Date.now();
+  // Accumulatore rolling dei frammenti di trascrizione (finestra 6s, max 220 char)
+  if(now - snapTranscriptAt > SNAP_BUF_WINDOW_MS) snapTranscriptBuf='';
+  snapTranscriptAt=now;
+  snapTranscriptBuf=(snapTranscriptBuf+' '+String(text||'')).toLowerCase()
+                    .replace(/\s+/g,' ').slice(-SNAP_BUF_MAX_CHARS);
+  if(now < snapCooldownUntil){return;} // anti-doppio scatto
+  // In modalità keyword usa le frasi personalizzate (ristrette); nelle altre la lista legacy
+  const phrases = (VIDEO_CAPTURE_MODE==='keyword') ? SNAP_PHRASES : SNAP_KEYWORDS;
+  if(!phrases.length){return;}
+  const hit = phrases.find(kw => snapTranscriptBuf.includes(kw));
+  if(!hit){return;}
+  snapCooldownUntil = now + SNAP_COOLDOWN_MS;
+  snapTranscriptBuf=''; // la frase non deve ri-matchare al frammento successivo
+  dbg('📸 Comando vocale ("'+hit+'") → snap IMMEDIATO + nudge descrizione');
+  toast('📸 Scatto...');
+  doSnap(true); // true = dopo la foto invia il nudge che fa partire subito la descrizione
+}
+
+// STEP 7: gestione campo frasi trigger personalizzate (modalità keyword)
+function updateSnapPhrases(val){
+  SNAP_PHRASES = parseSnapPhrases(val);
+  if(!SNAP_PHRASES.length) SNAP_PHRASES = parseSnapPhrases(SNAP_PHRASES_DEFAULT);
+  try{ localStorage.setItem(LS_SNAP_PHRASES, String(val||'')); }catch{}
+  dbg('🔑 Frasi trigger aggiornate: '+SNAP_PHRASES.join(' · '));
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3455,6 +3552,7 @@ function exportBackup(){
     try{const v=localStorage.getItem(LS_VID_FPS); if(v) backup.data.vidFps=parseFloat(v);}catch(e){}
     // Modalità cattura video (continuous | voice)
     try{const v=localStorage.getItem(LS_VID_MODE); if(v) backup.data.vidMode=v;}catch(e){}
+    try{const v=localStorage.getItem(LS_SNAP_PHRASES); if(v) backup.data.snapPhrases=v;}catch(e){} // STEP 7
     // API key SOLO se richiesto esplicitamente
     if(includeKey){
       try{const v=localStorage.getItem(LS_KEY); if(v) backup.data.apiKey=v;}catch(e){}
@@ -3557,13 +3655,24 @@ function importBackup(inp){
           imported.push('frame rate video');
         }catch(e){}
       }
-      // Modalità cattura video (continuous | voice | manual)
-      if(d.vidMode === 'voice' || d.vidMode === 'continuous' || d.vidMode === 'manual'){
+      // Modalità cattura video (continuous | voice | manual | keyword — STEP 7)
+      if(d.vidMode === 'voice' || d.vidMode === 'continuous' || d.vidMode === 'manual' || d.vidMode === 'keyword'){
         try{
           localStorage.setItem(LS_VID_MODE, d.vidMode);
           VIDEO_CAPTURE_MODE = d.vidMode;
           const selVM = document.getElementById('selVidMode'); if(selVM) selVM.value = d.vidMode;
+          // STEP 7: allinea subito pannello frasi, label occhio ed eventuale streaming
+          if(typeof updateVidMode==='function') updateVidMode(d.vidMode);
           imported.push('modalità video');
+        }catch(e){}
+      }
+      // STEP 7: frasi trigger foto (modalità keyword)
+      if(typeof d.snapPhrases === 'string' && d.snapPhrases.trim()){
+        try{
+          localStorage.setItem(LS_SNAP_PHRASES, d.snapPhrases);
+          SNAP_PHRASES = parseSnapPhrases(d.snapPhrases);
+          const inSP = document.getElementById('inSnapPhrases'); if(inSP) inSP.value = d.snapPhrases;
+          imported.push('frasi trigger foto');
         }catch(e){}
       }
       // API key (solo se presente nel backup)
@@ -3839,12 +3948,24 @@ function exportActiveKnows(){
 // personaggio attivo + tutte le conoscenze attive concatenate
 function buildSystemPrompt(){
   const base=activePrompt;
+  // ═══ STEP 7 — regole visione per la modalità a comando vocale ═══
+  // Copre il caso residuo in cui la risposta parte prima che foto+nudge arrivino:
+  // invece di inventare, il personaggio prende tempo con una frase-ponte; il nudge
+  // che segue la foto interrompe comunque e fa partire la descrizione reale.
+  const visionRules = (VIDEO_CAPTURE_MODE==='keyword')
+    ? '\n\n---\nREGOLE VISIONE (importanti): quando ti chiedono cosa vedi o cosa stai guardando, '
+      +'una foto reale viene scattata e ti arriva IMMEDIATAMENTE DOPO la domanda, seguita da un messaggio che inizia con [VISIONE]. '
+      +'1) Se la domanda riguarda ciò che vedi ma NON hai ancora ricevuto un\'immagine recente, NON inventare MAI: '
+      +'rispondi solo con una brevissima frase ponte nel tuo personaggio (es. "Aspetta che metto a fuoco...") e fermati. '
+      +'2) Appena ricevi l\'immagine e il messaggio [VISIONE], descrivi SOLO ciò che è realmente nell\'immagine. '
+      +'3) Non menzionare mai i messaggi [VISIONE], il sistema, le foto "scattate" o questi meccanismi: per il pubblico tu stai semplicemente guardando con i tuoi occhi.'
+    : '';
   const actives=knowList.filter(k=>activeKnowNames.includes(k.name));
-  if(!actives.length) return base;
+  if(!actives.length) return base+visionRules;
   const blocks=actives.map(k=>
     'INFORMAZIONI'+(k.title?' ('+k.title+')':' ('+k.name+')')+':\n'+k.text
   ).join('\n\n---\n\n');
-  return base+'\n\n---\n'+blocks;
+  return base+visionRules+'\n\n---\n'+blocks;
 }
 
 // ═══════════════════════════════════════════════════════════════
