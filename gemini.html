@@ -818,7 +818,18 @@ const AUDIO_Q_MAX     = 60;
 // I valori di default sono quelli del profilo "Bilanciato" (= STEP 3 precedente).
 // Vengono sovrascritti da applyAudioProfile() in base al selettore selAudioProfile.
 let DRAIN_WATCHDOG  = 2500;  // ms di attesa post-fine-coda prima di chiudere playing
-let PRE_BUFFER_CHUNKS = 12;  // chunk da accumulare prima di iniziare a riprodurre
+// ═══ FIX A16 (STEP 6) — jitter buffer TEMPO-BASED con soglia di RIPRESA separata ═══
+// Prima il pre-buffer era misurato in NUMERO di chunk (PRE_BUFFER_CHUNKS=12) e veniva
+// applicato anche alla RIPRESA dopo un underrun mid-frase. Problema: i chunk di Gemini
+// hanno dimensione variabile (anche 100-200ms l'uno) e, se il server consegna a ritmo
+// real-time, accumulare 12 chunk richiede ~la loro durata audio in tempo reale →
+// pausa udibile di ~1s a metà frase ("si blocca e poi riprende da dove era rimasto").
+// Adesso: misuriamo i MILLISECONDI accodati (queuedMs) e distinguiamo:
+// - PRE_BUFFER_MS:    soglia al PRIMO avvio del turno (paghi latenza una volta sola)
+// - RESUME_BUFFER_MS: soglia alla RIPRESA dopo underrun mid-frase (molto più bassa:
+//   ripartire subito conta più del margine, il gap residuo scende sotto soglia fastidio)
+let PRE_BUFFER_MS    = 480;  // ms di audio da accumulare prima di INIZIARE il turno
+let RESUME_BUFFER_MS = 120;  // ms di audio per RIPRENDERE dopo un underrun mid-frase
 let REBUFFER_THRESHOLD = 0;  // se >0, drain si ferma quando audioQ scende sotto questa soglia (anti-scatti)
 const CTX_WATCHDOG_MS = 2000;
 const WS_KEEPALIVE_MS = 30000; // ping cliente per mantenere viva la TCP
@@ -913,6 +924,13 @@ let bargeInLockUntil=0;
 // (cioè può svuotare la coda fino in fondo), perché ci aspettiamo che non arriveranno
 // altri chunk. Settato true su turnComplete/generationComplete, false quando arriva audio nuovo.
 let turnRecentlyComplete=true;
+// ═══ FIX A16 (STEP 6) ═══
+// turnAudioStarted = true quando il drain ha già pianificato almeno un buffer del turno
+// corrente. Serve a distinguere "primo avvio del turno" (gate PRE_BUFFER_MS) da
+// "ripresa dopo underrun mid-frase" (gate RESUME_BUFFER_MS, molto più reattivo).
+// Viene rimesso a false al primo chunk di un NUOVO turno (vedi onMsg), su interrupted,
+// su turnComplete e su disconnect.
+let turnAudioStarted=false;
 let tok={ai:0,ao:0,aoEstimateTurn:0};
 let editingChar=null, camStream=null, camActive=false;
 let videoStreamInterval=null; // streaming video continuo per Gemini Live API
@@ -2108,9 +2126,13 @@ function sendSess(){
 
 function pcmToBase64(pcm){
   // Conversione PCM16 (Int16Array) → base64.
-  // Loop byte-per-byte invece di spread per evitare stack overflow
-  // su payload grandi (es. registrazioni lunghe via doSnap o WAV).
   const bytes=new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+  // ═══ FIX A16 (STEP 6) — fast path nativo ═══
+  // Uint8Array.prototype.toBase64 (Chrome moderno) è implementato in C++:
+  // ordini di grandezza più veloce del loop JS, chiamato 25 volte/secondo.
+  if(typeof bytes.toBase64==='function') return bytes.toBase64();
+  // Fallback storico (Safari iOS vecchi): loop byte-per-byte invece di spread
+  // per evitare stack overflow su payload grandi (es. registrazioni lunghe).
   let binary='';
   const len=bytes.length;
   // Chunk piccoli (4096) per non saturare stack di String.fromCharCode su Safari
@@ -2254,15 +2276,18 @@ function onMsg(e){
   else{dbg('⚠️ onMsg tipo: '+typeof e.data);return;}
   let m;
   try{m=JSON.parse(raw);}catch(ex){dbg('❌ JSON: '+ex.message+' | '+raw.slice(0,80));return;}
-  const ls=JSON.stringify(m);
-  if(!ls.includes('"data"')){
-    console.log('[RX]',ls.slice(0,200));
-    dbg('📥 RX: '+ls.slice(0,140));
+  // ═══ FIX A16 (STEP 6) — niente doppia serializzazione ═══
+  // Prima qui c'era JSON.stringify(m) dell'INTERO messaggio (inclusi i KB di base64
+  // audio) solo per il check del log: lavoro raddoppiato 10-25 volte/secondo sul main
+  // thread, pesantissimo su SoC entry-level. Usiamo direttamente 'raw' che abbiamo già.
+  if(!raw.includes('"data"')){
+    console.log('[RX]',raw.slice(0,200));
+    dbg('📥 RX: '+raw.slice(0,140));
   } else {
     // Audio chunk: log solo ogni 25 chunk (~1s di audio) per non saturare il log
     onMsgAudioCount++;
     if(onMsgAudioCount % 25 === 1){
-      dbg('🔊 Audio in arrivo (#'+onMsgAudioCount+', '+Math.round(ls.length/1.33)+' bytes)');
+      dbg('🔊 Audio in arrivo (#'+onMsgAudioCount+', '+Math.round(raw.length/1.33)+' bytes)');
     }
   }
 
@@ -2315,7 +2340,20 @@ function onMsg(e){
         if(part.inlineData?.mimeType?.startsWith('audio/pcm')){
           let bytes, pcm;
           try{
-            bytes=Uint8Array.from(atob(part.inlineData.data),c=>c.charCodeAt(0));
+            // ═══ FIX A16 (STEP 6) — decodifica base64 VELOCE ═══
+            // Uint8Array.from(atob(...), c=>c.charCodeAt(0)) invoca una callback
+            // PER OGNI BYTE: su SoC Android entry-level (Helio G99/Exynos 1330)
+            // ruba decine di ms di main thread a ogni chunk. Usiamo:
+            // 1) Uint8Array.fromBase64 nativo se disponibile (Chrome moderno) — il più veloce
+            // 2) fallback: atob + loop esplicito (comunque molto più rapido della callback)
+            const b64data=part.inlineData.data;
+            if(typeof Uint8Array.fromBase64==='function'){
+              bytes=Uint8Array.fromBase64(b64data);
+            }else{
+              const bin=atob(b64data);
+              bytes=new Uint8Array(bin.length);
+              for(let bi=0;bi<bin.length;bi++) bytes[bi]=bin.charCodeAt(bi);
+            }
             // Int16Array richiede byteLength pari: se per qualunque motivo arriva
             // un chunk dispari (rete, decodifica parziale), tagliamo l'ultimo byte
             // invece di lanciare RangeError e bloccare tutto il playback.
@@ -2334,10 +2372,20 @@ function onMsg(e){
           }
           if(isRec)recChunks.push(pcm);
           if(audioQ.length>AUDIO_Q_MAX){audioQ=audioQ.slice(-Math.floor(AUDIO_Q_MAX/2));nextPlayTime=0;}
+          // ═══ FIX A16 (STEP 6) — gate avvio/ripresa TEMPO-BASED ═══
+          // Se questo è il PRIMO chunk dopo una fine turno (turnRecentlyComplete era
+          // ancora true), siamo all'inizio di un NUOVO turno: richiedi il pre-buffer
+          // pieno (PRE_BUFFER_MS). Se invece siamo a metà turno e il drain si era
+          // fermato per underrun, riparti appena ci sono RESUME_BUFFER_MS accodati:
+          // era QUESTO il difetto della pausa da ~1s a metà frase (il vecchio gate
+          // a 12 chunk valeva anche per la ripresa).
+          const isNewTurn = turnRecentlyComplete; // catturato PRIMA di azzerarlo
           audioQ.push(pcm);
+          if(isNewTurn) turnAudioStarted = false; // nuovo turno → pre-buffer pieno
           // STEP 5: nuovo chunk = siamo in mezzo a un turno, re-buffering ATTIVO
           turnRecentlyComplete = false;
-          if(!playing && audioQ.length >= PRE_BUFFER_CHUNKS) drain();
+          const needMs = turnAudioStarted ? RESUME_BUFFER_MS : PRE_BUFFER_MS;
+          if(!playing && queuedMs() >= needMs) drain();
           // STEP 5: se siamo in re-buffering attivo (playing=true ma drain fermo per soglia),
           // appena la coda risale sopra la soglia, riavvia drain. Senza questa riga
           // il drain potrebbe restare in attesa anche se ci sono chunk a sufficienza.
@@ -2380,6 +2428,9 @@ function onMsg(e){
       finalizeRobot();
       audioQ.push(new Int16Array(OUTPUT_SR));
       if(!playing) drain();
+      // FIX A16 (STEP 6): reset DOPO l'eventuale drain del tail (che lo rimetterebbe a true).
+      // Così il primo chunk del prossimo turno troverà il gate di avvio pieno (PRE_BUFFER_MS).
+      turnAudioStarted = false;
       // FIX: silStart si azzera SEMPRE qui (era condizionato a !silStart e quindi
       // non si resettava se era già attivo). Adesso ogni turn completed riavvia il timer.
       // STEP 4: usa handle turnEndTimer così un interrupted può cancellarlo (no race).
@@ -2404,6 +2455,7 @@ function onMsg(e){
       nextPlayTime=0;
       // STEP 5: turno annullato → re-buffering OFF (non c'è più nulla da accumulare)
       turnRecentlyComplete = true;
+      turnAudioStarted = false; // FIX A16 (STEP 6): prossimo turno = avvio pulito con pre-buffer pieno
       if(turnEndTimer){ clearTimeout(turnEndTimer); turnEndTimer=null; }
       if(drainWatchdog){ clearTimeout(drainWatchdog); drainWatchdog=null; }
       bargeInLockUntil = Date.now() + 150; // ignora chunk residui in volo per 150ms (sufficiente su WiFi, non taglia nuove risposte)
@@ -2531,6 +2583,7 @@ function disc(clearHandle=false){
   activeSources.clear();
   bargeInLockUntil=0;
   turnRecentlyComplete=true; // STEP 5: reset re-buffering al disconnect
+  turnAudioStarted=false;    // FIX A16 (STEP 6): reset stato turno al disconnect
   if(turnEndTimer){ clearTimeout(turnEndTimer); turnEndTimer=null; }
   vadWasActive=false; vadSilenceFrames=0;
   manualVadActive=false; manualVadSilenceStart=null; manualVadFramesSpeaking=0;
@@ -2637,6 +2690,15 @@ function hideReconnBar(){
 // "continua a parlare". In WebAudio significa fermare tutti i BufferSourceNode
 // già schedulati: svuotare audioQ NON basta perché src.start() pianifica nel futuro.
 // ═══════════════════════════════════════════════════════════════
+// ═══ FIX A16 (STEP 6) — millisecondi di audio accodati ═══
+// I chunk di Gemini hanno dimensione variabile: contare i "chunk" non dice nulla
+// sulla durata reale bufferizzata. Misuriamo i ms effettivi a 24000 Hz (samples/24).
+function queuedMs(){
+  let s=0;
+  for(let i=0;i<audioQ.length;i++) s+=audioQ[i].length;
+  return s/24; // samples / 24000 * 1000
+}
+
 function stopAllSources(){
   let n=0;
   activeSources.forEach(src=>{
@@ -2668,6 +2730,9 @@ async function drain(){
   }
 
   playing=true;
+  // FIX A16 (STEP 6): da qui in poi il turno ha audio già avviato → un eventuale
+  // underrun successivo userà il gate di RIPRESA (RESUME_BUFFER_MS), non quello di avvio.
+  turnAudioStarted=true;
 
   // Svuota tutta la coda in un ciclo sincrono, pianificando ogni buffer
   // con timestamp preciso — nessun gap, nessuna latenza di callback
@@ -2712,11 +2777,13 @@ async function drain(){
       // Scheduling: inizia esattamente quando finisce il buffer precedente.
       // Se nextPlayTime è nel passato (riparto da zero: inizio turno, post-interrupt,
       // post-watchdog), uso un headroom minimo per evitare glitch hardware.
-      // STEP 3: headroom ridotto da 60ms a 20ms — 60ms era udibile come stacco quando
-      // un chunk tardivo arrivava dopo che il watchdog aveva resettato nextPlayTime=0
-      // (caso tipico del "voce si interrompe e poi riparte" a fine frase).
-      // 20ms è sotto la soglia di percezione del gap audio (~30ms per voce).
-      const HEADROOM_RESTART = 0.02;
+      // STEP 3: headroom ridotto da 60ms a 20ms su iOS — sotto la soglia di
+      // percezione del gap audio (~30ms per voce).
+      // FIX A16 (STEP 6): su ANDROID l'headroom resta a 50ms — la latenza d'uscita
+      // dello stack audio Android (specie con cassa Bluetooth o post-processing
+      // Samsung) è più alta e variabile di iOS: uno start troppo vicino a
+      // currentTime produce attacchi sporchi/clippati. 50ms è il compromesso sicuro.
+      const HEADROOM_RESTART = PLATFORM.isAndroid ? 0.05 : 0.02;
       const startAt = Math.max(audioCtx.currentTime + HEADROOM_RESTART, nextPlayTime);
       // Log diagnostico: traccia quando ricominciamo da zero (gap udibile potenziale)
       if(nextPlayTime <= audioCtx.currentTime){
@@ -2901,6 +2968,20 @@ async function flipCam(){
 // corrente, e non arriva dopo audioStreamEnd (turno chiuso).
 // Ref: ai.google.dev/gemini-api/docs/live-api/get-started-websocket
 // ═══════════════════════════════════════════════════════════════
+// ═══ FIX A16 (STEP 6) — encoding JPEG ASINCRONO ═══
+// canvas.toDataURL() comprime il JPEG in modo SINCRONO sul main thread: sull'A16
+// sono decine di ms rubati proprio mentre arrivano i chunk audio (concausa degli
+// underrun). canvas.toBlob() comprime in background; FileReader fa la conversione
+// a base64 internamente al browser, fuori dal loop JS.
+function blobToBase64(blob){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>res(String(r.result).split(',')[1]);
+    r.onerror=()=>rej(new Error('FileReader fallito'));
+    r.readAsDataURL(blob);
+  });
+}
+
 function startVideoStream(){
   if(videoStreamInterval) return; // già attivo
   // MODALITÀ MANUALE: nessuno streaming automatico. I frame partono solo da doSnap
@@ -2926,6 +3007,7 @@ function startVideoStream(){
   const BUFFER_PANIC = 400000;   // 400 KB
   const PANIC_COOLDOWN_MS = 5000; // pausa 5s dopo panico
   let panicUntil = 0;
+  let frameEncoding = false; // FIX A16 (STEP 6): true mentre toBlob/encode è in corso (evita sovrapposizioni)
   videoStreamInterval = setInterval(()=>{
     // GUARD #1 (priorità assoluta): camera spenta → ferma tutto, niente invii, niente errori.
     if(!camActive){stopVideoStream();return;}
@@ -2985,6 +3067,7 @@ function startVideoStream(){
     try{
       const v=document.getElementById('camVideo');
       if(!v||!v.videoWidth) return; // video non ancora pronto
+      if(frameEncoding) return;     // FIX A16 (STEP 6): encode precedente ancora in corso → salta il tick
       const c=document.getElementById('camCanvas');
       // Downscale a max 640px sul lato lungo. Gemini comunque rescala
       // il frame a ~70 token (low/medium resolution), quindi mandare
@@ -2994,14 +3077,25 @@ function startVideoStream(){
       c.width = Math.round(v.videoWidth * scale);
       c.height = Math.round(v.videoHeight * scale);
       c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-      const b64=c.toDataURL('image/jpeg',VIDEO_STREAM_QUALITY).split(',')[1];
-      ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
-      pulseVisionIndicator(); // ⚡ feedback visivo: Gemini sta guardando
-      frameCount++;
-      // Log primo frame e poi ogni 10 frame per non spammare
-      if(frameCount === 1) dbg('📷 1° frame inviato: '+c.width+'x'+c.height+' · '+Math.round(b64.length*0.75/1024)+' KB');
-      else if(frameCount % 10 === 0) dbg('📷 '+frameCount+' frame inviati');
-    }catch(e){dbg('❌ videoStream frame: '+e.message);health('err','Frame video: '+e.message);}
+      // FIX A16 (STEP 6): compressione JPEG asincrona (vedi blobToBase64 sopra).
+      // Il drawImage resta sincrono (veloce), l'encode pesante esce dal main thread.
+      frameEncoding = true;
+      c.toBlob(async (blob)=>{
+        try{
+          if(!blob){ return; }
+          // Lo stato può essere cambiato durante l'encode: ricontrolla tutto
+          if(!camActive||!ws||ws.readyState!==WebSocket.OPEN||!setupReady){ return; }
+          const b64 = await blobToBase64(blob);
+          ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
+          pulseVisionIndicator(); // ⚡ feedback visivo: Gemini sta guardando
+          frameCount++;
+          // Log primo frame e poi ogni 10 frame per non spammare
+          if(frameCount === 1) dbg('📷 1° frame inviato: '+c.width+'x'+c.height+' · '+Math.round(b64.length*0.75/1024)+' KB');
+          else if(frameCount % 10 === 0) dbg('📷 '+frameCount+' frame inviati');
+        }catch(e){dbg('❌ videoStream frame: '+e.message);health('err','Frame video: '+e.message);}
+        finally{ frameEncoding = false; }
+      }, 'image/jpeg', VIDEO_STREAM_QUALITY);
+    }catch(e){frameEncoding=false;dbg('❌ videoStream frame: '+e.message);health('err','Frame video: '+e.message);}
   }, intervalMs);
 }
 function stopVideoStream(){
@@ -3044,13 +3138,22 @@ function doSnap(){
   const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
   if(!v||!v.videoWidth||!v.videoHeight){toast('⏳ Cam non ancora pronta');return;}
   c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
-  const b64=c.toDataURL('image/jpeg',.85).split(',')[1];
   const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
-  // Doc ufficiale: realtimeInput.video per immagini, NON clientContent
-  // Mescolare clientContent e realtimeInput non garantisce ordine e causa 1011
-  ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
-  document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
-  addMsg('📸 [foto inviata]','sys'); toast('📸 Foto inviata!');
+  // FIX A16 (STEP 6): encoding asincrono anche qui — lo snap è a PIENA risoluzione
+  // (qualità .85), l'encode sincrono bloccava il main thread ancora più a lungo
+  // dei frame di streaming. L'invio avviene nel callback, a JPEG pronto.
+  c.toBlob(async (blob)=>{
+    try{
+      if(!blob){toast('❌ Snapshot fallito');return;}
+      if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connessione persa');return;}
+      const b64 = await blobToBase64(blob);
+      // Doc ufficiale: realtimeInput.video per immagini, NON clientContent
+      // Mescolare clientContent e realtimeInput non garantisce ordine e causa 1011
+      ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
+      document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
+      addMsg('📸 [foto inviata]','sys'); toast('📸 Foto inviata!');
+    }catch(e){dbg('❌ doSnap: '+e.message);toast('❌ Snap: '+e.message);}
+  }, 'image/jpeg', .85);
 }
 
 // Comando vocale snap: parole chiave in italiano e inglese
@@ -3098,23 +3201,26 @@ function oSilMan(v){document.getElementById('vSilMan').textContent=v+' ms';}
 function applyAudioProfile(name){
   switch(name){
     case 'reactive':
-      PRE_BUFFER_CHUNKS = 8;
+      PRE_BUFFER_MS     = 320;
+      RESUME_BUFFER_MS  = 100;
       DRAIN_WATCHDOG    = 1500;
       REBUFFER_THRESHOLD= 0;       // OFF: drain non si ferma mai mid-flusso
       break;
     case 'antiscatti':
-      PRE_BUFFER_CHUNKS = 20;
+      PRE_BUFFER_MS     = 800;
+      RESUME_BUFFER_MS  = 200;
       DRAIN_WATCHDOG    = 4000;
       REBUFFER_THRESHOLD= 3;        // ON: se la coda scende sotto 3 chunk mid-frase, drain si ferma e aspetta
       break;
     case 'balanced':
     default:
-      PRE_BUFFER_CHUNKS = 12;
+      PRE_BUFFER_MS     = 480;
+      RESUME_BUFFER_MS  = 120;
       DRAIN_WATCHDOG    = 2500;
       REBUFFER_THRESHOLD= 0;
       break;
   }
-  dbg('🎚 Profilo audio: '+name+' · pre-buffer='+PRE_BUFFER_CHUNKS+' chunk · watchdog='+DRAIN_WATCHDOG+'ms · rebuffer='+(REBUFFER_THRESHOLD||'off'));
+  dbg('🎚 Profilo audio: '+name+' · pre-buffer='+PRE_BUFFER_MS+'ms · ripresa='+RESUME_BUFFER_MS+'ms · watchdog='+DRAIN_WATCHDOG+'ms · rebuffer='+(REBUFFER_THRESHOLD||'off'));
 }
 
 function onAudioProfileChange(silent){
@@ -3126,13 +3232,13 @@ function onAudioProfileChange(silent){
   applyAudioProfile(mode);
   let txt='', border='var(--green)';
   if(mode==='reactive'){
-    txt='⚡ Pre-buffer 320ms · watchdog 1.5s · NO re-buffering. Reattività massima ma se la rete è instabile potresti sentire micro-pause in mezzo alle frasi.';
+    txt='⚡ Pre-buffer 320ms · ripresa underrun 100ms · watchdog 1.5s · NO re-buffering. Reattività massima ma se la rete è instabile potresti sentire micro-pause in mezzo alle frasi.';
     border='var(--yellow,#e0a800)';
   }else if(mode==='antiscatti'){
-    txt='🛡 Pre-buffer 800ms · watchdog 4s · re-buffering ON (soglia 3). Riproduzione fluida senza scatti, al costo di ~300ms in più di latenza iniziale. Consigliato in caso di WiFi instabile o se senti micro-pause mid-frase.';
+    txt='🛡 Pre-buffer 800ms · ripresa underrun 200ms · watchdog 4s · re-buffering ON (soglia 3). Riproduzione fluida senza scatti, al costo di ~300ms in più di latenza iniziale. Consigliato in caso di WiFi instabile o se senti micro-pause mid-frase.';
     border='var(--green)';
   }else{
-    txt='⚖️ Pre-buffer 480ms · watchdog 2.5s · NO re-buffering. Compromesso standard, latenza moderata. Se vedi scatti mid-frase, prova "Anti-scatti".';
+    txt='⚖️ Pre-buffer 480ms · ripresa underrun 120ms · watchdog 2.5s · NO re-buffering. Compromesso standard, latenza moderata. Se vedi scatti mid-frase, prova "Anti-scatti".';
     border='var(--green)';
   }
   info.textContent=txt;
