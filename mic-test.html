@@ -100,7 +100,7 @@
 <div class="card">
   <div class="vu-top">
     <span id="vuMode">MODALITÀ: —</span>
-    <span class="vu-val" id="vuVal">0%</span>
+    <span><button id="btnZero" onclick="calibrateNoise()" style="font-family:var(--mono);font-size:.55rem;padding:5px 9px;background:#0a1322;border:1px solid var(--bord);border-radius:7px;color:var(--muted);cursor:pointer;letter-spacing:1px;margin-right:8px">LIV.ZERO</button><span class="vu-val" id="vuVal">0%</span></span>
   </div>
   <div class="vu-wrap">
     <div class="vu-segs" id="vuSegs"></div>
@@ -225,15 +225,22 @@ const OUT_SR_GEMINI=16000;
 let sysAudioDSP=(()=>{ try{return localStorage.getItem(LS_SYS_DSP)!=='0';}catch{return true;} })();
 let listenMode=(()=>{ try{const v=localStorage.getItem(LS_MODE); return (v==='faithful')?v:'gemini';}catch{return 'gemini';} })();
 
+// Wake Lock — tiene lo schermo acceso mentre il monitor è attivo (Chrome Android/iOS 16.4+)
+let wakeLock=null;
+
 // Stato audio
 let micStream=null, running=false;
 let actx=null;            // AudioContext di lavoro (analisi + worklet)
 let analyser=null, rafId=null;
 let workletNode=null, srcNode=null;
+let micGain=null;         // UNICO punto di guadagno (real-time, entrambe le modalità)
 let monitorGain=null;     // GainNode finale verso le casse (volume monitor)
 // Modalità Gemini: ricostruiamo i PCM 16k del worklet in un buffer e li riproduciamo
 let geminiPlayhead=0;     // schedulazione continua a 16k
-const VU_SEGS=28;
+const VU_SEGS=36;         // IDENTICO all'app (N_SEGS=36)
+// Noise floor (LIV.ZERO) — stessa logica dell'app
+let vuNoiseFloor=0;
+let vuCalibActive=false, vuCalibFrames=0, vuCalibMax=0;
 
 // ─── COSTRUZIONE SEGMENTI VU (look app) ──────────────────────────────────
 (function buildVu(){
@@ -256,29 +263,27 @@ function dot(id,cls){ const e=document.getElementById(id); if(e){ e.className='d
 function oGain(v){
   document.getElementById('vGain').textContent=v+'%';
   try{localStorage.setItem(LS_GAIN,v);}catch{}
-  // STESSA formula dell'app: slider/100 = moltiplicatore lineare passato al worklet
-  if(workletNode) workletNode.port.postMessage({cmd:'gain', value: parseInt(v)/100});
+  // Real-time in ENTRAMBE le modalità: il guadagno è SEMPRE su micGain.
+  // Stesso significato del gain dell'app: slider/100 = moltiplicatore lineare.
+  if(micGain) micGain.gain.value = parseInt(v)/100;
 }
 function oThr(v){
   document.getElementById('vThr').textContent=v;
   try{localStorage.setItem(LS_THR,v);}catch{}
-  positionThreshold(parseInt(v));
+  // La posizione della linea soglia è ricalcolata in drawVU (stessa formula app)
 }
 function oMon(v){
   try{localStorage.setItem(LS_MON,v);}catch{}
   if(monitorGain) monitorGain.gain.value = parseInt(v)/100;
 }
 
-// La soglia VAD (100–6000) nell'app è confrontata col livello "boosted" 0–255.
-// Qui la rappresentiamo sul VU con la stessa normalizzazione, così la linea
-// rossa cade nello stesso punto visivo che useresti nell'app.
-function positionThreshold(thr){
-  // Nell'app la soglia è in unità di ampiezza PCM accumulata; per il VU la
-  // mappiamo su 0–255 con lo stesso boost percettivo usato per il livello.
-  const norm = Math.min(1, thr/6000);
-  const pct = Math.pow(norm,0.55)*100;
-  const line=document.getElementById('thrLine');
-  if(line) line.style.left = pct+'%';
+// LIV.ZERO — misura il rumore di fondo ~1.5s (90 frame), IDENTICO all'app.
+function calibrateNoise(){
+  if(!running){ toast('Avvia prima il monitor'); return; }
+  vuCalibActive=true; vuCalibFrames=90; vuCalibMax=0;
+  const btn=document.getElementById('btnZero');
+  if(btn){ btn.textContent='⏳ ...'; btn.style.borderColor='var(--yellow)'; btn.style.color='var(--yellow)'; }
+  toast('🎤 Misuro il silenzio...');
 }
 
 function setMode(m){
@@ -290,8 +295,8 @@ function setMode(m){
   document.getElementById('modeExpl').innerHTML = (listenMode==='gemini')
     ? 'In <b style="color:var(--text)">Gemini</b> senti l\'audio ricampionato a 16 kHz con guadagno e DSP applicati: è esattamente ciò che arriva all\'AI. Usa questa per capire se la tua voce è intelligibile sopra il rumore.'
     : 'In <b style="color:var(--text)">Fedele</b> senti il microfono a qualità piena (nessun ricampionamento): utile per giudicare la voce in sé. Il guadagno e il DSP restano applicati con lo stesso valore.';
-  // Se il monitor è attivo, ricostruisci la catena audio per la nuova modalità
-  if(running){ rebuildGraph().catch(e=>toast('Errore cambio modalità: '+e.message)); }
+  // Se il monitor è attivo, ricollega solo la parte a valle (grafo persistente)
+  if(running){ try{ applyMode(); }catch(e){ toast('Errore cambio modalità: '+e.message); } }
 }
 
 function onDspChange(){
@@ -302,6 +307,34 @@ function onDspChange(){
   // Il DSP è un constraint di getUserMedia → va riacquisito lo stream
   if(running){ restart().catch(e=>toast('Errore: '+e.message)); }
 }
+
+// ─── WAKE LOCK — impedisce spegnimento schermo/standby mentre monitori ────
+async function requestWakeLock(){
+  if(!('wakeLock' in navigator)){
+    toast('⚠️ Questo browser non supporta il blocco schermo');
+    return;
+  }
+  try{
+    wakeLock = await navigator.wakeLock.request('screen');
+    dot('dMic','on');
+    // Se il sistema rilascia il lock (es. cambio app), azzeriamo il riferimento
+    wakeLock.addEventListener('release', ()=>{ wakeLock=null; });
+  }catch(e){
+    // Tipico se la pagina non è visibile o la batteria è in risparmio energetico
+    toast('⚠️ Blocco schermo non riuscito: '+(e.message||e.name));
+  }
+}
+async function releaseWakeLock(){
+  try{ if(wakeLock){ await wakeLock.release(); } }catch{}
+  wakeLock=null;
+}
+// Android RILASCIA il wake lock ogni volta che la pagina va in background.
+// Quando torna visibile e il monitor è ancora attivo, lo riacquisiamo.
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible' && running && !wakeLock){
+    requestWakeLock();
+  }
+});
 
 // ─── ELENCO MICROFONI ─────────────────────────────────────────────────────
 async function refreshMics(){
@@ -331,6 +364,7 @@ async function toggleMonitor(){
 
 async function startMonitor(){
   const devId=document.getElementById('selMic').value||'';
+  vuNoiseFloor=0; vuCalibActive=false; // reset calibrazione a ogni avvio (come app al cambio mic)
   // 1) Acquisisci microfono con gli stessi constraint dell'app
   micStream = await navigator.mediaDevices.getUserMedia(micAudioConstraints(devId));
   // dopo il permesso, ripopola le etichette dei microfoni
@@ -355,54 +389,55 @@ async function startMonitor(){
   await actx.audioWorklet.addModule(url);
   URL.revokeObjectURL(url);
 
-  await rebuildGraph();
+  // 4) GRAFO PERSISTENTE — creato UNA volta sola e mai più ricostruito.
+  // srcNode e micGain restano fissi per tutta la sessione: così lo slider del
+  // guadagno comanda SEMPRE lo stesso nodo, in entrambe le modalità. Il cambio
+  // modalità tocca solo ciò che sta a valle del guadagno (vedi applyMode).
+  srcNode = actx.createMediaStreamSource(micStream);
+  // Analyser sul segnale GREZZO (come l'app): drawVU applica poi il guadagno via software.
+  analyser = actx.createAnalyser();
+  analyser.fftSize=512; analyser.smoothingTimeConstant=0.3;
+  srcNode.connect(analyser);
+  // GUADAGNO — unico nodo, persistente, comandato da oGain in tempo reale.
+  micGain = actx.createGain();
+  micGain.gain.value = parseInt(document.getElementById('rGain').value)/100;
+  srcNode.connect(micGain);
+  // Volume monitor verso le casse (solo ascolto locale).
+  monitorGain = actx.createGain();
+  monitorGain.gain.value = parseInt(document.getElementById('rMon').value)/100;
+  monitorGain.connect(actx.destination);
+
+  applyMode(); // collega micGain a valle secondo la modalità corrente
 
   running=true;
   const btn=document.getElementById('btnStart');
   btn.textContent='⏹ FERMA MONITOR'; btn.classList.add('live');
   startVuLoop();
+  requestWakeLock(); // tieni lo schermo acceso durante la taratura
   toast('▶ Monitor attivo — '+(listenMode==='gemini'?'modalità Gemini':'modalità Fedele'));
 }
 
-// Costruisce/ricostruisce il grafo audio in base alla modalità scelta.
-async function rebuildGraph(){
-  if(!actx||!micStream) return;
-  // Smonta eventuale grafo precedente (mantiene stream e context)
-  teardownGraph();
-
-  srcNode = actx.createMediaStreamSource(micStream);
-
-  // Analyser per il VU — alimentato dal segnale sorgente (pre-monitor),
-  // identico a come l'app misura il livello.
-  analyser = actx.createAnalyser();
-  analyser.fftSize=512; analyser.smoothingTimeConstant=0.3;
-  srcNode.connect(analyser);
-
-  // GainNode finale verso le casse = volume monitor (solo ascolto locale)
-  monitorGain = actx.createGain();
-  monitorGain.gain.value = parseInt(document.getElementById('rMon').value)/100;
-  monitorGain.connect(actx.destination);
-
+// Collega/ricollega SOLO la parte a valle del guadagno, secondo la modalità.
+// NON tocca srcNode / micGain / analyser / monitorGain (restano fissi): per questo
+// il guadagno funziona sempre, in entrambe le modalità.
+function applyMode(){
+  if(!actx||!micGain||!monitorGain) return;
+  // Stacca le uscite correnti del guadagno (verso monitorGain o verso il worklet)
+  try{ micGain.disconnect(); }catch{}
+  // Ferma e rimuovi un eventuale worklet precedente
+  if(workletNode){
+    try{ workletNode.port.postMessage({cmd:'stop'}); workletNode.port.onmessage=null; workletNode.disconnect(); }catch{}
+    workletNode=null;
+  }
   if(listenMode==='faithful'){
-    // PASSTHROUGH FEDELE: sorgente → (gain mic) → casse, qualità piena.
-    // Applichiamo il gain mic con un GainNode così il valore resta coerente
-    // (stesso moltiplicatore slider/100 usato dal worklet).
-    const micGain = actx.createGain();
-    micGain.gain.value = parseInt(document.getElementById('rGain').value)/100;
-    srcNode.connect(micGain);
+    // PASSTHROUGH FEDELE: guadagno → casse, qualità piena.
     micGain.connect(monitorGain);
-    _faithfulMicGain = micGain;
   }else{
-    // MODALITÀ GEMINI: facciamo passare l'audio attraverso il WORKLET (16k+gain),
-    // poi ricostruiamo i PCM in AudioBuffer da 16k e li riproduciamo. È identico
-    // a ciò che riceve Gemini, riascoltato.
+    // GEMINI: guadagno → worklet (16k, gain interno 1.0 perché già applicato a monte)
+    // → ricostruzione PCM → casse. È ciò che riceve l'AI, riascoltato.
     workletNode = new AudioWorkletNode(actx,'pcm16-processor');
-    workletNode.port.postMessage({cmd:'gain', value: parseInt(document.getElementById('rGain').value)/100});
-    // Il worklet ha bisogno di ricevere input: lo colleghiamo alla sorgente.
-    // Non lo colleghiamo a destination direttamente (uscirebbe a 16k "grezzo"):
-    // riproduciamo noi i chunk PCM ricostruiti, per fedeltà a cosa "sente" l'AI.
-    srcNode.connect(workletNode);
-    // Un nodo muto come sink per tenere vivo il worklet senza farlo suonare 2 volte
+    workletNode.port.postMessage({cmd:'gain', value: 1.0});
+    micGain.connect(workletNode);
     const sink = actx.createGain(); sink.gain.value=0; workletNode.connect(sink); sink.connect(actx.destination);
     geminiPlayhead=0;
     workletNode.port.onmessage=(e)=>{
@@ -411,7 +446,6 @@ async function rebuildGraph(){
     };
   }
 }
-let _faithfulMicGain=null;
 
 // Riproduce un chunk PCM16 a 16kHz schedulandolo in coda continua (modalità Gemini)
 function playGeminiChunk(pcm){
@@ -431,14 +465,15 @@ function playGeminiChunk(pcm){
 function teardownGraph(){
   try{ if(workletNode){ workletNode.port.postMessage({cmd:'stop'}); workletNode.port.onmessage=null; workletNode.disconnect(); } }catch{}
   try{ srcNode&&srcNode.disconnect(); }catch{}
+  try{ micGain&&micGain.disconnect(); }catch{}
   try{ analyser&&analyser.disconnect(); }catch{}
-  try{ _faithfulMicGain&&_faithfulMicGain.disconnect(); }catch{}
   try{ monitorGain&&monitorGain.disconnect(); }catch{}
-  workletNode=null; srcNode=null; analyser=null; _faithfulMicGain=null; monitorGain=null;
+  workletNode=null; srcNode=null; micGain=null; analyser=null; monitorGain=null;
 }
 
 function stopMonitor(){
   running=false;
+  releaseWakeLock(); // lascia che lo schermo si spenga di nuovo
   if(rafId){ cancelAnimationFrame(rafId); rafId=null; }
   teardownGraph();
   try{ micStream&&micStream.getTracks().forEach(t=>t.stop()); }catch{}
@@ -461,7 +496,6 @@ async function restart(){
 
 // ─── LOOP VU — stessa misura dell'app (peak 80–8000 Hz, boost 0.55) ────────
 function startVuLoop(){
-  let logT=0;
   (function tick(){
     rafId=requestAnimationFrame(tick);
     if(!analyser||!actx||actx.state!=='running') return;
@@ -472,24 +506,47 @@ function startVuLoop(){
     let peak=0;
     for(let i=lo;i<=hi;i++){ if(d[i]>peak) peak=d[i]; }
     const boosted=Math.min(255, Math.pow(peak/255,0.55)*255);
+    // Calibrazione LIV.ZERO: accumula il massimo per 90 frame (IDENTICO all'app)
+    if(vuCalibActive){
+      vuCalibMax=Math.max(vuCalibMax, boosted);
+      vuCalibFrames--;
+      if(vuCalibFrames<=0){
+        vuNoiseFloor=vuCalibMax;
+        vuCalibActive=false;
+        const btn=document.getElementById('btnZero');
+        if(btn){ btn.textContent='LIV.ZERO'; btn.style.borderColor='var(--bord)'; btn.style.color='var(--muted)'; }
+        toast('✅ Livello zero: '+Math.round(vuNoiseFloor));
+      }
+    }
     drawVU(boosted);
-    document.getElementById('vuVal').textContent=Math.round(boosted/255*100)+'%';
   })();
 }
 
-function drawVU(boosted){
-  const pct=boosted/255;
-  const lit=Math.round(pct*VU_SEGS);
+// drawVU — COPIA ESATTA della formula dell'app del robot:
+// livello grezzo → meno noise floor → PER GUADAGNO → normalizzato.
+// Per questo, abbassando il guadagno la barra non arriva più a fondoscala,
+// esattamente come nell'app. Anche la soglia è posizionata con la stessa formula.
+function drawVU(level){
+  const corrected = Math.max(0, level - vuNoiseFloor);
+  const gainDisplay = parseInt(document.getElementById('rGain').value) / 100;
+  const withGain = Math.min(255, corrected * gainDisplay);
+  const scale = Math.max(1, 255 - vuNoiseFloor);
+  const pct = Math.min(1, withGain / scale);
+  const lit = Math.round(pct*VU_SEGS);
+  // Soglia VAD sulla stessa scala dell'app (boost 0.55 su thr/6000)
+  const thrRaw = parseInt(document.getElementById('rThr').value);
+  const thrPct = Math.min(1, Math.pow((thrRaw/6000), 0.55));
+  document.getElementById('thrLine').style.left = (thrPct*100)+'%';
   const segs=document.getElementById('vuSegs').children;
   for(let i=0;i<segs.length;i++){
     if(i<lit){
-      // verde → giallo → rosso sulla scala
-      const r=i/VU_SEGS;
-      segs[i].style.background = r<0.6 ? 'var(--green)' : (r<0.82 ? 'var(--yellow)' : 'var(--red)');
+      const p=(i+1)/VU_SEGS;
+      segs[i].style.background = p<0.6 ? 'var(--green)' : (p<0.85 ? 'var(--yellow)' : 'var(--red)');
     }else{
       segs[i].style.background='#13203a';
     }
   }
+  document.getElementById('vuVal').textContent=Math.round(pct*100)+'%';
 }
 
 // ─── INIT: ripristina valori salvati ───────────────────────────────────────
@@ -502,7 +559,6 @@ function drawVU(boosted){
   document.getElementById('chkSysDsp').checked = sysAudioDSP;
   document.getElementById('vGain').textContent=document.getElementById('rGain').value+'%';
   document.getElementById('vThr').textContent=document.getElementById('rThr').value;
-  positionThreshold(parseInt(document.getElementById('rThr').value));
   setMode(listenMode);
   // elenco microfoni (etichette complete solo dopo permesso, ma proviamo subito)
   refreshMics();
