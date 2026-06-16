@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Mic Monitor — Test Audio Robot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#070d18;--card:#0c1320;--bord:#1c2940;--text:#e6edf7;--muted:#7c8aa5;
+      --green:#22c55e;--blue:#4f8aff;--red:#ff3d3d;--yellow:#e0a800;
+      --mono:'Share Tech Mono',monospace;--sans:'Exo 2',sans-serif;
+    }
+    *{box-sizing:border-box}
+    body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100dvh;display:flex;flex-direction:column;align-items:center;padding:14px 12px 50px;gap:11px;margin:0}
+    body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:999;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(79,138,255,.007) 3px,rgba(79,138,255,.007) 4px)}
+    .card{background:var(--card);border:1px solid var(--bord);border-radius:14px;padding:15px;width:100%;max-width:520px}
+    @media (orientation:landscape){ .card{max-width:1100px} }
+    .hd{font-family:var(--mono);font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:11px}
+    h1{font-size:1.05rem;font-weight:900;letter-spacing:1px;margin:0 0 2px;display:flex;align-items:center;gap:8px}
+    .sub{font-size:.72rem;color:var(--muted);line-height:1.5;margin:0}
+
+    /* Pulsante grande di avvio */
+    #btnStart{width:100%;padding:18px;border:none;border-radius:12px;cursor:pointer;font-family:var(--sans);font-size:1.15rem;font-weight:900;letter-spacing:2px;background:linear-gradient(135deg,var(--green),#2563eb);color:#fff;box-shadow:0 0 28px rgba(79,138,255,.25);transition:all .2s}
+    #btnStart.live{background:linear-gradient(135deg,var(--red),#b91c1c);box-shadow:0 0 28px rgba(255,61,61,.3)}
+    #btnStart:active{transform:scale(.98)}
+
+    /* VU meter — identico look all'app */
+    .vu-wrap{position:relative;height:38px;background:#040c15;border-radius:7px;overflow:hidden;border:1px solid var(--bord);margin-top:4px}
+    .vu-segs{display:flex;height:100%;gap:2px;padding:4px}
+    .vu-seg{flex:1;border-radius:2px;background:#13203a;transition:background .04s}
+    .thr{position:absolute;top:0;bottom:0;width:2px;background:var(--red);box-shadow:0 0 6px var(--red);z-index:3}
+    .vu-top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6px;font-family:var(--mono);font-size:.62rem;color:var(--muted)}
+    .vu-val{color:var(--green);font-size:.8rem}
+
+    /* Slider — stesso stile app */
+    .sg{margin-top:13px}
+    .sh{display:flex;justify-content:space-between;align-items:baseline;font-size:.74rem;margin-bottom:5px}
+    .sh .l{font-weight:600}
+    .sh .v{font-family:var(--mono);color:var(--green);font-size:.82rem}
+    input[type=range]{width:100%;-webkit-appearance:none;height:6px;border-radius:3px;background:#13203a;outline:none;margin:3px 0}
+    input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:var(--blue);cursor:pointer;box-shadow:0 0 8px rgba(79,138,255,.5)}
+    input[type=range]::-moz-range-thumb{width:20px;height:20px;border:none;border-radius:50%;background:var(--blue);cursor:pointer}
+    .sticks{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.56rem;color:var(--muted);margin-top:2px}
+
+    /* Toggle a interruttore */
+    .trow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--bord)}
+    .trow:first-of-type{border-top:none}
+    .tlbl{font-size:.82rem;font-weight:600}
+    .tsub{font-size:.64rem;color:var(--muted);margin-top:2px;line-height:1.4}
+    .tsw{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0}
+    .tsw input{opacity:0;width:0;height:0}
+    .ts{position:absolute;cursor:pointer;inset:0;background:#13203a;border-radius:26px;transition:.2s;border:1px solid var(--bord)}
+    .ts:before{content:'';position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:var(--muted);border-radius:50%;transition:.2s}
+    .tsw input:checked+.ts{background:rgba(34,197,94,.25);border-color:var(--green)}
+    .tsw input:checked+.ts:before{transform:translateX(20px);background:var(--green)}
+
+    /* Selettore modalità (Gemini vs Fedele) a due bottoni */
+    .modesel{display:flex;gap:8px;margin-top:4px}
+    .modebtn{flex:1;padding:12px 8px;border:1px solid var(--bord);border-radius:10px;background:#0a1322;color:var(--muted);font-family:var(--sans);font-weight:700;font-size:.82rem;cursor:pointer;transition:all .15s;text-align:center;line-height:1.3}
+    .modebtn .msub{display:block;font-size:.58rem;font-weight:400;margin-top:3px;font-family:var(--mono)}
+    .modebtn.on{border-color:var(--blue);background:linear-gradient(160deg,#0c1525,#10203c);color:var(--text);box-shadow:0 0 16px rgba(79,138,255,.18)}
+
+    select{width:100%;padding:10px;border-radius:9px;background:#0a1322;color:var(--text);border:1px solid var(--bord);font-family:var(--sans);font-size:.82rem;margin-top:4px}
+    .btn-sm{padding:9px 12px;border:1px solid var(--bord);border-radius:9px;background:#0a1322;color:var(--text);font-family:var(--sans);font-size:.78rem;cursor:pointer;font-weight:600}
+    .btn-sm.gr{border-color:var(--green);color:var(--green)}
+    .microw{display:flex;gap:7px;align-items:center}
+    .microw select{flex:1;margin-top:0}
+
+    .warn{background:rgba(224,168,0,.1);border:1px solid rgba(224,168,0,.35);border-radius:9px;padding:10px 12px;font-size:.7rem;line-height:1.5;color:#f0d68a;margin-top:11px}
+    .warn b{color:var(--yellow)}
+    .stat{font-family:var(--mono);font-size:.66rem;color:var(--muted);margin-top:9px;line-height:1.6}
+    .stat b{color:var(--text)}
+    .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#444;margin-right:5px;vertical-align:middle}
+    .dot.on{background:var(--green);box-shadow:0 0 6px var(--green)}
+    .dot.warn{background:var(--yellow)}
+    #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(100px);background:#0c1320;border:1px solid var(--blue);color:var(--text);padding:11px 18px;border-radius:11px;font-size:.8rem;z-index:1000;transition:transform .3s;box-shadow:0 6px 24px rgba(0,0,0,.5);max-width:90vw;text-align:center}
+    #toast.show{transform:translateX(-50%) translateY(0)}
+  </style>
+</head>
+<body>
+
+<div class="card" style="background:linear-gradient(160deg,#0c1525,#091020);border-color:rgba(79,138,255,.3)">
+  <h1>🎚 Mic Monitor</h1>
+  <p class="sub">Senti in tempo reale l'audio che il microfono cattura, con la <b style="color:var(--text)">stessa identica pipeline</b> dell'app del robot. Regola il guadagno qui e il valore vale tale e quale nell'app vera.</p>
+</div>
+
+<!-- AVVIO -->
+<div class="card">
+  <div class="microw" style="margin-bottom:11px">
+    <select id="selMic"><option value="">🎤 Microfono: Auto</option></select>
+    <button class="btn-sm" onclick="refreshMics()">🔄</button>
+  </div>
+  <button id="btnStart" onclick="toggleMonitor()">▶ AVVIA MONITOR</button>
+  <div class="warn" id="fbWarn">⚠️ <b>Attenzione al fischio (effetto Larsen):</b> se il microfono sente le casse si innesca un fischio. Per tarare in fiera tieni la cassa puntata lontano dal mic, o usa la modalità <b>Gemini</b> che limita il problema. Con le cuffie nessun rischio.</div>
+</div>
+
+<!-- VU METER -->
+<div class="card">
+  <div class="vu-top">
+    <span id="vuMode">MODALITÀ: —</span>
+    <span class="vu-val" id="vuVal">0%</span>
+  </div>
+  <div class="vu-wrap">
+    <div class="vu-segs" id="vuSegs"></div>
+    <div class="thr" id="thrLine" style="left:0"></div>
+  </div>
+  <div class="stat" id="stat">
+    <span class="dot" id="dMic"></span><b id="micName">Microfono spento</b><br>
+    <span id="srInfo">—</span>
+  </div>
+</div>
+
+<!-- MODALITÀ DI ASCOLTO -->
+<div class="card">
+  <div class="hd">🔀 Cosa vuoi sentire</div>
+  <div class="modesel">
+    <button class="modebtn on" id="mGemini" onclick="setMode('gemini')">
+      🤖 Gemini
+      <span class="msub">16kHz · come lo sente l'AI</span>
+    </button>
+    <button class="modebtn" id="mFaithful" onclick="setMode('faithful')">
+      🎧 Fedele
+      <span class="msub">qualità piena · 1:1</span>
+    </button>
+  </div>
+  <p class="sub" style="margin-top:10px" id="modeExpl">In <b style="color:var(--text)">Gemini</b> senti l'audio ricampionato a 16 kHz con guadagno e DSP applicati: è esattamente ciò che arriva all'AI. Usa questa per capire se la tua voce è intelligibile sopra il rumore.</p>
+</div>
+
+<!-- CONTROLLI IDENTICI ALL'APP -->
+<div class="card">
+  <div class="hd">🎛 Controlli (identici all'app del robot)</div>
+
+  <div class="sg" style="margin-top:0">
+    <div class="sh"><span class="l">Gain Microfono</span><span class="v" id="vGain">100%</span></div>
+    <input type="range" id="rGain" min="0" max="150" step="5" value="100" oninput="oGain(this.value)">
+    <div class="sticks"><span>0%</span><span>◆ 100%</span><span>150%</span></div>
+  </div>
+
+  <div class="sg">
+    <div class="sh"><span class="l">Soglia VAD</span><span class="v" id="vThr">200</span></div>
+    <input type="range" id="rThr" min="100" max="6000" step="100" value="200" oninput="oThr(this.value)">
+    <div class="sticks"><span>100</span><span>3000</span><span>6000</span></div>
+  </div>
+
+  <div class="trow" style="margin-top:13px">
+    <div>
+      <div class="tlbl">🎛 Elaborazione audio di sistema (DSP)</div>
+      <div class="tsub">Eco + riduzione rumore + AGC. Stesso interruttore dell'app: spegnilo per sentire il segnale grezzo.</div>
+    </div>
+    <label class="tsw"><input type="checkbox" id="chkSysDsp" checked onchange="onDspChange()"><span class="ts"></span></label>
+  </div>
+
+  <div class="trow">
+    <div>
+      <div class="tlbl">🔉 Volume monitor</div>
+      <div class="tsub">Solo per il tuo ascolto qui. NON influisce sul valore inviato all'AI.</div>
+    </div>
+    <input type="range" id="rMon" min="0" max="100" step="5" value="80" oninput="oMon(this.value)" style="width:120px">
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════
+//  WORKLET PCM16 — COPIA ESATTA dell'app gemini.html (pipeline "Gemini")
+//  Downsampling lineare a 16 kHz + gain. Identico bit-per-bit alla versione
+//  di produzione: così il valore di gain ha lo STESSO significato nelle due app.
+//  Unica differenza: oltre a postare i PCM, possiamo riascoltarli localmente.
+// ════════════════════════════════════════════════════════════════════════
+const _WORKLET_SRC = `
+class PCM16Processor extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    this._active = true;
+    this._gainValue = 1.0;
+    this._inSR = sampleRate;
+    this._outSR = 16000;
+    this._ratio = this._inSR / this._outSR;
+    this._phase = 0;
+    this._chunkSize = 640;
+    this._outBuf = new Int16Array(this._chunkSize);
+    this._outIdx = 0;
+    this.port.onmessage = (e) => {
+      if (e.data.cmd === 'stop')  this._active = false;
+      if (e.data.cmd === 'gain')  this._gainValue = e.data.value;
+    };
+  }
+  process(inputs) {
+    if (!this._active) return false;
+    const ch = inputs[0]?.[0];
+    if (!ch) return true;
+    const inLen = ch.length;
+    const g = this._gainValue;
+    while(this._phase < inLen){
+      const i = Math.floor(this._phase);
+      const frac = this._phase - i;
+      const i2 = Math.min(i+1, inLen-1);
+      let s = (ch[i] * (1-frac) + ch[i2] * frac) * g;
+      if(s > 1) s = 1; else if(s < -1) s = -1;
+      this._outBuf[this._outIdx++] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      if(this._outIdx >= this._chunkSize){
+        const out = this._outBuf;
+        this.port.postMessage(out.buffer, [out.buffer]);
+        this._outBuf = new Int16Array(this._chunkSize);
+        this._outIdx = 0;
+      }
+      this._phase += this._ratio;
+    }
+    this._phase -= inLen;
+    return true;
+  }
+}
+registerProcessor('pcm16-processor', PCM16Processor);
+`;
+
+// ─── stesse chiavi/valori dell'app per coerenza ──────────────────────────
+const LS_SYS_DSP='gemini_sys_dsp';     // CONDIVISA con l'app: stesso default DSP
+const LS_MIC_ID='gemini_mic_id';       // CONDIVISA: stesso microfono preferito
+const LS_GAIN='mictest_gain', LS_THR='mictest_thr', LS_MON='mictest_mon', LS_MODE='mictest_mode';
+const OUT_SR_GEMINI=16000;
+
+let sysAudioDSP=(()=>{ try{return localStorage.getItem(LS_SYS_DSP)!=='0';}catch{return true;} })();
+let listenMode=(()=>{ try{const v=localStorage.getItem(LS_MODE); return (v==='faithful')?v:'gemini';}catch{return 'gemini';} })();
+
+// Stato audio
+let micStream=null, running=false;
+let actx=null;            // AudioContext di lavoro (analisi + worklet)
+let analyser=null, rafId=null;
+let workletNode=null, srcNode=null;
+let monitorGain=null;     // GainNode finale verso le casse (volume monitor)
+// Modalità Gemini: ricostruiamo i PCM 16k del worklet in un buffer e li riproduciamo
+let geminiPlayhead=0;     // schedulazione continua a 16k
+const VU_SEGS=28;
+
+// ─── COSTRUZIONE SEGMENTI VU (look app) ──────────────────────────────────
+(function buildVu(){
+  const segs=document.getElementById('vuSegs');
+  for(let i=0;i<VU_SEGS;i++){ const d=document.createElement('div'); d.className='vu-seg'; segs.appendChild(d); }
+})();
+
+// ─── COSTRUZIONE CONSTRAINT (COPIA ESATTA dell'app) ──────────────────────
+function micAudioConstraints(devId){
+  const dsp = sysAudioDSP;
+  const base = { echoCancellation:dsp, noiseSuppression:dsp, autoGainControl:dsp };
+  if(devId) base.deviceId = { exact: devId };
+  return { audio: base };
+}
+
+// ─── UI helpers ──────────────────────────────────────────────────────────
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2600); }
+function dot(id,cls){ const e=document.getElementById(id); if(e){ e.className='dot'+(cls?(' '+cls):''); } }
+
+function oGain(v){
+  document.getElementById('vGain').textContent=v+'%';
+  try{localStorage.setItem(LS_GAIN,v);}catch{}
+  // STESSA formula dell'app: slider/100 = moltiplicatore lineare passato al worklet
+  if(workletNode) workletNode.port.postMessage({cmd:'gain', value: parseInt(v)/100});
+}
+function oThr(v){
+  document.getElementById('vThr').textContent=v;
+  try{localStorage.setItem(LS_THR,v);}catch{}
+  positionThreshold(parseInt(v));
+}
+function oMon(v){
+  try{localStorage.setItem(LS_MON,v);}catch{}
+  if(monitorGain) monitorGain.gain.value = parseInt(v)/100;
+}
+
+// La soglia VAD (100–6000) nell'app è confrontata col livello "boosted" 0–255.
+// Qui la rappresentiamo sul VU con la stessa normalizzazione, così la linea
+// rossa cade nello stesso punto visivo che useresti nell'app.
+function positionThreshold(thr){
+  // Nell'app la soglia è in unità di ampiezza PCM accumulata; per il VU la
+  // mappiamo su 0–255 con lo stesso boost percettivo usato per il livello.
+  const norm = Math.min(1, thr/6000);
+  const pct = Math.pow(norm,0.55)*100;
+  const line=document.getElementById('thrLine');
+  if(line) line.style.left = pct+'%';
+}
+
+function setMode(m){
+  listenMode = (m==='faithful')?'faithful':'gemini';
+  try{localStorage.setItem(LS_MODE,listenMode);}catch{}
+  document.getElementById('mGemini').classList.toggle('on', listenMode==='gemini');
+  document.getElementById('mFaithful').classList.toggle('on', listenMode==='faithful');
+  document.getElementById('vuMode').textContent='MODALITÀ: '+(listenMode==='gemini'?'GEMINI 16kHz':'FEDELE');
+  document.getElementById('modeExpl').innerHTML = (listenMode==='gemini')
+    ? 'In <b style="color:var(--text)">Gemini</b> senti l\'audio ricampionato a 16 kHz con guadagno e DSP applicati: è esattamente ciò che arriva all\'AI. Usa questa per capire se la tua voce è intelligibile sopra il rumore.'
+    : 'In <b style="color:var(--text)">Fedele</b> senti il microfono a qualità piena (nessun ricampionamento): utile per giudicare la voce in sé. Il guadagno e il DSP restano applicati con lo stesso valore.';
+  // Se il monitor è attivo, ricostruisci la catena audio per la nuova modalità
+  if(running){ rebuildGraph().catch(e=>toast('Errore cambio modalità: '+e.message)); }
+}
+
+function onDspChange(){
+  const cb=document.getElementById('chkSysDsp');
+  sysAudioDSP = !!cb.checked;
+  try{ localStorage.setItem(LS_SYS_DSP, sysAudioDSP?'1':'0'); }catch{}
+  toast(sysAudioDSP?'DSP ON (eco+rumore+AGC)':'DSP OFF (segnale grezzo)');
+  // Il DSP è un constraint di getUserMedia → va riacquisito lo stream
+  if(running){ restart().catch(e=>toast('Errore: '+e.message)); }
+}
+
+// ─── ELENCO MICROFONI ─────────────────────────────────────────────────────
+async function refreshMics(){
+  try{
+    const devs=await navigator.mediaDevices.enumerateDevices();
+    const mics=devs.filter(d=>d.kind==='audioinput');
+    const sel=document.getElementById('selMic');
+    const prev=sel.value;
+    sel.innerHTML='<option value="">🎤 Microfono: Auto</option>';
+    mics.forEach(m=>{ const o=document.createElement('option'); o.value=m.deviceId; o.textContent=(m.label||('Mic '+m.deviceId.slice(0,6))); sel.appendChild(o); });
+    // ripristina preferenza salvata o selezione corrente
+    let saved=''; try{saved=localStorage.getItem(LS_MIC_ID)||'';}catch{}
+    if(prev) sel.value=prev; else if(saved) sel.value=saved;
+    if(mics.length && mics[0].label) toast(mics.length+' microfoni rilevati');
+  }catch(e){ toast('Impossibile elencare i microfoni'); }
+}
+document.getElementById('selMic').addEventListener('change',function(){
+  try{localStorage.setItem(LS_MIC_ID,this.value);}catch{}
+  if(running) restart().catch(()=>{});
+});
+
+// ─── AVVIO / STOP ──────────────────────────────────────────────────────────
+async function toggleMonitor(){
+  if(running){ stopMonitor(); }
+  else{ try{ await startMonitor(); }catch(e){ toast('❌ '+(e.message||e.name)); dot('dMic',''); } }
+}
+
+async function startMonitor(){
+  const devId=document.getElementById('selMic').value||'';
+  // 1) Acquisisci microfono con gli stessi constraint dell'app
+  micStream = await navigator.mediaDevices.getUserMedia(micAudioConstraints(devId));
+  // dopo il permesso, ripopola le etichette dei microfoni
+  refreshMics();
+  const track=micStream.getAudioTracks()[0];
+  document.getElementById('micName').textContent = track?.label || 'Microfono attivo';
+  dot('dMic','on');
+
+  // 2) AudioContext
+  actx = new (window.AudioContext||window.webkitAudioContext)();
+  if(actx.state==='suspended'){ try{ await actx.resume(); }catch{} }
+  if(actx.state!=='running'){
+    const unlock=async()=>{ try{ await actx.resume(); }catch{} };
+    document.body.addEventListener('touchstart',unlock,{once:true});
+    document.body.addEventListener('mousedown',unlock,{once:true});
+  }
+  document.getElementById('srInfo').textContent='AudioContext: '+actx.sampleRate+' Hz · uscita worklet: 16000 Hz';
+
+  // 3) Carica il worklet (stesso sorgente dell'app)
+  const blob=new Blob([_WORKLET_SRC],{type:'application/javascript'});
+  const url=URL.createObjectURL(blob);
+  await actx.audioWorklet.addModule(url);
+  URL.revokeObjectURL(url);
+
+  await rebuildGraph();
+
+  running=true;
+  const btn=document.getElementById('btnStart');
+  btn.textContent='⏹ FERMA MONITOR'; btn.classList.add('live');
+  startVuLoop();
+  toast('▶ Monitor attivo — '+(listenMode==='gemini'?'modalità Gemini':'modalità Fedele'));
+}
+
+// Costruisce/ricostruisce il grafo audio in base alla modalità scelta.
+async function rebuildGraph(){
+  if(!actx||!micStream) return;
+  // Smonta eventuale grafo precedente (mantiene stream e context)
+  teardownGraph();
+
+  srcNode = actx.createMediaStreamSource(micStream);
+
+  // Analyser per il VU — alimentato dal segnale sorgente (pre-monitor),
+  // identico a come l'app misura il livello.
+  analyser = actx.createAnalyser();
+  analyser.fftSize=512; analyser.smoothingTimeConstant=0.3;
+  srcNode.connect(analyser);
+
+  // GainNode finale verso le casse = volume monitor (solo ascolto locale)
+  monitorGain = actx.createGain();
+  monitorGain.gain.value = parseInt(document.getElementById('rMon').value)/100;
+  monitorGain.connect(actx.destination);
+
+  if(listenMode==='faithful'){
+    // PASSTHROUGH FEDELE: sorgente → (gain mic) → casse, qualità piena.
+    // Applichiamo il gain mic con un GainNode così il valore resta coerente
+    // (stesso moltiplicatore slider/100 usato dal worklet).
+    const micGain = actx.createGain();
+    micGain.gain.value = parseInt(document.getElementById('rGain').value)/100;
+    srcNode.connect(micGain);
+    micGain.connect(monitorGain);
+    _faithfulMicGain = micGain;
+  }else{
+    // MODALITÀ GEMINI: facciamo passare l'audio attraverso il WORKLET (16k+gain),
+    // poi ricostruiamo i PCM in AudioBuffer da 16k e li riproduciamo. È identico
+    // a ciò che riceve Gemini, riascoltato.
+    workletNode = new AudioWorkletNode(actx,'pcm16-processor');
+    workletNode.port.postMessage({cmd:'gain', value: parseInt(document.getElementById('rGain').value)/100});
+    // Il worklet ha bisogno di ricevere input: lo colleghiamo alla sorgente.
+    // Non lo colleghiamo a destination direttamente (uscirebbe a 16k "grezzo"):
+    // riproduciamo noi i chunk PCM ricostruiti, per fedeltà a cosa "sente" l'AI.
+    srcNode.connect(workletNode);
+    // Un nodo muto come sink per tenere vivo il worklet senza farlo suonare 2 volte
+    const sink = actx.createGain(); sink.gain.value=0; workletNode.connect(sink); sink.connect(actx.destination);
+    geminiPlayhead=0;
+    workletNode.port.onmessage=(e)=>{
+      if(!running || listenMode!=='gemini') return;
+      playGeminiChunk(new Int16Array(e.data));
+    };
+  }
+}
+let _faithfulMicGain=null;
+
+// Riproduce un chunk PCM16 a 16kHz schedulandolo in coda continua (modalità Gemini)
+function playGeminiChunk(pcm){
+  if(!actx||!monitorGain) return;
+  const n=pcm.length; if(!n) return;
+  const buf=actx.createBuffer(1,n,OUT_SR_GEMINI);
+  const ch=buf.getChannelData(0);
+  for(let i=0;i<n;i++){ ch[i]= pcm[i] / (pcm[i]<0?0x8000:0x7FFF); }
+  const src=actx.createBufferSource();
+  src.buffer=buf; src.connect(monitorGain);
+  const t=actx.currentTime;
+  if(geminiPlayhead < t+0.02) geminiPlayhead = t+0.02; // piccolo headroom
+  src.start(geminiPlayhead);
+  geminiPlayhead += n/OUT_SR_GEMINI;
+}
+
+function teardownGraph(){
+  try{ if(workletNode){ workletNode.port.postMessage({cmd:'stop'}); workletNode.port.onmessage=null; workletNode.disconnect(); } }catch{}
+  try{ srcNode&&srcNode.disconnect(); }catch{}
+  try{ analyser&&analyser.disconnect(); }catch{}
+  try{ _faithfulMicGain&&_faithfulMicGain.disconnect(); }catch{}
+  try{ monitorGain&&monitorGain.disconnect(); }catch{}
+  workletNode=null; srcNode=null; analyser=null; _faithfulMicGain=null; monitorGain=null;
+}
+
+function stopMonitor(){
+  running=false;
+  if(rafId){ cancelAnimationFrame(rafId); rafId=null; }
+  teardownGraph();
+  try{ micStream&&micStream.getTracks().forEach(t=>t.stop()); }catch{}
+  micStream=null;
+  try{ actx&&actx.close(); }catch{}
+  actx=null;
+  const btn=document.getElementById('btnStart');
+  btn.textContent='▶ AVVIA MONITOR'; btn.classList.remove('live');
+  dot('dMic','');
+  document.getElementById('micName').textContent='Microfono spento';
+  drawVU(0);
+  document.getElementById('vuVal').textContent='0%';
+}
+
+async function restart(){
+  const wasRunning=running;
+  stopMonitor();
+  if(wasRunning) await startMonitor();
+}
+
+// ─── LOOP VU — stessa misura dell'app (peak 80–8000 Hz, boost 0.55) ────────
+function startVuLoop(){
+  let logT=0;
+  (function tick(){
+    rafId=requestAnimationFrame(tick);
+    if(!analyser||!actx||actx.state!=='running') return;
+    const d=new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(d);
+    const binHz=actx.sampleRate/analyser.fftSize;
+    const lo=Math.floor(80/binHz), hi=Math.min(Math.floor(8000/binHz), d.length-1);
+    let peak=0;
+    for(let i=lo;i<=hi;i++){ if(d[i]>peak) peak=d[i]; }
+    const boosted=Math.min(255, Math.pow(peak/255,0.55)*255);
+    drawVU(boosted);
+    document.getElementById('vuVal').textContent=Math.round(boosted/255*100)+'%';
+  })();
+}
+
+function drawVU(boosted){
+  const pct=boosted/255;
+  const lit=Math.round(pct*VU_SEGS);
+  const segs=document.getElementById('vuSegs').children;
+  for(let i=0;i<segs.length;i++){
+    if(i<lit){
+      // verde → giallo → rosso sulla scala
+      const r=i/VU_SEGS;
+      segs[i].style.background = r<0.6 ? 'var(--green)' : (r<0.82 ? 'var(--yellow)' : 'var(--red)');
+    }else{
+      segs[i].style.background='#13203a';
+    }
+  }
+}
+
+// ─── INIT: ripristina valori salvati ───────────────────────────────────────
+(function init(){
+  try{
+    const g=localStorage.getItem(LS_GAIN); if(g!==null){ document.getElementById('rGain').value=g; }
+    const th=localStorage.getItem(LS_THR); if(th!==null){ document.getElementById('rThr').value=th; }
+    const mo=localStorage.getItem(LS_MON); if(mo!==null){ document.getElementById('rMon').value=mo; }
+  }catch{}
+  document.getElementById('chkSysDsp').checked = sysAudioDSP;
+  document.getElementById('vGain').textContent=document.getElementById('rGain').value+'%';
+  document.getElementById('vThr').textContent=document.getElementById('rThr').value;
+  positionThreshold(parseInt(document.getElementById('rThr').value));
+  setMode(listenMode);
+  // elenco microfoni (etichette complete solo dopo permesso, ma proviamo subito)
+  refreshMics();
+})();
+</script>
+</body>
+</html>
