@@ -208,6 +208,8 @@
     .dbgLine .ts{color:#446;margin-right:5px}
     .dbgLine .tag{display:inline-block;min-width:48px;font-size:.55rem;opacity:.8;margin-right:4px}
     .back{font-size:.72rem;color:var(--muted);text-decoration:none;display:flex;align-items:center;gap:5px;width:100%;max-width:500px;font-family:var(--mono);padding:2px 0}
+    /* STEP 9: badge versione app, a destra nella barra LAUNCHER. Popolato da APP_VERSION in init(). */
+    .ver{margin-left:auto;font-size:.6rem;color:var(--green);border:1px solid rgba(79,138,255,.35);border-radius:6px;padding:2px 8px;letter-spacing:1px;font-family:var(--mono);white-space:nowrap}
     .back:hover{color:var(--green)}
     select.mic-sel{flex:1;background:var(--surf);border:1px solid var(--bord);border-radius:8px;color:var(--text);padding:7px 10px;font-size:.73rem;outline:none;-webkit-appearance:none;font-family:var(--mono)}
     .mic-row{display:flex;gap:7px;margin-bottom:8px;align-items:center}
@@ -222,7 +224,7 @@
 </head>
 <body>
 <div class="snap-flash" id="snapFlash"></div>
-<a class="back" href="index.html">← LAUNCHER</a>
+<div class="back"><a href="index.html" style="color:inherit;text-decoration:none;display:flex;align-items:center;gap:5px">← LAUNCHER</a><span class="ver" id="appVer">…</span></div>
 
 <!-- CONNETTI -->
 <div class="card conn-card">
@@ -798,6 +800,11 @@ registerProcessor('pcm16-processor', PCM16Processor);
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
+// ═══ VERSIONE APP (STEP 9) ═══
+// UNICA fonte di verità: cambia SOLO questa riga a ogni aggiornamento.
+// Viene mostrata nel badge in alto (accanto a LAUNCHER), nel <title>,
+// nel debug log e nel toast di avvio — così capisci al volo quale build gira.
+const APP_VERSION='STEP9 · 03/07/2026';
 const LS_KEY='robot_key_gemini', LS_CHARS='robot_characters', LS_LAST='robot_last_char', LS_KNOW='robot_knowledge';
 // ═══ MULTI-CONOSCENZA (STEP 2) ═══
 // LS_KNOW resta letto solo per migrazione una-tantum dal vecchio formato singolo {title,text}
@@ -1206,11 +1213,14 @@ let onMsgAudioCount=0;
 // ═══════════════════════════════════════════════════════════════
 function init(){
   // ═══ MARCATORE DI VERSIONE (STEP 9) ═══
-  // Serve a verificare in 2 secondi QUALE build sta girando sul telefono:
-  // se all'avvio NON vedi il toast "BUILD STEP9" e questa riga nel debug log,
-  // stai eseguendo una copia vecchia in cache (Chrome/PWA Android) o un file sbagliato.
-  dbg('🏷 BUILD STEP9 · fix: stallo audio ~1s · visione turnCoverage+frame-onset · reset VU al disconnetti');
-  try{ setTimeout(()=>toast('🏷 BUILD STEP9 caricata'), 600); }catch{}
+  // Badge visibile in alto (barra LAUNCHER) + titolo pagina + log + toast.
+  // Se il badge NON mostra la versione attesa, stai eseguendo una copia
+  // vecchia in cache (Chrome/PWA/CDN GitHub Pages) o un file sbagliato.
+  const av=document.getElementById('appVer');
+  if(av) av.textContent=APP_VERSION;
+  try{ document.title='Robot AI — Gemini v3 · '+APP_VERSION; }catch{}
+  dbg('🏷 BUILD '+APP_VERSION+' · fix: stallo audio ~1s · visione turnCoverage+frame-onset · reset VU al disconnetti');
+  try{ setTimeout(()=>toast('🏷 BUILD '+APP_VERSION+' caricata'), 600); }catch{}
   // ═══ DIAGNOSTICO: heartbeat ogni 10s per individuare WebSocket zombie ═══
   setInterval(()=>{
     if(connected){
