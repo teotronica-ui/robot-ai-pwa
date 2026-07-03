@@ -17,7 +17,7 @@
        iOS legge quelli, Android legge il manifest. Nessuno disturba l'altro.
        L'icona è un SVG inline (data URI) → niente file PNG esterni da gestire. -->
   <link rel="manifest" href='data:application/manifest+json,{"name":"Robot AI — Gemini","short_name":"Robot AI","start_url":".","display":"standalone","orientation":"any","background_color":"#070d18","theme_color":"#070d18","icons":[{"src":"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2236%22 fill=%22%23070d18%22/%3E%3Ctext x=%2296%22 y=%22130%22 font-size=%22110%22 text-anchor=%22middle%22%3E%F0%9F%A4%96%3C/text%3E%3C/svg%3E","sizes":"192x192","type":"image/svg+xml","purpose":"any maskable"},{"src":"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22%3E%3Crect width=%22512%22 height=%22512%22 rx=%2296%22 fill=%22%23070d18%22/%3E%3Ctext x=%22256%22 y=%22350%22 font-size=%22300%22 text-anchor=%22middle%22%3E%F0%9F%A4%96%3C/text%3E%3C/svg%3E","sizes":"512x512","type":"image/svg+xml","purpose":"any maskable"}]}'>
-  <title>Robot AI — Gemini v3</title>
+  <title>Robot AI — Gemini v3 · STEP9</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -1205,6 +1205,12 @@ let onMsgAudioCount=0;
 // INIT
 // ═══════════════════════════════════════════════════════════════
 function init(){
+  // ═══ MARCATORE DI VERSIONE (STEP 9) ═══
+  // Serve a verificare in 2 secondi QUALE build sta girando sul telefono:
+  // se all'avvio NON vedi il toast "BUILD STEP9" e questa riga nel debug log,
+  // stai eseguendo una copia vecchia in cache (Chrome/PWA Android) o un file sbagliato.
+  dbg('🏷 BUILD STEP9 · fix: stallo audio ~1s · visione turnCoverage+frame-onset · reset VU al disconnetti');
+  try{ setTimeout(()=>toast('🏷 BUILD STEP9 caricata'), 600); }catch{}
   // ═══ DIAGNOSTICO: heartbeat ogni 10s per individuare WebSocket zombie ═══
   setInterval(()=>{
     if(connected){
