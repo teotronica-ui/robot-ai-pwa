@@ -17,7 +17,7 @@
        iOS legge quelli, Android legge il manifest. Nessuno disturba l'altro.
        L'icona è un SVG inline (data URI) → niente file PNG esterni da gestire. -->
   <link rel="manifest" href='data:application/manifest+json,{"name":"Robot AI — Gemini","short_name":"Robot AI","start_url":".","display":"standalone","orientation":"any","background_color":"#070d18","theme_color":"#070d18","icons":[{"src":"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2236%22 fill=%22%23070d18%22/%3E%3Ctext x=%2296%22 y=%22130%22 font-size=%22110%22 text-anchor=%22middle%22%3E%F0%9F%A4%96%3C/text%3E%3C/svg%3E","sizes":"192x192","type":"image/svg+xml","purpose":"any maskable"},{"src":"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22%3E%3Crect width=%22512%22 height=%22512%22 rx=%2296%22 fill=%22%23070d18%22/%3E%3Ctext x=%22256%22 y=%22350%22 font-size=%22300%22 text-anchor=%22middle%22%3E%F0%9F%A4%96%3C/text%3E%3C/svg%3E","sizes":"512x512","type":"image/svg+xml","purpose":"any maskable"}]}'>
-  <title>Robot AI — Gemini v3 · STEP9</title>
+  <title>Robot AI — Gemini v3</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@400;700;900&display=swap');
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -208,8 +208,6 @@
     .dbgLine .ts{color:#446;margin-right:5px}
     .dbgLine .tag{display:inline-block;min-width:48px;font-size:.55rem;opacity:.8;margin-right:4px}
     .back{font-size:.72rem;color:var(--muted);text-decoration:none;display:flex;align-items:center;gap:5px;width:100%;max-width:500px;font-family:var(--mono);padding:2px 0}
-    /* STEP 9: badge versione app, a destra nella barra LAUNCHER. Popolato da APP_VERSION in init(). */
-    .ver{margin-left:auto;font-size:.6rem;color:var(--green);border:1px solid rgba(79,138,255,.35);border-radius:6px;padding:2px 8px;letter-spacing:1px;font-family:var(--mono);white-space:nowrap}
     .back:hover{color:var(--green)}
     select.mic-sel{flex:1;background:var(--surf);border:1px solid var(--bord);border-radius:8px;color:var(--text);padding:7px 10px;font-size:.73rem;outline:none;-webkit-appearance:none;font-family:var(--mono)}
     .mic-row{display:flex;gap:7px;margin-bottom:8px;align-items:center}
@@ -224,7 +222,7 @@
 </head>
 <body>
 <div class="snap-flash" id="snapFlash"></div>
-<div class="back"><a href="index.html" style="color:inherit;text-decoration:none;display:flex;align-items:center;gap:5px">← LAUNCHER</a><span class="ver" id="appVer">…</span></div>
+<a class="back" href="index.html">← LAUNCHER</a>
 
 <!-- CONNETTI -->
 <div class="card conn-card">
@@ -800,11 +798,6 @@ registerProcessor('pcm16-processor', PCM16Processor);
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
-// ═══ VERSIONE APP (STEP 9) ═══
-// UNICA fonte di verità: cambia SOLO questa riga a ogni aggiornamento.
-// Viene mostrata nel badge in alto (accanto a LAUNCHER), nel <title>,
-// nel debug log e nel toast di avvio — così capisci al volo quale build gira.
-const APP_VERSION='STEP9 · 03/07/2026';
 const LS_KEY='robot_key_gemini', LS_CHARS='robot_characters', LS_LAST='robot_last_char', LS_KNOW='robot_knowledge';
 // ═══ MULTI-CONOSCENZA (STEP 2) ═══
 // LS_KNOW resta letto solo per migrazione una-tantum dal vecchio formato singolo {title,text}
@@ -846,12 +839,7 @@ const AUDIO_Q_MAX     = 60;
 // ═══ PROFILO AUDIO (STEP 5) — variabili mutabili in base al toggle UI ═══
 // I valori di default sono quelli del profilo "Bilanciato" (= STEP 3 precedente).
 // Vengono sovrascritti da applyAudioProfile() in base al selettore selAudioProfile.
-// FIX STEP 9: il watchdog è solo un MARGINE DI SBLOCCO dello stato 'playing' dopo la
-// fine prevista dell'ultimo buffer — non un buffer di attesa. Tenerlo a secondi (2500ms)
-// teneva 'playing' bloccato a true a lungo dopo la fine reale dell'audio, congelando la
-// ripresa post-underrun e l'attacco del turno successivo. 200-400ms assorbono il jitter
-// di clock senza congelare nulla (lo sblocco vero ora è nel ramo "scheduler a secco").
-let DRAIN_WATCHDOG  = 250;   // ms di margine post-fine-coda prima di chiudere playing
+let DRAIN_WATCHDOG  = 2500;  // ms di attesa post-fine-coda prima di chiudere playing
 // ═══ FIX A16 (STEP 6) — jitter buffer TEMPO-BASED con soglia di RIPRESA separata ═══
 // Prima il pre-buffer era misurato in NUMERO di chunk (PRE_BUFFER_CHUNKS=12) e veniva
 // applicato anche alla RIPRESA dopo un underrun mid-frase. Problema: i chunk di Gemini
@@ -864,7 +852,7 @@ let DRAIN_WATCHDOG  = 250;   // ms di margine post-fine-coda prima di chiudere p
 //   ripartire subito conta più del margine, il gap residuo scende sotto soglia fastidio)
 let PRE_BUFFER_MS    = 480;  // ms di audio da accumulare prima di INIZIARE il turno
 let RESUME_BUFFER_MS = 120;  // ms di audio per RIPRENDERE dopo un underrun mid-frase
-let REBUFFER_THRESHOLD = 0;  // se >0: MILLISECONDI di audio accodato sotto cui drain si ferma mid-frase (anti-scatti). FIX STEP 9: era in numero di chunk (dimensione variabile → soglia imprevedibile), ora in ms coerente col resto
+let REBUFFER_THRESHOLD = 0;  // se >0, drain si ferma quando audioQ scende sotto questa soglia (anti-scatti)
 const CTX_WATCHDOG_MS = 2000;
 const WS_KEEPALIVE_MS = 30000; // ping cliente per mantenere viva la TCP
 // Attesa rilascio camera tra uno switch e l'altro. iOS è lento a liberare
@@ -1032,19 +1020,6 @@ const VOICE_MARGIN_ABS  = 0.05;  // …e comunque almeno +0.05 sopra il fondo (a
 const VOICE_HOLD_MS=1500;        // coda di 1.5s dopo l'ultima voce: il frame resta nel turno
 let lastVoiceActivityAt=0;       // timestamp ultima voce rilevata
 
-// ═══ FIX VISIONE (STEP 9) — FRAME A INIZIO VOCE ═══
-// Anche con turnCoverage=ALL_VIDEO resta una corsa temporale: a 1 fps l'ultimo frame
-// può essere vecchio quasi un secondo, e in modalità 'voice'/'keyword' il primo frame
-// utile può partire DOPO che il VAD ha già chiuso il turno → il modello risponde alla
-// domanda visiva senza immagine fresca. FIX: appena il gate adattivo rileva l'INIZIO
-// del parlato, scattiamo subito UN frame (stesso canale realtimeInput.video → ordine
-// garantito, arriva prima della chiusura del turno). Vale per continuous/voice/keyword;
-// esclusa 'manual' (l'utente ha chiesto zero frame automatici). Cooldown anti-spam.
-let voiceGateWasOpen=false;            // stato del gate (per rilevare la transizione silenzio→voce)
-let onsetFrameCooldownUntil=0;         // anti-spam: max 1 frame-onset ogni ONSET_FRAME_COOLDOWN_MS
-const ONSET_FRAME_COOLDOWN_MS=2500;
-let onsetFrameEncoding=false;          // encode JPEG in corso (evita sovrapposizioni)
-
 // Aggiornamento adattivo del fondo + inviluppo. Chiamata dal loop VU ad ogni frame.
 // Asimmetrico: scende in fretta (ambiente che si calma) e sale piano (così una voce
 // o un transiente non gonfiano il fondo facendo "sparire" la voce stessa).
@@ -1058,57 +1033,6 @@ function updateVoiceGateEstimate(pct){
   }
   if(vidBgNoise < 0.02) vidBgNoise = 0.02;
   if(vidBgNoise > 0.6)  vidBgNoise = 0.6;
-
-  // ═══ FIX VISIONE (STEP 9) — rilevamento transizione silenzio→voce ═══
-  // Stessa soglia adattiva usata dal gate video 'voice'. Isteresi sulla chiusura
-  // (soglia più bassa) per non far "sfarfallare" il gate sul parlato normale.
-  const openThresh  = Math.max(vidBgNoise * VOICE_MARGIN_MULT, vidBgNoise + VOICE_MARGIN_ABS);
-  const closeThresh = vidBgNoise + VOICE_MARGIN_ABS * 0.5;
-  if(!voiceGateWasOpen && vidEnvFast >= openThresh){
-    voiceGateWasOpen = true;
-    // Frame-onset: solo a inizio parlato, solo se non è la voce del robot
-    // (auto-mute attivo = il livello che vediamo è l'eco della cassa, non l'utente).
-    if(!autoMuteSuspended) sendOnsetFrame();
-  } else if(voiceGateWasOpen && vidEnvFast < closeThresh){
-    voiceGateWasOpen = false;
-  }
-}
-
-// Invia UN singolo frame video "fresco" all'inizio del parlato dell'utente.
-// Guardie identiche allo streaming: cam attiva, WS pronto, modalità non-manuale.
-// Downscale 640px + JPEG 0.7 (come lo stream continuo): il server riscala comunque.
-function sendOnsetFrame(){
-  const now=Date.now();
-  if(now < onsetFrameCooldownUntil) return;
-  if(onsetFrameEncoding) return;
-  if(!camActive) return;
-  if(VIDEO_CAPTURE_MODE==='manual') return; // zero frame automatici in manuale
-  if(!ws || ws.readyState!==WebSocket.OPEN || !setupReady) return;
-  const v=document.getElementById('camVideo');
-  if(!v || !v.videoWidth) return;
-  // Backpressure: se la rete è già sotto stress, salta (lo stream/nudge coprirà)
-  if(ws.bufferedAmount > 80000) return;
-  onsetFrameCooldownUntil = now + ONSET_FRAME_COOLDOWN_MS;
-  try{
-    const c=document.getElementById('camCanvas');
-    const maxSide=640;
-    const scale=Math.min(1, maxSide/Math.max(v.videoWidth, v.videoHeight));
-    c.width=Math.round(v.videoWidth*scale);
-    c.height=Math.round(v.videoHeight*scale);
-    c.getContext('2d').drawImage(v,0,0,c.width,c.height);
-    onsetFrameEncoding=true;
-    c.toBlob(async (blob)=>{
-      try{
-        if(!blob) return;
-        if(!camActive||!ws||ws.readyState!==WebSocket.OPEN||!setupReady) return;
-        const b64=await blobToBase64(blob);
-        ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
-        pulseVisionIndicator();
-        dbg('📷 Frame-onset inviato (inizio voce): '+c.width+'x'+c.height);
-      }catch(e){dbg('❌ frame-onset: '+e.message);}
-      finally{ onsetFrameEncoding=false; }
-    },'image/jpeg',VIDEO_STREAM_QUALITY);
-  }catch(e){onsetFrameEncoding=false;dbg('❌ frame-onset: '+e.message);}
 }
 
 function updateVidMode(mode){
@@ -1212,15 +1136,6 @@ let onMsgAudioCount=0;
 // INIT
 // ═══════════════════════════════════════════════════════════════
 function init(){
-  // ═══ MARCATORE DI VERSIONE (STEP 9) ═══
-  // Badge visibile in alto (barra LAUNCHER) + titolo pagina + log + toast.
-  // Se il badge NON mostra la versione attesa, stai eseguendo una copia
-  // vecchia in cache (Chrome/PWA/CDN GitHub Pages) o un file sbagliato.
-  const av=document.getElementById('appVer');
-  if(av) av.textContent=APP_VERSION;
-  try{ document.title='Robot AI — Gemini v3 · '+APP_VERSION; }catch{}
-  dbg('🏷 BUILD '+APP_VERSION+' · fix: stallo audio ~1s · visione turnCoverage+frame-onset · reset VU al disconnetti');
-  try{ setTimeout(()=>toast('🏷 BUILD '+APP_VERSION+' caricata'), 600); }catch{}
   // ═══ DIAGNOSTICO: heartbeat ogni 10s per individuare WebSocket zombie ═══
   setInterval(()=>{
     if(connected){
@@ -1462,19 +1377,6 @@ function drawVU(level){
   const el=document.getElementById('rmsVal');
   el.textContent=String(Math.round(pct*100)).padStart(3,' ')+'%';
   el.className='rms-val'+(pct>.85?' r':pct>.6?' y':'');
-}
-
-// FIX STEP 9: azzera graficamente il VU meter (segmenti + valore numerico).
-// Chiamata al DISCONNETTI manuale: il loop rAF viene cancellato e il mic rilasciato,
-// quindi senza questo reset il VU restava congelato sull'ultima lettura.
-function resetVuDisplay(){
-  vuDisplayPct=0; vidEnvFast=0; voiceGateWasOpen=false;
-  if(vuEl){
-    const s=vuEl.children;
-    for(let i=0;i<s.length;i++) s[i].className='seg';
-  }
-  const el=document.getElementById('rmsVal');
-  if(el){ el.textContent='  0%'; el.className='rms-val'; }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2238,16 +2140,6 @@ function sendSetup(){
     };
   }
 
-  // ═══ FIX VISIONE (STEP 9) — turnCoverage esplicito ═══
-  // Doc ufficiale (tabella confronto modelli, Live API capabilities): il default di
-  // turnCoverage DIVERGE tra modelli — Gemini 3.1 = TURN_INCLUDES_AUDIO_ACTIVITY_AND_ALL_VIDEO,
-  // Gemini 2.5 = TURN_INCLUDES_ONLY_ACTIVITY. Con ONLY_ACTIVITY i frame video inviati
-  // mentre nessuno parla NON entrano nel turno del modello → alla domanda "cosa vedi?"
-  // il turno non contiene immagini e il modello inventa; alla seconda richiesta i frame
-  // del primo scambio sono ormai nella cronologia e risponde giusto. Impostandolo
-  // esplicitamente siamo coperti su QUALUNQUE modello selezionato dal menu.
-  setup.realtimeInputConfig.turnCoverage = 'TURN_INCLUDES_AUDIO_ACTIVITY_AND_ALL_VIDEO';
-
   // ── Session resumption ───────────────────────────────────────────
   setup.sessionResumption = sessionHandle ? {handle: sessionHandle} : {};
 
@@ -2559,25 +2451,11 @@ function onMsg(e){
           // STEP 5: nuovo chunk = siamo in mezzo a un turno, re-buffering ATTIVO
           turnRecentlyComplete = false;
           const needMs = turnAudioStarted ? RESUME_BUFFER_MS : PRE_BUFFER_MS;
-          // ═══ FIX STALLO ~1s (STEP 9) — sblocco su scheduler a secco ═══
-          // BUG PRECEDENTE: dopo un underrun, 'playing' restava true (stale) fino allo
-          // scatto del drainWatchdog anche se l'audio era fisicamente FINITO. Con
-          // REBUFFER_THRESHOLD=0 (profili Reattivo/Bilanciato) nessun ramo qui sotto
-          // richiamava drain() → i chunk nuovi restavano in coda in silenzio finché il
-          // watchdog non scattava: era QUESTA la pausa da ~1s a metà frase.
-          // FIX: se lo scheduling è esaurito (nextPlayTime dietro/vicino a currentTime),
-          // 'playing' è di fatto falso → riavvia il drain appena c'è buffer a sufficienza.
-          const schedAheadNowMs = audioCtx ? (nextPlayTime - audioCtx.currentTime)*1000 : 0;
           if(!playing && queuedMs() >= needMs) drain();
-          else if(playing && schedAheadNowMs <= 30 && queuedMs() >= needMs){
-            dbg('▶ drain riavviato: scheduler a secco (schedAhead='+Math.round(schedAheadNowMs)+'ms, coda='+Math.round(queuedMs())+'ms)');
-            drain();
-          }
           // STEP 5: se siamo in re-buffering attivo (playing=true ma drain fermo per soglia),
           // appena la coda risale sopra la soglia, riavvia drain. Senza questa riga
           // il drain potrebbe restare in attesa anche se ci sono chunk a sufficienza.
-          // FIX STEP 9: soglia in MILLISECONDI (coerente col resto), non in numero chunk.
-          else if(playing && REBUFFER_THRESHOLD > 0 && queuedMs() >= REBUFFER_THRESHOLD && !drainWatchdog){
+          else if(playing && REBUFFER_THRESHOLD > 0 && audioQ.length >= REBUFFER_THRESHOLD && !drainWatchdog){
             drain();
           }
           // Stima costi (fallback) per FEEDBACK VISIVO durante la riproduzione.
@@ -2614,12 +2492,7 @@ function onMsg(e){
       // STEP 5: fine turno → re-buffering OFF (svuota tutto fino in fondo, non trattenere)
       turnRecentlyComplete = true;
       finalizeRobot();
-      // FIX STEP 9: la coda di silenzio era di 1 SECONDO pieno (24000 campioni a 24kHz):
-      // spostava nextPlayTime 1s nel futuro e teneva 'playing'+watchdog occupati a lungo
-      // dopo la fine reale della frase → se il visitatore faceva subito la domanda
-      // successiva, i primi chunk della nuova risposta cadevano nella finestra "playing
-      // stale" e partivano in ritardo. 100ms bastano come tail anti-click.
-      audioQ.push(new Int16Array(Math.round(OUTPUT_SR*0.1)));
+      audioQ.push(new Int16Array(OUTPUT_SR));
       if(!playing) drain();
       // FIX A16 (STEP 6): reset DOPO l'eventuale drain del tail (che lo rimetterebbe a true).
       // Così il primo chunk del prossimo turno troverà il gate di avvio pieno (PRE_BUFFER_MS).
@@ -2804,9 +2677,6 @@ function disc(clearHandle=false){
     }
     if(vuCtx&&vuCtx.state!=='closed'){try{vuCtx.close();}catch{}}
     vuCtx=null; vuAnalyser=null;
-    // FIX STEP 9: azzera il VU meter (il loop rAF è stato cancellato sopra,
-    // altrimenti resterebbe congelato sull'ultima lettura del mic).
-    try{ resetVuDisplay(); }catch{}
     dbg('🔇 Disconnessione volontaria — mic e AudioContext rilasciati');
     // Riarma il flag dopo 3s: il prossimo CONNETTI ricrea tutto da zero
     setTimeout(()=>{intentionalMicStop=false;}, 3000);
@@ -2940,9 +2810,8 @@ async function drain(){
     // Questo previene gli scatti tipo "ci vediamo prossima...mente" causati da
     // chunk in ritardo: invece di esaurire la coda e ricominciare, freniamo qui.
     // Il drain riprende automaticamente via setTimeout o quando arriva un nuovo chunk.
-    // FIX STEP 9: soglia in MILLISECONDI di audio (queuedMs), non in numero di chunk.
-    if(REBUFFER_THRESHOLD > 0 && queuedMs() < REBUFFER_THRESHOLD && !turnRecentlyComplete){
-      dbg('⏸ re-buffering: coda='+Math.round(queuedMs())+'ms < soglia='+REBUFFER_THRESHOLD+'ms · aspetto chunk');
+    if(REBUFFER_THRESHOLD > 0 && audioQ.length < REBUFFER_THRESHOLD && !turnRecentlyComplete){
+      dbg('⏸ re-buffering: coda='+audioQ.length+' < soglia='+REBUFFER_THRESHOLD+' · aspetto chunk');
       // Non azzeriamo playing: gli onChunk continuano a entrare in audioQ.
       // Ri-controlliamo tra 80ms (un chunk a 40ms = 2 chunk di tempo).
       if(drainWatchdog){clearTimeout(drainWatchdog);}
@@ -3337,14 +3206,7 @@ function doSnap(withNudge){
   if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connetti prima Gemini');return;}
   const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
   if(!v||!v.videoWidth||!v.videoHeight){toast('⏳ Cam non ancora pronta');return;}
-  // FIX VISIONE (STEP 9): lo snap era a PIENA risoluzione (anche 1280x720 → base64 da
-  // centinaia di KB). Su rete fiera l'upload dell'immagine ritardava proprio il momento
-  // in cui il nudge poteva essere elaborato dal modello → più finestra per "inventare".
-  // 768px sul lato lungo: il server riscala comunque internamente, qualità invariata.
-  const snapMaxSide=768;
-  const snapScale=Math.min(1, snapMaxSide/Math.max(v.videoWidth, v.videoHeight));
-  c.width=Math.round(v.videoWidth*snapScale); c.height=Math.round(v.videoHeight*snapScale);
-  c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+  c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
   const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
   // FIX A16 (STEP 6): encoding asincrono anche qui — lo snap è a PIENA risoluzione
   // (qualità .85), l'encode sincrono bloccava il main thread ancora più a lungo
@@ -3447,26 +3309,23 @@ function oSilMan(v){document.getElementById('vSilMan').textContent=v+' ms';}
 // ═══════════════════════════════════════════════════════════════
 function applyAudioProfile(name){
   switch(name){
-    // FIX STEP 9: DRAIN_WATCHDOG ora è un margine di sblocco (200-400ms), non un'attesa
-    // di secondi. REBUFFER_THRESHOLD ora è in MILLISECONDI di audio accodato (coerente
-    // con PRE_BUFFER_MS/RESUME_BUFFER_MS): i chunk hanno dimensione variabile.
     case 'reactive':
       PRE_BUFFER_MS     = 320;
       RESUME_BUFFER_MS  = 100;
-      DRAIN_WATCHDOG    = 200;
+      DRAIN_WATCHDOG    = 1500;
       REBUFFER_THRESHOLD= 0;       // OFF: drain non si ferma mai mid-flusso
       break;
     case 'antiscatti':
       PRE_BUFFER_MS     = 800;
       RESUME_BUFFER_MS  = 200;
-      DRAIN_WATCHDOG    = 400;
-      REBUFFER_THRESHOLD= 250;      // ON (ms): se la coda scende sotto 250ms mid-frase, drain si ferma e aspetta
+      DRAIN_WATCHDOG    = 4000;
+      REBUFFER_THRESHOLD= 3;        // ON: se la coda scende sotto 3 chunk mid-frase, drain si ferma e aspetta
       break;
     case 'balanced':
     default:
       PRE_BUFFER_MS     = 480;
       RESUME_BUFFER_MS  = 120;
-      DRAIN_WATCHDOG    = 250;
+      DRAIN_WATCHDOG    = 2500;
       REBUFFER_THRESHOLD= 0;
       break;
   }
@@ -3482,13 +3341,13 @@ function onAudioProfileChange(silent){
   applyAudioProfile(mode);
   let txt='', border='var(--green)';
   if(mode==='reactive'){
-    txt='⚡ Pre-buffer 320ms · ripresa underrun 100ms · sblocco 0.2s · NO re-buffering. Reattività massima ma se la rete è instabile potresti sentire micro-pause in mezzo alle frasi.';
+    txt='⚡ Pre-buffer 320ms · ripresa underrun 100ms · watchdog 1.5s · NO re-buffering. Reattività massima ma se la rete è instabile potresti sentire micro-pause in mezzo alle frasi.';
     border='var(--yellow,#e0a800)';
   }else if(mode==='antiscatti'){
-    txt='🛡 Pre-buffer 800ms · ripresa underrun 200ms · sblocco 0.4s · re-buffering ON (soglia 250ms). Riproduzione fluida senza scatti, al costo di ~300ms in più di latenza iniziale. Consigliato in caso di WiFi instabile o se senti micro-pause mid-frase.';
+    txt='🛡 Pre-buffer 800ms · ripresa underrun 200ms · watchdog 4s · re-buffering ON (soglia 3). Riproduzione fluida senza scatti, al costo di ~300ms in più di latenza iniziale. Consigliato in caso di WiFi instabile o se senti micro-pause mid-frase.';
     border='var(--green)';
   }else{
-    txt='⚖️ Pre-buffer 480ms · ripresa underrun 120ms · sblocco 0.25s · NO re-buffering. Compromesso standard, latenza moderata. Se vedi scatti mid-frase, prova "Anti-scatti".';
+    txt='⚖️ Pre-buffer 480ms · ripresa underrun 120ms · watchdog 2.5s · NO re-buffering. Compromesso standard, latenza moderata. Se vedi scatti mid-frase, prova "Anti-scatti".';
     border='var(--green)';
   }
   info.textContent=txt;
