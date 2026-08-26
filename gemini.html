@@ -2671,6 +2671,12 @@ function disc(clearHandle=false){
     // un re-prompt del permesso microfono iOS a ogni reconnect.
     intentionalMicStop=true;
     if(vuRaf){try{cancelAnimationFrame(vuRaf);}catch{} vuRaf=null;}
+    // FIX v-meter: il loop di disegno è appena stato fermato, quindi nessun frame
+    // ridisegnerà la barra e resterebbe "frizzata" sull'ultima lettura. La azzeriamo
+    // esplicitamente qui (segmenti spenti + testo a 0%), come dopo un CONNETTI pulito.
+    vuDisplayPct=0;
+    if(vuEl){ for(let _i=0;_i<vuEl.children.length;_i++) vuEl.children[_i].className='seg'; }
+    { const _rv=document.getElementById('rmsVal'); if(_rv){ _rv.textContent='  0%'; _rv.className='rms-val'; } }
     if(sharedMicStream){
       try{sharedMicStream.getTracks().forEach(t=>{try{t.stop();}catch{}});}catch{}
       sharedMicStream=null;
