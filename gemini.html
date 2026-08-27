@@ -27,6 +27,10 @@
       --text:#dff0ff;--muted:#3d6080;
       --mono:'Share Tech Mono',monospace;--sans:'Exo 2',sans-serif;
     }
+    /* LEGGIBILITÀ: ingrandisce TUTTO il testo in modo proporzionale (le misure sono in
+       rem, relative a questa base). 112% = +12%. Alza/abbassa solo questo numero per
+       rendere le scritte più grandi o più piccole. 100% = dimensione originale. */
+    html{font-size:112%}
     body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100dvh;display:flex;flex-direction:column;align-items:center;padding:10px 10px 60px;gap:9px}
     body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:999;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(79,138,255,.007) 3px,rgba(79,138,255,.007) 4px)}
     .card{background:var(--card);border:1px solid var(--bord);border-radius:14px;padding:14px;width:100%;max-width:500px}
@@ -271,7 +275,7 @@
   <div class="sg" style="margin-top:10px">
     <div class="sh"><span class="l">Gain Microfono</span><span class="v" id="vGain">100%</span></div>
     <input type="range" id="rGain" min="0" max="150" step="5" value="100" oninput="oGain(this.value)">
-    <div class="sticks"><span>0%</span><span>◆ 100%</span><span>150%</span></div>
+    <div class="sticks" style="position:relative;display:block;height:.85rem"><span style="position:absolute;left:0">0%</span><span style="position:absolute;left:66.7%;transform:translateX(-50%)">◆ 100%</span><span style="position:absolute;right:0">150%</span></div>
   </div>
   <div class="sg">
     <div class="sh"><span class="l">Soglia VAD <span style="font-size:.6rem;color:var(--muted)">(solo VAD Manuale)</span></span><span class="v" id="vThr">200</span></div>
@@ -1893,6 +1897,9 @@ function startCtxWatchdog(){
 // ═══════════════════════════════════════════════════════════════
 async function toggleConn(){
   if(connected || reconnectTimer){
+    // Conferma di sicurezza: evita disconnessioni accidentali (es. tocco involontario
+    // durante un evento). Se l'utente annulla, non succede nulla.
+    if(!confirm('Vuoi disconnettere Gemini?\n\nLa sessione in corso verrà chiusa.')){ return; }
     userDisconnected=true;
     cancelReconnect();
     disc(true); // clearHandle=true: disconnessione volontaria, azzera la sessione
