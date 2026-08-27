@@ -1002,6 +1002,21 @@ const SNAP_BUF_MAX_CHARS=220;    // tieni solo la coda recente (rolling)
 let snapCooldownUntil=0;         // anti-doppio scatto (la stessa frase può comparire in 2 frammenti)
 const SNAP_COOLDOWN_MS=3000;
 
+// ═══ VISIONE VIA FUNCTION CALLING (tool "guarda_davanti") ═══════════
+// Interruttore unico: true = il modello decide QUANDO guardare chiamando il tool
+// (riconoscimento sull'audio, non sul testo trascritto) e su Gemini 3.1 si BLOCCA
+// finché non gli inviamo la toolResponse → niente descrizione "alla cieca".
+// Messo a false, l'app torna ESATTAMENTE al comportamento precedente (nessun tool
+// nel setup, vecchio trigger testuale keyword riattivo, vecchie regole visione).
+const VISION_TOOL_ENABLED = true;
+// Dichiarazione del tool: la 'description' è il criterio che il modello usa per
+// decidere se chiamarlo. Distingue la richiesta reale dai modi di dire figurati.
+const VISION_TOOL_DECL = {
+  name: 'guarda_davanti',
+  description: 'Scatta una foto reale di ciò che hai fisicamente davanti in questo momento e te la fornisce, così puoi descrivere ciò che vedi davvero invece di immaginarlo. CHIAMA questa funzione ogni volta che l\'utente ti chiede di osservare, guardare, vedere o descrivere qualcosa di reale nell\'ambiente attorno a te: una persona, un oggetto, un luogo, un colore, ciò che ti sta davanti o intorno. Esempi in cui DEVI chiamarla: "cosa vedi?", "cosa hai davanti?", "guarda dietro di te", "descrivimi questa persona", "che colore ha la mia maglietta?", "chi c\'è qui intorno?", "riesci a vedere il mio cappello?", "guardami, come sono vestito?", "dai un\'occhiata a cosa c\'è sul tavolo". NON chiamare questa funzione quando "vedere" o "guardare" sono usati come modi di dire, in senso figurato, o non si riferiscono a osservare davvero l\'ambiente. Esempi in cui NON devi chiamarla: "vedi che avevo ragione", "fammi vedere se ho capito", "guarda che sei simpatico", "si vede che sei in gamba", "vediamo un po\' cosa sai fare", "guarda caso", "non vedo l\'ora", "vedrai che ci divertiamo", "guarda un po\'..." detto come intercalare. Il criterio non sono le parole "vedere" o "guardare" in sé, ma se l\'utente ti sta chiedendo un\'osservazione reale di ciò che ti circonda adesso. Nel dubbio, se la frase non riguarda chiaramente qualcosa di fisico e presente attorno a te, NON chiamare la funzione e continua a conversare normalmente.',
+  parameters: { type: 'object', properties: {} }
+};
+
 // ═══ GATE VOCE ADATTIVO (modalità 'voice') ═══
 // Niente soglia fissa da tarare a mano: il sistema stima in continuo il rumore
 // di fondo (vidBgNoise) e considera "voce" solo ciò che lo supera di un margine.
@@ -2143,6 +2158,13 @@ function sendSetup(){
   // ── Session resumption ───────────────────────────────────────────
   setup.sessionResumption = sessionHandle ? {handle: sessionHandle} : {};
 
+  // ── Tool visione (function calling) ──────────────────────────────
+  // Dichiara "guarda_davanti" per tutta la sessione. Solo dichiarato: se nessuno
+  // chiede di guardare, il modello non lo chiama mai e la conversazione è invariata.
+  if(VISION_TOOL_ENABLED){
+    setup.tools = [{ functionDeclarations: [VISION_TOOL_DECL] }];
+  }
+
   const msg=JSON.stringify({setup:setup});
   dbg('📤 setup: '+msg.slice(0,220)+(msg.length>220?'...':''));
   try{ ws.send(msg); }catch(e){ dbg('❌ send setup: '+e.message); }
@@ -2399,6 +2421,10 @@ function onMsg(e){
     if(camActive) startVideoStream();
     return;
   }
+  // ═══ TOOL CALL (function calling visione) ═══════════════════════
+  // Il modello ha deciso di chiamare un tool (es. "guarda_davanti"). Ramo nuovo e
+  // isolato: se il function calling è spento, questo messaggio non arriva mai.
+  if(m.toolCall){ handleVisionToolCall(m.toolCall); return; }
   if(m.serverContent){
     const sc=m.serverContent;
     if(sc.modelTurn?.parts){
@@ -3207,11 +3233,16 @@ function pulseVisionIndicator(){
   }, 250);
 }
 
-function doSnap(withNudge){
-  if(!camActive){toast('❌ Attiva prima la cam');return;}
-  if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connetti prima Gemini');return;}
+function doSnap(withNudge, onSent){
+  // onSent (opzionale): callback chiamato UNA sola volta con (ok, motivo) quando lo
+  // scatto è concluso — usato dal function calling per inviare la toolResponse solo
+  // dopo che l'immagine è davvero partita. Se non passato, doSnap si comporta come prima.
+  let _sentDone=false;
+  const _fire=(ok,reason)=>{ if(_sentDone)return; _sentDone=true; if(typeof onSent==='function'){ try{onSent(ok,reason);}catch(_){} } };
+  if(!camActive){toast('❌ Attiva prima la cam'); _fire(false,'no_cam'); return;}
+  if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connetti prima Gemini'); _fire(false,'no_ws'); return;}
   const v=document.getElementById('camVideo'),c=document.getElementById('camCanvas');
-  if(!v||!v.videoWidth||!v.videoHeight){toast('⏳ Cam non ancora pronta');return;}
+  if(!v||!v.videoWidth||!v.videoHeight){toast('⏳ Cam non ancora pronta'); _fire(false,'not_ready'); return;}
   c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0);
   const fl=document.getElementById('snapFlash'); fl.classList.add('go'); setTimeout(()=>fl.classList.remove('go'),200);
   // FIX A16 (STEP 6): encoding asincrono anche qui — lo snap è a PIENA risoluzione
@@ -3219,12 +3250,15 @@ function doSnap(withNudge){
   // dei frame di streaming. L'invio avviene nel callback, a JPEG pronto.
   c.toBlob(async (blob)=>{
     try{
-      if(!blob){toast('❌ Snapshot fallito');return;}
-      if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connessione persa');return;}
+      if(!blob){toast('❌ Snapshot fallito'); _fire(false,'no_blob'); return;}
+      if(!ws||ws.readyState!==WebSocket.OPEN){toast('❌ Connessione persa'); _fire(false,'no_ws'); return;}
       const b64 = await blobToBase64(blob);
       // Doc ufficiale: realtimeInput.video per immagini, NON clientContent
       // Mescolare clientContent e realtimeInput non garantisce ordine e causa 1011
       ws.send(JSON.stringify({realtimeInput:{video:{data:b64,mimeType:'image/jpeg'}}}));
+      // Immagine partita: segnala subito il successo (il function calling invia qui
+      // la toolResponse, così parte SUBITO dopo il frame, sullo stesso socket).
+      _fire(true,'sent');
       // ═══ STEP 7 — NUDGE POST-FOTO (fix "inventa alla prima richiesta") ═══
       // Problema: quando lo snap parte da comando vocale, il VAD ha già chiuso il turno
       // dell'utente e il modello sta GIÀ rispondendo senza la foto → inventa.
@@ -3242,8 +3276,53 @@ function doSnap(withNudge){
       }
       document.getElementById('snapSt').textContent='📸 Inviata — '+new Date().toLocaleTimeString();
       addMsg('📸 [foto inviata'+(withNudge?' + richiesta descrizione':'')+']','sys'); toast('📸 Foto inviata!');
-    }catch(e){dbg('❌ doSnap: '+e.message);toast('❌ Snap: '+e.message);}
+    }catch(e){dbg('❌ doSnap: '+e.message);toast('❌ Snap: '+e.message); _fire(false,'error');}
   }, 'image/jpeg', .85);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// VISIONE — GESTIONE TOOL CALL (function calling)
+// ═══════════════════════════════════════════════════════════════
+// Il modello chiama "guarda_davanti" quando capisce che deve osservare l'ambiente.
+// Su Gemini 3.1 resta bloccato finché non riceve la toolResponse: la inviamo solo
+// DOPO che l'immagine è partita (via onSent di doSnap), o subito se la cam è spenta.
+function handleVisionToolCall(toolCall){
+  try{
+    const calls = (toolCall && toolCall.functionCalls) || [];
+    calls.forEach(fc=>{
+      const id=fc.id, name=fc.name;
+      if(name==='guarda_davanti'){
+        if(!camActive){
+          dbg('👁 toolCall guarda_davanti · cam spenta → "visione non attiva"');
+          sendVisionToolResponse(id, name, {vision_available:false, note:'La visione non è attiva in questo momento. Comunica in modo sincero che ora non hai la visione attiva, senza inventare.'});
+          return;
+        }
+        dbg('👁 toolCall guarda_davanti · scatto in corso...');
+        // Scatta col percorso collaudato (no nudge); la toolResponse parte in onSent.
+        doSnap(false, (ok)=>{
+          if(ok){
+            sendVisionToolResponse(id, name, {vision_available:true, note:'Immagine catturata e inviata. Descrivi SOLO ciò che è realmente presente nell\'immagine, restando nel personaggio.'});
+          } else {
+            sendVisionToolResponse(id, name, {vision_available:false, note:'La visione non è attiva in questo momento. Comunica in modo sincero che ora non hai la visione attiva, senza inventare.'});
+          }
+        });
+      } else {
+        // Funzione non prevista: rispondiamo comunque per non lasciare il modello bloccato.
+        dbg('⚠️ toolCall sconosciuto: '+name);
+        sendVisionToolResponse(id, name, {error:'funzione non disponibile'});
+      }
+    });
+  }catch(e){ dbg('❌ handleVisionToolCall: '+e.message); }
+}
+
+function sendVisionToolResponse(id, name, responseObj){
+  try{
+    if(!ws||ws.readyState!==WebSocket.OPEN){ dbg('❌ toolResponse non inviata: ws chiuso'); return; }
+    const fr={ name:name, response:responseObj };
+    if(id!==undefined && id!==null) fr.id=id; // alcuni modelli non forniscono id
+    ws.send(JSON.stringify({toolResponse:{functionResponses:[fr]}}));
+    dbg('📤 toolResponse · '+name+' · '+JSON.stringify(responseObj).slice(0,70));
+  }catch(e){ dbg('❌ sendVisionToolResponse: '+e.message); }
 }
 
 // Comando vocale snap: parole chiave in italiano e inglese
@@ -3263,6 +3342,9 @@ const SNAP_KEYWORDS = [
 // 3. DOPPI SCATTI: cooldown 3s + svuotamento buffer dopo il match (la stessa frase
 //    può comparire in due trascrizioni consecutive parziale+completa).
 function checkVoiceSnapCommand(text){
+  // Col function calling attivo, è il modello a decidere quando scattare (tool
+  // "guarda_davanti"): il vecchio match testuale va disattivato per non fare doppi scatti.
+  if(VISION_TOOL_ENABLED){return;}
   if(!camActive){return;}
   if(!ws||ws.readyState!==WebSocket.OPEN){return;}
   const now=Date.now();
@@ -3970,7 +4052,13 @@ function buildSystemPrompt(){
   // Copre il caso residuo in cui la risposta parte prima che foto+nudge arrivino:
   // invece di inventare, il personaggio prende tempo con una frase-ponte; il nudge
   // che segue la foto interrompe comunque e fa partire la descrizione reale.
-  const visionRules = (VIDEO_CAPTURE_MODE==='keyword')
+  const visionRules = VISION_TOOL_ENABLED
+    ? '\n\n---\nREGOLE VISIONE (importanti): hai a disposizione lo strumento "guarda_davanti" che scatta una foto reale di ciò che hai davanti. '
+      +'1) Quando l\'utente ti chiede di guardare, vedere o descrivere qualcosa di reale attorno a te, chiama lo strumento e attendi il risultato prima di rispondere: NON inventare MAI ciò che vedi. '
+      +'2) Se il risultato conferma che l\'immagine è stata inviata, descrivi SOLO ciò che è realmente presente. '
+      +'3) Se il risultato indica che la visione non è attiva, dillo in modo sincero e naturale nel tuo personaggio, ad esempio "Ora non ho la visione attiva", senza inventare nulla e senza fingere di vedere. '
+      +'4) Non menzionare mai lo strumento, la parola "funzione", il "sistema" o le foto "scattate": per il pubblico stai semplicemente guardando (o, se non è attiva, non guardando) con i tuoi occhi.'
+    : (VIDEO_CAPTURE_MODE==='keyword')
     ? '\n\n---\nREGOLE VISIONE (importanti): quando ti chiedono cosa vedi o cosa stai guardando, '
       +'una foto reale viene scattata e ti arriva IMMEDIATAMENTE DOPO la domanda, seguita da un messaggio che inizia con [VISIONE]. '
       +'1) Se la domanda riguarda ciò che vedi ma NON hai ancora ricevuto un\'immagine recente, NON inventare MAI: '
