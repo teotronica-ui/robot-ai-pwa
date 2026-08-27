@@ -1016,13 +1016,12 @@ const VISION_TOOL_DECL = {
   description: 'Scatta una foto reale di ciò che hai fisicamente davanti in questo momento e te la fornisce, così puoi descrivere ciò che vedi davvero invece di immaginarlo. CHIAMA questa funzione ogni volta che l\'utente ti chiede di osservare, guardare, vedere o descrivere qualcosa di reale nell\'ambiente attorno a te: una persona, un oggetto, un luogo, un colore, ciò che ti sta davanti o intorno. Esempi in cui DEVI chiamarla: "cosa vedi?", "cosa hai davanti?", "guarda dietro di te", "descrivimi questa persona", "che colore ha la mia maglietta?", "chi c\'è qui intorno?", "riesci a vedere il mio cappello?", "guardami, come sono vestito?", "dai un\'occhiata a cosa c\'è sul tavolo". NON chiamare questa funzione quando "vedere" o "guardare" sono usati come modi di dire, in senso figurato, o non si riferiscono a osservare davvero l\'ambiente. Esempi in cui NON devi chiamarla: "vedi che avevo ragione", "fammi vedere se ho capito", "guarda che sei simpatico", "si vede che sei in gamba", "vediamo un po\' cosa sai fare", "guarda caso", "non vedo l\'ora", "vedrai che ci divertiamo", "guarda un po\'..." detto come intercalare. Il criterio non sono le parole "vedere" o "guardare" in sé, ma se l\'utente ti sta chiedendo un\'osservazione reale di ciò che ti circonda adesso. Nel dubbio, se la frase non riguarda chiaramente qualcosa di fisico e presente attorno a te, NON chiamare la funzione e continua a conversare normalmente.',
   parameters: { type: 'object', properties: {} }
 };
-// TEST DIAGNOSTICO "indietro di uno": ritardo (ms) tra invio del frame e invio della
-// toolResponse che sblocca il modello. Serve a dare al frame realtimeInput il tempo di
-// entrare nel contesto PRIMA che parta la descrizione. Il modello su 3.1 è comunque
-// bloccato in attesa, quindi il ritardo non degrada l'esperienza. Metti 0 per disattivarlo.
-// Se anche con questo resta "indietro di uno", il problema è strutturale (non temporale)
-// e si passa al piano B (frame recente sempre presente via streaming a basso rate).
-const VISION_TOOLRESP_DELAY_MS = 1200;
+// Flusso "prendi tempo": alla 1ª richiesta ("cosa vedi?") il robot scatta e prende
+// tempo; alla richiesta ravvicinata successiva ("cosa hai visto?") descrive l'immagine
+// ormai consolidata SENZA riscattare. lastVisionSnapAt marca l'orario del primo scatto;
+// entro questa finestra un nuovo toolCall è trattato come "descrivi", non "scatta".
+let lastVisionSnapAt = 0;
+const VISION_REDESCRIBE_WINDOW_MS = 30000;
 
 // ═══ GATE VOCE ADATTIVO (modalità 'voice') ═══
 // Niente soglia fissa da tarare a mano: il sistema stima in continuo il rumore
@@ -3300,19 +3299,31 @@ function handleVisionToolCall(toolCall){
       const id=fc.id, name=fc.name;
       if(name==='guarda_davanti'){
         if(!camActive){
-          dbg('👁 toolCall guarda_davanti · cam spenta → "visione non attiva"');
+          dbg('👁 toolCall · cam spenta → "visione non attiva"');
+          lastVisionSnapAt = 0;
           sendVisionToolResponse(id, name, {vision_available:false, note:'La visione non è attiva in questo momento. Comunica in modo sincero che ora non hai la visione attiva, senza inventare.'});
           return;
         }
-        dbg('👁 toolCall guarda_davanti · scatto in corso...');
-        // Scatta col percorso collaudato (no nudge); la toolResponse parte in onSent.
+        // FASE 2 — RICHIESTA RAVVICINATA ("cosa hai visto?"): l'immagine del primo
+        // scatto è ormai nel contesto. NON riscattiamo: diciamo al modello di descriverla.
+        // Questo rende impossibile il doppio scatto anche se il modello richiama il tool.
+        const now = Date.now();
+        if(lastVisionSnapAt && (now - lastVisionSnapAt) < VISION_REDESCRIBE_WINDOW_MS){
+          dbg('👁 toolCall · richiesta ravvicinata → descrivi immagine già scattata (no re-scatto)');
+          lastVisionSnapAt = 0; // consumata: il prossimo "cosa vedi" scatterà fresco
+          sendVisionToolResponse(id, name, {vision_available:true, note:'L\'immagine che hai richiesto è ora disponibile: descrivi SOLO ciò che è realmente presente in essa, restando nel personaggio. Non scattare di nuovo.'});
+          return;
+        }
+        // FASE 1 — PRIMA RICHIESTA ("cosa vedi?"): scatta e fai prendere tempo al modello.
+        // La descrizione arriverà quando l'utente richiederà (es. "cosa hai visto?"), con
+        // l'immagine ormai consolidata nel contesto.
+        dbg('👁 toolCall · scatto in corso (fase 1: prendi tempo)...');
         doSnap(false, (ok)=>{
           if(ok){
-            // Ritardo diagnostico: diamo tempo al frame di entrare nel contesto prima
-            // di sbloccare il modello (che intanto è fermo in attesa). Vedi costante sopra.
-            const _send=()=>sendVisionToolResponse(id, name, {vision_available:true, note:'Immagine catturata e inviata. Descrivi SOLO ciò che è realmente presente nell\'immagine, restando nel personaggio.'});
-            if(VISION_TOOLRESP_DELAY_MS>0){ setTimeout(_send, VISION_TOOLRESP_DELAY_MS); } else { _send(); }
+            lastVisionSnapAt = Date.now();
+            sendVisionToolResponse(id, name, {vision_available:true, captured:true, note:'Foto scattata. Di\' SOLO una brevissima frase d\'attesa nel tuo personaggio (es. "aspetta che guardo bene...") e NON descrivere ancora nulla: l\'immagine sarà pronta tra un istante. Descriverai quando l\'utente te lo richiederà.'});
           } else {
+            lastVisionSnapAt = 0;
             sendVisionToolResponse(id, name, {vision_available:false, note:'La visione non è attiva in questo momento. Comunica in modo sincero che ora non hai la visione attiva, senza inventare.'});
           }
         });
@@ -4063,11 +4074,12 @@ function buildSystemPrompt(){
   // invece di inventare, il personaggio prende tempo con una frase-ponte; il nudge
   // che segue la foto interrompe comunque e fa partire la descrizione reale.
   const visionRules = VISION_TOOL_ENABLED
-    ? '\n\n---\nREGOLE VISIONE (importanti): hai a disposizione lo strumento "guarda_davanti" che scatta una foto reale di ciò che hai davanti. '
-      +'1) Quando l\'utente ti chiede di guardare, vedere o descrivere qualcosa di reale attorno a te, chiama lo strumento e attendi il risultato prima di rispondere: NON inventare MAI ciò che vedi. '
-      +'2) Se il risultato conferma che l\'immagine è stata inviata, descrivi SOLO ciò che è realmente presente. '
-      +'3) Se il risultato indica che la visione non è attiva, dillo in modo sincero e naturale nel tuo personaggio, ad esempio "Ora non ho la visione attiva", senza inventare nulla e senza fingere di vedere. '
-      +'4) Non menzionare mai lo strumento, la parola "funzione", il "sistema" o le foto "scattate": per il pubblico stai semplicemente guardando (o, se non è attiva, non guardando) con i tuoi occhi.'
+    ? '\n\n---\nREGOLE VISIONE (importanti): hai lo strumento "guarda_davanti" che scatta una foto reale di ciò che hai davanti. '
+      +'1) Quando l\'utente ti chiede di guardare, vedere o descrivere qualcosa di reale attorno a te, chiama lo strumento UNA volta e segui ciò che la sua risposta ti dice. '
+      +'2) Se la risposta dice di prendere tempo, di\' SOLO una brevissima frase d\'attesa nel tuo personaggio (es. "aspetta che guardo bene...") e NON descrivere ancora nulla: l\'immagine non è ancora pronta. '
+      +'3) Quando l\'utente ti richiede cosa hai visto, NON chiamare di nuovo lo strumento: descrivi l\'immagine che ora hai a disposizione, SOLO ciò che è realmente presente, senza inventare. '
+      +'4) Se una risposta dice che la visione non è attiva, dillo in modo sincero e naturale (es. "Ora non ho la visione attiva"), senza fingere di vedere. '
+      +'5) Non menzionare mai lo strumento, la parola "funzione", il "sistema" o le foto "scattate": per il pubblico stai semplicemente guardando (o, se non è attiva, non guardando) con i tuoi occhi.'
     : (VIDEO_CAPTURE_MODE==='keyword')
     ? '\n\n---\nREGOLE VISIONE (importanti): quando ti chiedono cosa vedi o cosa stai guardando, '
       +'una foto reale viene scattata e ti arriva IMMEDIATAMENTE DOPO la domanda, seguita da un messaggio che inizia con [VISIONE]. '
