@@ -3304,6 +3304,15 @@ function handleVisionToolCall(toolCall){
           sendVisionToolResponse(id, name, {vision_available:false, note:'La visione non è attiva in questo momento. Comunica in modo sincero che ora non hai la visione attiva, senza inventare.'});
           return;
         }
+        // MODALITÀ STREAMING (voice/continuous): la camera invia già frame freschi ogni
+        // secondo, quindi l'immagine è di fatto in tempo reale nel contesto. Non scattiamo
+        // e non prendiamo tempo: diciamo al modello di descrivere subito ciò che vede ORA.
+        if(VIDEO_CAPTURE_MODE === 'voice' || VIDEO_CAPTURE_MODE === 'continuous'){
+          dbg('👁 toolCall · modalità streaming → descrivi in tempo reale (no scatto, no attesa)');
+          lastVisionSnapAt = 0;
+          sendVisionToolResponse(id, name, {vision_available:true, realtime:true, note:'Stai già vedendo in tempo reale. Descrivi SUBITO e SOLO ciò che è realmente davanti a te ORA, restando nel personaggio, senza inventare e senza prendere tempo.'});
+          return;
+        }
         // FASE 2 — RICHIESTA RAVVICINATA ("cosa hai visto?"): l'immagine del primo
         // scatto è ormai nel contesto. NON riscattiamo: diciamo al modello di descriverla.
         // Questo rende impossibile il doppio scatto anche se il modello richiama il tool.
