@@ -1016,6 +1016,13 @@ const VISION_TOOL_DECL = {
   description: 'Scatta una foto reale di ciò che hai fisicamente davanti in questo momento e te la fornisce, così puoi descrivere ciò che vedi davvero invece di immaginarlo. CHIAMA questa funzione ogni volta che l\'utente ti chiede di osservare, guardare, vedere o descrivere qualcosa di reale nell\'ambiente attorno a te: una persona, un oggetto, un luogo, un colore, ciò che ti sta davanti o intorno. Esempi in cui DEVI chiamarla: "cosa vedi?", "cosa hai davanti?", "guarda dietro di te", "descrivimi questa persona", "che colore ha la mia maglietta?", "chi c\'è qui intorno?", "riesci a vedere il mio cappello?", "guardami, come sono vestito?", "dai un\'occhiata a cosa c\'è sul tavolo". NON chiamare questa funzione quando "vedere" o "guardare" sono usati come modi di dire, in senso figurato, o non si riferiscono a osservare davvero l\'ambiente. Esempi in cui NON devi chiamarla: "vedi che avevo ragione", "fammi vedere se ho capito", "guarda che sei simpatico", "si vede che sei in gamba", "vediamo un po\' cosa sai fare", "guarda caso", "non vedo l\'ora", "vedrai che ci divertiamo", "guarda un po\'..." detto come intercalare. Il criterio non sono le parole "vedere" o "guardare" in sé, ma se l\'utente ti sta chiedendo un\'osservazione reale di ciò che ti circonda adesso. Nel dubbio, se la frase non riguarda chiaramente qualcosa di fisico e presente attorno a te, NON chiamare la funzione e continua a conversare normalmente.',
   parameters: { type: 'object', properties: {} }
 };
+// TEST DIAGNOSTICO "indietro di uno": ritardo (ms) tra invio del frame e invio della
+// toolResponse che sblocca il modello. Serve a dare al frame realtimeInput il tempo di
+// entrare nel contesto PRIMA che parta la descrizione. Il modello su 3.1 è comunque
+// bloccato in attesa, quindi il ritardo non degrada l'esperienza. Metti 0 per disattivarlo.
+// Se anche con questo resta "indietro di uno", il problema è strutturale (non temporale)
+// e si passa al piano B (frame recente sempre presente via streaming a basso rate).
+const VISION_TOOLRESP_DELAY_MS = 1200;
 
 // ═══ GATE VOCE ADATTIVO (modalità 'voice') ═══
 // Niente soglia fissa da tarare a mano: il sistema stima in continuo il rumore
@@ -3301,7 +3308,10 @@ function handleVisionToolCall(toolCall){
         // Scatta col percorso collaudato (no nudge); la toolResponse parte in onSent.
         doSnap(false, (ok)=>{
           if(ok){
-            sendVisionToolResponse(id, name, {vision_available:true, note:'Immagine catturata e inviata. Descrivi SOLO ciò che è realmente presente nell\'immagine, restando nel personaggio.'});
+            // Ritardo diagnostico: diamo tempo al frame di entrare nel contesto prima
+            // di sbloccare il modello (che intanto è fermo in attesa). Vedi costante sopra.
+            const _send=()=>sendVisionToolResponse(id, name, {vision_available:true, note:'Immagine catturata e inviata. Descrivi SOLO ciò che è realmente presente nell\'immagine, restando nel personaggio.'});
+            if(VISION_TOOLRESP_DELAY_MS>0){ setTimeout(_send, VISION_TOOLRESP_DELAY_MS); } else { _send(); }
           } else {
             sendVisionToolResponse(id, name, {vision_available:false, note:'La visione non è attiva in questo momento. Comunica in modo sincero che ora non hai la visione attiva, senza inventare.'});
           }
