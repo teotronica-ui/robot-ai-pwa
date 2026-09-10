@@ -459,6 +459,12 @@
       <button class="bcan" onclick="closeCharEd()">✕</button>
     </div>
   </div>
+  <!-- Carica personaggio da file .txt: riusa la funzione importChar già esistente,
+       stesso stile del pulsante "Carica file" della Conoscenza. Solo elemento nuovo. -->
+  <div class="upl" onclick="document.getElementById('fCharLoad').click()" style="margin-top:8px">
+    <input type="file" id="fCharLoad" accept=".txt" onchange="importChar(this)">
+    📂 Carica file .txt come nuovo personaggio
+  </div>
   <div class="r2" style="margin-top:10px">
     <div class="f"><label>Voce Gemini</label>
       <select id="selVoice">
