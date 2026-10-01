@@ -513,7 +513,7 @@
         <option value="gemini-3.1-flash-live-preview" selected>Gemini 3.1 Flash Live ✨ NEW</option>
         <option value="gemini-2.5-flash-native-audio-preview-12-2025">Gemini 2.5 Flash NA Dec-2025 ✅</option>
         <option value="gemini-2.5-flash-native-audio-preview-09-2025">Gemini 2.5 Flash NA Sep-2025</option>
-        <option value="gemini-2.0-flash-live-001">Gemini 2.0 Flash Live</option>
+        <option value="gemini-3.8-live">Gemini 3.8 Live 🧪 GA (in test)</option>
       </select>
     </div>
   </div>
@@ -832,11 +832,12 @@ const INPUT_SR=16000, OUTPUT_SR=24000;
 // Su 3.1 il text input ($0.75) e text output ($4.50) sono più economici dell'audio
 // ($3 in / $12 out) ma il tuo uso è prevalentemente audio, quindi sovrastimiamo di poco.
 const PRICES={
-  'gemini-2.0-flash-live-001':{ai:0.5,ao:2.0},
   'gemini-2.5-flash-native-audio-preview-09-2025':{ai:3.0,ao:12.0},
   'gemini-2.5-flash-native-audio-preview-12-2025':{ai:3.0,ao:12.0},
   'gemini-2.5-flash-native-audio-latest':{ai:3.0,ao:12.0},
-  'gemini-3.1-flash-live-preview':{ai:3.0,ao:12.0}
+  'gemini-3.1-flash-live-preview':{ai:3.0,ao:12.0},
+  // 3.8 Live: stessa tabella prezzi ufficiale del 3.1 (ai.google.dev/gemini-api/docs/pricing, set. 2026)
+  'gemini-3.8-live':{ai:3.0,ao:12.0}
 };
 // Tassi token (per stima, sovrascritti da usageMetadata quando arriva)
 const TOK_RATE_AUDIO_IN=32, TOK_RATE_AUDIO_OUT=32, TOK_RATE_VIDEO=258;
@@ -870,6 +871,23 @@ const WS_KEEPALIVE_MS = 30000; // ping cliente per mantenere viva la TCP
 let CAM_RELEASE_MS    = 350;
 const MODELS_NATIVE_AUDIO = ['gemini-2.5-flash-native-audio-preview-09-2025','gemini-2.5-flash-native-audio-preview-12-2025','gemini-2.5-flash-native-audio-latest'];
 const MODELS_LIVE_31 = ['gemini-3.1-flash-live-preview'];
+// ═══ GEMINI 3.8 LIVE (GA, 15 set 2026) ═══
+// Differenze rispetto al 3.1, dalla guida di migrazione ufficiale
+// (ai.google.dev/gemini-api/docs/models/gemini-3.8-live):
+// - thinkingLevel NON supportato → non va inviato. Garantito automaticamente:
+//   il 3.8 non è in MODELS_LIVE_31 né in MODELS_NATIVE_AUDIO, quindi sendSetup
+//   non aggiunge alcun thinkingConfig e il pannello Thinking resta nascosto.
+// - Function calling ASINCRONO di default → sul tool visione impostiamo
+//   behavior:'BLOCKING' (modalità sincrona, come il 3.1) per non far parlare
+//   il robot "alla cieca" prima di ricevere la foto.
+// - Proactive audio sempre attivo, affective dialog rimosso: questo file non
+//   invia nessuno dei due parametri, quindi nessuna modifica necessaria.
+const MODELS_LIVE_38 = ['gemini-3.8-live'];
+// temperature è stata deprecata a luglio 2026 per i modelli testuali, ma la guida
+// di migrazione del 3.8 Live non ne parla: non è documentato se venga accettata.
+// true  = invia temperature come per il 3.1 (comportamento identico).
+// false = la omette SOLO per il 3.8 (usare se il setup 3.8 viene rifiutato).
+const SEND_TEMPERATURE_38 = true;
 
 // ═══════════════════════════════════════════════════════════════
 // PLATFORM — rilevamento OS una tantum (file unico universale)
@@ -2117,6 +2135,13 @@ function sendSetup(){
     const lv = document.getElementById('selThink31')?.value || 'minimal';
     generationConfig.thinkingConfig = {thinkingLevel: lv};
   }
+  // Solo Gemini 3.8: nessun thinkingConfig (già garantito sopra) e temperature
+  // opzionale tramite SEND_TEMPERATURE_38. Il 3.1 non entra mai in questo ramo.
+  const isLive38 = MODELS_LIVE_38.includes(model);
+  if(isLive38 && !SEND_TEMPERATURE_38){
+    delete generationConfig.temperature;
+    dbg('ℹ️ 3.8: temperature omessa (SEND_TEMPERATURE_38=false)');
+  }
 
   // ── setup principale ─────────────────────────────────────────────
   const setup={
@@ -2181,7 +2206,14 @@ function sendSetup(){
   // Dichiara "guarda_davanti" per tutta la sessione. Solo dichiarato: se nessuno
   // chiede di guardare, il modello non lo chiama mai e la conversazione è invariata.
   if(VISION_TOOL_ENABLED){
-    setup.tools = [{ functionDeclarations: [VISION_TOOL_DECL] }];
+    if(isLive38){
+      // 3.8: function calling asincrono di default → forziamo BLOCKING così il
+      // modello aspetta la toolResponse (foto) come sul 3.1. Copia dell'oggetto:
+      // VISION_TOOL_DECL originale resta intatto per tutti gli altri modelli.
+      setup.tools = [{ functionDeclarations: [Object.assign({}, VISION_TOOL_DECL, {behavior:'BLOCKING'})] }];
+    } else {
+      setup.tools = [{ functionDeclarations: [VISION_TOOL_DECL] }];
+    }
   }
 
   const msg=JSON.stringify({setup:setup});
@@ -2211,6 +2243,11 @@ function sendSess(){
     let upd;
     if(isLive31){
       upd = { realtimeInput: { text: updateText } };
+    } else if(MODELS_LIVE_38.includes(model)){
+      // 3.8: stesso metodo del 3.1 (realtimeInput.text, documentato per il 3.8).
+      // NON usiamo clientContent con turnComplete:false: sul 3.8 il server
+      // attenderebbe altri messaggi prima di rispondere (doc migrazione 3.8).
+      upd = { realtimeInput: { text: updateText } };
     } else {
       // Comportamento INVARIATO per Gemini 2.5 native-audio e 2.0:
       // clientContent con role 'user' come messaggio di aggiornamento istruzioni.
@@ -2225,7 +2262,7 @@ function sendSess(){
       };
     }
     ws.send(JSON.stringify(upd));
-    dbg('🔄 sendSess: aggiornamento system prompt inviato ('+(isLive31?'realtimeInput.text':'clientContent')+')');
+    dbg('🔄 sendSess: aggiornamento system prompt inviato ('+((isLive31||MODELS_LIVE_38.includes(model))?'realtimeInput.text':'clientContent')+')');
   }catch(e){
     dbg('❌ sendSess: '+e.message);
   }
@@ -4154,7 +4191,7 @@ function addTok(u){
   // token contati direttamente in onMsg per Gemini
 }
 function renderCost(){
-  const P=PRICES[document.getElementById('selModel').value]||PRICES['gemini-2.0-flash-live-001'];
+  const P=PRICES[document.getElementById('selModel').value]||PRICES['gemini-3.1-flash-live-preview'];
   // Output mostrato = totale confermato (tok.ao) + stima del turno in corso (aoEstimateTurn).
   // Quando arriva usageMetadata, aoEstimateTurn viene azzerato (vedi onMsg).
   const aoDisplay = tok.ao + (tok.aoEstimateTurn||0);
