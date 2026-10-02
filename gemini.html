@@ -169,6 +169,8 @@
     .knowRow .ktitle{font-size:.62rem;color:var(--muted);font-family:var(--mono);font-weight:400;margin-top:1px}
     .knowRow .kedit{background:transparent;border:none;color:var(--muted);font-size:1rem;cursor:pointer;padding:2px 6px;border-radius:5px}
     .knowRow .kedit:active{background:var(--bord)}
+    /* Riconoscimento persone: miniatura foto di riferimento */
+    .knowRow .fthumb{width:44px;height:44px;border-radius:6px;object-fit:cover;flex-shrink:0;border:1px solid var(--bord)}
     .brow{display:flex;gap:7px;flex-wrap:wrap}
     .bs{flex:1;min-width:80px;padding:10px 7px;background:var(--surf);border:1px solid var(--bord);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:.76rem;font-weight:700;cursor:pointer;text-align:center;transition:all .15s}
     .bs:active{background:var(--bord)}
@@ -664,6 +666,22 @@
   </div>
 </div>
 
+<!-- RICONOSCIMENTO PERSONE (foto di riferimento) -->
+<div class="card">
+  <div class="card-hd">🧑 Riconoscimento persone <span style="color:var(--muted);font-size:.57rem">— foto di riferimento</span></div>
+  <div style="font-size:.62rem;color:var(--muted);font-family:var(--mono);margin-bottom:8px;line-height:1.45">
+    Le foto con la spunta vengono inviate a Gemini all'avvio di ogni nuova sessione
+    (max 3 attive). Le modifiche valgono dalla <b>prossima connessione</b>.
+    Usa solo foto di persone che hanno dato il consenso.
+  </div>
+  <div id="faceList" style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px"></div>
+  <div class="f"><label>Chi è (es. "Matteo Suzzi, il tuo inventore")</label><input type="text" id="faceName" maxlength="80" placeholder="Nome e ruolo della persona..."></div>
+  <div class="upl" onclick="document.getElementById('fFace').click()">
+    <input type="file" id="fFace" accept="image/*" onchange="addFacePhoto(this)">
+    📷 Aggiungi foto (viso ben visibile e illuminato)
+  </div>
+</div>
+
 <!-- IMPORT/EXPORT PERSONAGGIO -->
 <div class="card">
   <div class="card-hd">📤 Import / Export Personaggio</div>
@@ -1135,6 +1153,24 @@ function updateVidFps(sliderVal){
 let knowList=[];
 let activeKnowNames=[];
 let editingKnow=null; // nome conoscenza in editing (null = nuovo)
+// ═══ RICONOSCIMENTO PERSONE (foto di riferimento) ═══
+// Meccanismo documentato: setup.historyConfig.initialHistoryInClientContent=true
+// → dopo setupComplete il server elabora i clientContent finché turnComplete=true,
+// senza far partire una risposta; poi si prosegue con realtimeInput.
+// REGOLE DI SICUREZZA:
+// 1. Nessuna foto attiva → setup e flusso IDENTICI a prima (nessun campo aggiunto).
+// 2. Foto inviate SOLO su sessione nuova (sessionHandle==null), mai in resumption.
+// 3. historyConfig dichiarato SOLO se il messaggio foto è già costruito e pronto,
+//    altrimenti il server resterebbe in attesa → robot muto.
+// 4. Interruttore: se il WS si chiude entro FACE_SEED_FAIL_WINDOW_MS dall'invio,
+//    il riconoscimento si disattiva fino al ricaricamento pagina (no loop riconnessioni).
+const LS_FACES='robot_face_refs';
+const FACE_MAX_STORED=6, FACE_MAX_ACTIVE=3, FACE_MAX_SIDE=768, FACE_JPEG_Q=0.85;
+const FACE_SEED_FAIL_WINDOW_MS=8000;
+let faceList=[];               // [{id,name,active,data(base64 jpeg senza prefisso)}]
+let pendingFaceSeedMsg=null;   // JSON pronto da inviare al prossimo setupComplete
+let faceSeedSentAt=0;          // timestamp invio (per l'interruttore di sicurezza)
+let faceSeedDisabled=false;    // true dopo un rifiuto: niente foto fino a reload
 let robotMsgEl=null, robotTxt='';
 // ═══ CHAT LOG (per export .txt al disconnetti) ═══
 // Accumula solo messaggi user/robot completi (no sys). Si azzera ad ogni nuova conn().
@@ -1193,6 +1229,7 @@ function init(){
     }
   }, 10000);
   buildVU(); loadKey(); renderChars(); loadKnowLS(); updVadUI();
+  try{ loadFacesLS(); }catch(e){ dbg('⚠️ loadFacesLS init: '+e.message); }
   // Ripristina sessionHandle (entro 2h ancora valido per resumption)
   try{
     const h=sessionStorage.getItem(SS_SESSION_HANDLE);
@@ -2032,6 +2069,15 @@ async function conn(){
     ws.onerror=e=>{console.error('[WS]',e);dbg('❌ WS errore');health('err','WS errore');};
     ws.onclose=e=>{
       dbg('🔌 WS chiuso: '+e.code+(e.reason?' '+e.reason:''));
+      // Interruttore riconoscimento persone: chiusura a ridosso dell'invio foto
+      // = probabile rifiuto da parte di Gemini → niente foto fino al reload pagina,
+      // così la riconnessione automatica riparte SENZA foto e il robot continua a parlare.
+      if(faceSeedSentAt && (Date.now()-faceSeedSentAt) < FACE_SEED_FAIL_WINDOW_MS){
+        faceSeedDisabled=true;
+        dbg('⚠️ WS chiuso '+(Date.now()-faceSeedSentAt)+'ms dopo l\'invio foto → riconoscimento DISATTIVATO fino a ricarica pagina');
+        try{ addMsg('⚠️ Gemini ha chiuso la connessione dopo le foto: riconoscimento disattivato','sys'); }catch{}
+      }
+      faceSeedSentAt=0;
       clearTimeout(wsTimeoutTimer);
       stopWsKeepalive();
       setupReady=false;
@@ -2213,6 +2259,20 @@ function sendSetup(){
       setup.tools = [{ functionDeclarations: [Object.assign({}, VISION_TOOL_DECL, {behavior:'BLOCKING'})] }];
     } else {
       setup.tools = [{ functionDeclarations: [VISION_TOOL_DECL] }];
+    }
+  }
+
+  // ── Riconoscimento persone: storia iniziale con foto di riferimento ──
+  // Solo su sessione NUOVA e solo se il messaggio è già costruito (regole 2 e 3).
+  // Senza foto attive non si aggiunge nulla: setup identico a prima.
+  pendingFaceSeedMsg=null;
+  if(!sessionHandle && !faceSeedDisabled){
+    let seed=null;
+    try{ seed=buildFaceSeedMsg(); }catch(e){ seed=null; dbg('⚠️ buildFaceSeedMsg: '+e.message); }
+    if(seed){
+      setup.historyConfig={initialHistoryInClientContent:true};
+      pendingFaceSeedMsg=seed;
+      dbg('🧑 Foto di riferimento pronte ('+Math.round(seed.length/1024)+' KB) → invio dopo setupComplete');
     }
   }
 
@@ -2437,6 +2497,26 @@ function onMsg(e){
 
   if('setupComplete' in m){
     clearTimeout(wsTimeoutTimer);
+    // ═══ RICONOSCIMENTO PERSONE: storia iniziale PRIMA di abilitare l'audio ═══
+    // Inviata qui, prima di setupReady=true: nessun chunk audio/video può precederla
+    // (JS single-thread + WebSocket ordinato). Se l'invio fallisce il server resterebbe
+    // in attesa → disattiviamo le foto e riconnettiamo senza.
+    if(pendingFaceSeedMsg){
+      const seedMsg=pendingFaceSeedMsg; pendingFaceSeedMsg=null;
+      try{
+        ws.send(seedMsg);
+        faceSeedSentAt=Date.now();
+        const nF=faceList.filter(f=>f.active).length;
+        dbg('🧑 Foto di riferimento inviate ('+nF+') · '+Math.round(seedMsg.length/1024)+' KB');
+        addMsg('🧑 Riconoscimento attivo: '+nF+' foto di riferimento','sys');
+      }catch(e){
+        dbg('❌ invio foto riferimento: '+e.message+' → disattivo foto e riconnetto');
+        faceSeedDisabled=true;
+        toast('⚠️ Foto non inviate: riconnessione senza riconoscimento');
+        disc(); if(!userDisconnected) scheduleReconnect();
+        return;
+      }
+    }
     setupReady=true;
     connected=true;updBtn();setSt('listening');dot('dAI','on');
     reconnectCount=0;hideReconnBar();
@@ -3733,6 +3813,7 @@ function exportBackup(){
     // Modalità cattura video (continuous | voice)
     try{const v=localStorage.getItem(LS_VID_MODE); if(v) backup.data.vidMode=v;}catch(e){}
     try{const v=localStorage.getItem(LS_SNAP_PHRASES); if(v) backup.data.snapPhrases=v;}catch(e){} // STEP 7
+    try{const v=localStorage.getItem(LS_FACES); if(v) backup.data.facePhotos=JSON.parse(v);}catch(e){} // Riconoscimento persone
     // API key SOLO se richiesto esplicitamente
     if(includeKey){
       try{const v=localStorage.getItem(LS_KEY); if(v) backup.data.apiKey=v;}catch(e){}
@@ -3814,6 +3895,16 @@ function importBackup(inp){
           localStorage.setItem(LS_KNOW_ACTIVE, JSON.stringify(activeKnowNames));
         }catch(e){}
       }
+      // Riconoscimento persone (foto di riferimento) — assente nei backup vecchi: nessun effetto
+      if(Array.isArray(d.facePhotos)){
+        try{
+          const valid=d.facePhotos.filter(f=>f&&typeof f==='object'&&f.id&&f.name&&typeof f.data==='string'&&f.data.length>0).slice(0,FACE_MAX_STORED);
+          let nAct=0; valid.forEach(f=>{ f.active=!!f.active&&nAct<FACE_MAX_ACTIVE; if(f.active) nAct++; });
+          localStorage.setItem(LS_FACES, JSON.stringify(valid));
+          faceList=valid; renderFaceList();
+          imported.push(valid.length+' foto riconoscimento');
+        }catch(e){dbg('❌ import facePhotos: '+e.message);}
+      }
       // Soglia rumore
       // Soglia rumore: chiave conservata per retro-compatibilità dei backup,
       // ma lo slider è stato rimosso (causava blocco del VAD gate).
@@ -3885,6 +3976,119 @@ function importBackup(inp){
   };
   r.onerror = () => { toast('❌ Errore lettura file'); inp.value=''; };
   r.readAsText(file);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RICONOSCIMENTO PERSONE — foto di riferimento (vedi regole in testa allo stato)
+// ═══════════════════════════════════════════════════════════════
+function loadFacesLS(){
+  try{
+    const s=localStorage.getItem(LS_FACES);
+    const arr=s?JSON.parse(s):[];
+    faceList=Array.isArray(arr)?arr.filter(f=>f&&typeof f==='object'&&f.id&&f.name&&typeof f.data==='string'&&f.data.length>0):[];
+  }catch(e){ faceList=[]; dbg('⚠️ loadFacesLS: '+e.message); }
+  renderFaceList();
+}
+function saveFacesLS(){
+  try{ localStorage.setItem(LS_FACES, JSON.stringify(faceList)); return true; }
+  catch(e){ toast('⚠️ Spazio insufficiente per salvare la foto'); dbg('❌ saveFacesLS: '+e.message); return false; }
+}
+function renderFaceList(){
+  const cont=document.getElementById('faceList');
+  if(!cont) return;
+  if(!faceList.length){
+    cont.innerHTML='<div style="color:var(--muted);font-size:.7rem;font-family:var(--mono);text-align:center;padding:6px">Nessuna foto salvata.</div>';
+    return;
+  }
+  cont.innerHTML='';
+  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  faceList.forEach(f=>{
+    const row=document.createElement('div');
+    row.className='knowRow'+(f.active?' active':'');
+    const safeId='fc_'+String(f.id).replace(/[^a-zA-Z0-9]/g,'_');
+    row.innerHTML=
+      '<input type="checkbox" id="'+safeId+'" '+(f.active?'checked':'')+'>'
+      +'<img class="fthumb" alt="">'
+      +'<label for="'+safeId+'" style="flex:1;cursor:pointer;min-width:0"><div class="kname">'+esc(f.name)+'</div></label>'
+      +'<button class="kedit" title="Elimina">🗑</button>';
+    row.querySelector('img').src='data:image/jpeg;base64,'+f.data;
+    const chk=row.querySelector('input[type=checkbox]');
+    chk.addEventListener('change',()=>toggleFace(f.id, chk.checked));
+    row.querySelector('.kedit').addEventListener('click',()=>delFace(f.id));
+    cont.appendChild(row);
+  });
+}
+function faceChangedNote(){
+  faceSeedDisabled=false; // l'utente ha modificato le foto: consentiamo un nuovo tentativo
+  if(connected) addMsg('🧑 Foto aggiornate: valgono dalla prossima connessione','sys');
+}
+function toggleFace(id, checked){
+  const f=faceList.find(x=>x.id===id); if(!f) return;
+  if(checked && faceList.filter(x=>x.active).length>=FACE_MAX_ACTIVE){
+    toast('⚠️ Massimo '+FACE_MAX_ACTIVE+' foto attive'); renderFaceList(); return;
+  }
+  f.active=!!checked; saveFacesLS(); renderFaceList(); faceChangedNote();
+}
+function delFace(id){
+  const f=faceList.find(x=>x.id===id); if(!f) return;
+  if(!confirm('Eliminare la foto di "'+f.name+'"?')) return;
+  faceList=faceList.filter(x=>x.id!==id); saveFacesLS(); renderFaceList(); faceChangedNote();
+}
+// Ridimensiona (lato lungo max FACE_MAX_SIDE) e ricomprime in JPEG: foto leggere
+// per localStorage e per il messaggio WebSocket.
+function addFacePhoto(inp){
+  const file=inp.files&&inp.files[0];
+  const name=(document.getElementById('faceName').value||'').trim().slice(0,80);
+  if(!file){ return; }
+  if(!name){ toast('⚠️ Scrivi prima chi è la persona'); inp.value=''; return; }
+  if(faceList.length>=FACE_MAX_STORED){ toast('⚠️ Massimo '+FACE_MAX_STORED+' foto salvate'); inp.value=''; return; }
+  const url=URL.createObjectURL(file);
+  const img=new Image();
+  img.onload=()=>{
+    try{
+      const sc=Math.min(1, FACE_MAX_SIDE/Math.max(img.naturalWidth, img.naturalHeight));
+      const w=Math.max(1,Math.round(img.naturalWidth*sc)), h=Math.max(1,Math.round(img.naturalHeight*sc));
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      const dataUrl=cv.toDataURL('image/jpeg', FACE_JPEG_Q);
+      const b64=dataUrl.split(',')[1]||'';
+      if(!b64){ toast('❌ Conversione foto fallita'); return; }
+      const active=faceList.filter(x=>x.active).length<FACE_MAX_ACTIVE;
+      const entry={id:'f'+Date.now(), name, active, data:b64};
+      faceList.push(entry);
+      if(!saveFacesLS()){ faceList=faceList.filter(x=>x.id!==entry.id); return; }
+      document.getElementById('faceName').value='';
+      renderFaceList(); faceChangedNote();
+      toast('✅ Foto di "'+name+'" salvata'+(active?' e attiva':' (non attiva: limite raggiunto)'));
+      dbg('🧑 Foto riferimento aggiunta: '+w+'x'+h+' · '+Math.round(b64.length*0.75/1024)+' KB');
+    }catch(e){ toast('❌ Errore foto: '+e.message); dbg('❌ addFacePhoto: '+e.message); }
+    finally{ URL.revokeObjectURL(url); inp.value=''; }
+  };
+  img.onerror=()=>{ URL.revokeObjectURL(url); inp.value=''; toast('❌ Formato immagine non supportato'); };
+  img.src=url;
+}
+// Costruisce il messaggio clientContent con le foto attive. Ritorna null se non ce ne sono.
+// Termina con un turno 'model' (consentito dalla doc: "may end with model content")
+// e turnComplete:true, che chiude la fase di storia iniziale.
+function buildFaceSeedMsg(){
+  const act=faceList.filter(f=>f.active&&f.data).slice(0,FACE_MAX_ACTIVE);
+  if(!act.length) return null;
+  const parts=[{text:
+    '[FOTO DI RIFERIMENTO — NON sono ciò che vedi adesso]\n'
+   +'Le immagini seguenti sono foto di riferimento fornite dallo staff, con il consenso delle persone ritratte, '
+   +'per permetterti di riconoscerle durante l\'evento. Non descriverle e non parlarne come se le stessi vedendo ora.\n'
+   +'Quando guardi dalla telecamera: se una persona inquadrata corrisponde CHIARAMENTE a una di queste foto, '
+   +'salutala per nome restando nel tuo personaggio. Se non ne sei sicuro, non affermarlo: puoi chiedere in modo '
+   +'simpatico se è lei. Non attribuire mai questi nomi ad altre persone.'}];
+  act.forEach((f,i)=>{
+    parts.push({text:'Foto '+(i+1)+': '+f.name});
+    parts.push({inlineData:{mimeType:'image/jpeg', data:f.data}});
+  });
+  const turns=[
+    {role:'user', parts:parts},
+    {role:'model', parts:[{text:'Ho memorizzato le foto di riferimento. Le userò solo per riconoscere queste persone quando le vedrò dalla telecamera.'}]}
+  ];
+  return JSON.stringify({clientContent:{turns:turns, turnComplete:true}});
 }
 
 // ═══════════════════════════════════════════════════════════════
