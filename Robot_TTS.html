@@ -257,6 +257,51 @@
   <div class="charinfo" id="charInfo">— nessun personaggio —</div>
 </div>
 
+<!-- VOCE TTS (fase 2) — prova della voce Gemini 3.8 TTS: casella di testo + Parla -->
+<div class="card" id="ttsCard">
+  <div class="card-hd">🗣 Voce TTS — prova (Gemini 3.8 TTS)</div>
+  <div class="f">
+    <label>Modello voce</label>
+    <select id="ttsModel" onchange="ttsSavePrefs()"></select>
+  </div>
+  <div class="f">
+    <label>Voce del personaggio <span id="ttsCharName" style="color:var(--green)"></span></label>
+    <select id="ttsVoiceSel" onchange="ttsVoiceSelChg()"></select>
+  </div>
+  <div class="f" id="ttsVoiceIdRow" style="display:none">
+    <label>ID voce personalizzata (voice_…)</label>
+    <div class="crow">
+      <input type="text" id="ttsVoiceId" placeholder="voice_..." autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button class="bico" onclick="ttsCheckVoice()" title="Controlla scadenza">📅</button>
+    </div>
+    <div id="ttsVoiceInfo" style="font-size:.7rem;color:var(--muted);margin-top:5px"></div>
+  </div>
+  <div class="f">
+    <label>Stile voce (STILEVOCE) — corto, es. "allegra, ritmo da presentatrice"</label>
+    <input type="text" id="ttsStyle" placeholder="vuoto = naturale">
+  </div>
+  <div class="f">
+    <label>Dizionario pronuncia (una riga: parola=come si legge)</label>
+    <textarea id="ttsPron" rows="2" placeholder="Teotronica=Teo-tronica&#10;CONOE=Conòe"></textarea>
+  </div>
+  <div class="brow" style="margin-bottom:10px">
+    <button class="bs" onclick="ttsSaveChar()">💾 Salva voce per questo personaggio</button>
+  </div>
+  <div class="f">
+    <label>Testo da dire — tag voce tra &lt; &gt; in inglese (&lt;laugh&gt; &lt;short pause&gt;), [tono] tra quadre non viene letto</label>
+    <textarea id="ttsText" rows="3">Ciao ragassi! &lt;laugh&gt; Sono un robot romagnolo DOC. &lt;short pause&gt; [ironico] Fatto con le taniche, ma con un cuore grande così!</textarea>
+  </div>
+  <div class="brow">
+    <button class="bs" id="ttsBtnSpeak" style="border-color:var(--green);color:var(--green)" onclick="ttsSpeakBox()">▶ Parla</button>
+    <button class="bs dn" onclick="ttsStop()">⏹ Stop</button>
+    <button class="bs" id="ttsBtnWav" onclick="ttsSaveWav()" disabled>💾 WAV</button>
+  </div>
+  <label style="display:flex;gap:7px;align-items:center;font-size:.72rem;color:var(--muted);margin-top:9px">
+    <input type="checkbox" id="ttsStream" checked onchange="ttsSavePrefs()"> Streaming (l'audio parte mentre viene generato)
+  </label>
+  <div id="ttsInfo" style="font-family:var(--mono);font-size:.68rem;color:var(--muted);margin-top:9px;line-height:1.6">In attesa…</div>
+</div>
+
 <!-- VU + CHAT -->
 <div class="card">
   <div class="vu-top">
@@ -4753,7 +4798,300 @@ function toast(m){
   clearTimeout(_tt); _tt=setTimeout(()=>e.classList.remove('s'),3000);
 }
 
+// ═══════════════════════════════════════════════════════════════
+// VOCE TTS — Gemini 3.8 TTS via Interactions API (fase 2)
+// Doc: aistudio.google.com/docs/speech-generation (verificata 21/11/2026)
+// ═══════════════════════════════════════════════════════════════
+// Nomi dei modelli e prezzi in UN SOLO POSTO: se Google li cambia, si modifica qui.
+const TTS_ENDPOINT='https://generativelanguage.googleapis.com/v1beta/interactions';
+const VOICES_ENDPOINT='https://generativelanguage.googleapis.com/v1beta/voices/';
+const TTS_MODELS=[
+  // prezzi USD per 1M token (paid tier, Standard) — verificati il 21/11/2026, dal 1/1/2027 raddoppiano
+  {id:'gemini-3.8-flash-tts',      label:'Flash TTS — qualità massima',       inText:0.50, outAudio:9.00},
+  {id:'gemini-3.8-flash-lite-tts', label:'Flash-Lite TTS — economica e veloce', inText:0.50, outAudio:6.00},
+];
+const TTS_PREZZI_VERIFICATI='21/11/2026';
+const TTS_AUDIO_TOKEN_SEC=25;   // usato SOLO se l'API non restituisce il consumo (doc: 25 o 32 tok/s, in conflitto)
+const TTS_SR=24000;             // l'audio TTS è sempre 24 kHz mono 16 bit
+const LS_TTS_MODEL='robottts_tts_model', LS_TTS_STREAM='robottts_tts_stream';
+// Dati voce PER PERSONAGGIO: salvati a parte (chiave robottts_), collegati al nome.
+// Non dentro robot_characters, perché gemini.html quando salva un personaggio
+// riscrive solo {name,prompt,voice} e cancellerebbe tutto il resto.
+const LS_CHAR_EXTRA='robottts_char_extra';
+
+let ttsCtx=null, ttsNextTime=0, ttsSources=[], ttsAbort=null, ttsLastPcm=null, ttsBusy=false;
+const ttsSession={calls:0, inTok:0, outTok:0, usd:0, audioSec:0};
+
+function ttsGetExtras(){try{return JSON.parse(localStorage.getItem(LS_CHAR_EXTRA))||{};}catch(e){return{};}}
+function ttsSetExtras(o){try{localStorage.setItem(LS_CHAR_EXTRA,JSON.stringify(o));return true;}catch(e){toast('❌ Salvataggio non riuscito: '+e.message);return false;}}
+function ttsCurChar(){const n=document.getElementById('selChar')?.value;return getChars().find(c=>c.name===n)||null;}
+function ttsKey(){return (document.getElementById('keyIn')?.value||'').replace(/[\x00-\x1F\x7F​-‍﻿]/g,'').trim();}
+function ttsModelInfo(){const id=document.getElementById('ttsModel').value;return TTS_MODELS.find(m=>m.id===id)||TTS_MODELS[0];}
+
+function ttsInit(){
+  const selM=document.getElementById('ttsModel');
+  selM.innerHTML=TTS_MODELS.map(m=>'<option value="'+m.id+'">'+m.label+'</option>').join('');
+  try{const m=localStorage.getItem(LS_TTS_MODEL); if(m&&TTS_MODELS.some(x=>x.id===m)) selM.value=m;}catch(e){}
+  try{const s=localStorage.getItem(LS_TTS_STREAM); if(s!==null) document.getElementById('ttsStream').checked=(s==='1');}catch(e){}
+  const selV=document.getElementById('ttsVoiceSel');
+  selV.innerHTML='<option value="">— voce del personaggio (VOCE=) —</option>'
+    +'<option value="__custom">⭐ Voce personalizzata (voice_…)</option>'
+    +'<optgroup label="Voci predefinite">'+GEMINI_VOICES.map(v=>'<option value="'+v+'">'+v+'</option>').join('')+'</optgroup>';
+  ttsLoadChar();
+}
+function ttsSavePrefs(){
+  try{localStorage.setItem(LS_TTS_MODEL,document.getElementById('ttsModel').value);
+      localStorage.setItem(LS_TTS_STREAM,document.getElementById('ttsStream').checked?'1':'0');}catch(e){}
+}
+function ttsVoiceSelChg(){
+  document.getElementById('ttsVoiceIdRow').style.display=document.getElementById('ttsVoiceSel').value==='__custom'?'':'none';
+}
+// Carica nella scheda le impostazioni voce del personaggio selezionato
+function ttsLoadChar(){
+  const c=ttsCurChar(), x=(c&&ttsGetExtras()[c.name])||{};
+  document.getElementById('ttsCharName').textContent=c?'· '+c.name:'· (nessun personaggio)';
+  const sel=document.getElementById('ttsVoiceSel');
+  if(x.voiceId){sel.value='__custom';} else sel.value=(x.voice&&GEMINI_VOICES.includes(x.voice))?x.voice:'';
+  document.getElementById('ttsVoiceId').value=x.voiceId||'';
+  document.getElementById('ttsStyle').value=x.style||'';
+  document.getElementById('ttsPron').value=x.pron||'';
+  document.getElementById('ttsVoiceInfo').textContent=x.voiceExpire?ttsExpireText(x.voiceExpire):'';
+  ttsVoiceSelChg();
+}
+function ttsSaveChar(){
+  const c=ttsCurChar(); if(!c){toast('⚠️ Prima scegli o crea un personaggio');return;}
+  const sel=document.getElementById('ttsVoiceSel').value, vid=document.getElementById('ttsVoiceId').value.trim();
+  if(sel==='__custom' && !/^voice_[\w-]+$/.test(vid)){toast('⚠️ L\'ID voce deve iniziare con voice_');return;}
+  const all=ttsGetExtras(), old=all[c.name]||{};
+  all[c.name]={...old,
+    voice: sel&&sel!=='__custom'?sel:'',
+    voiceId: sel==='__custom'?vid:'',
+    voiceExpire: (sel==='__custom'&&vid===old.voiceId)?old.voiceExpire:'',
+    style: document.getElementById('ttsStyle').value.trim(),
+    pron: document.getElementById('ttsPron').value};
+  if(ttsSetExtras(all)) toast('✅ Voce salvata per "'+c.name+'"');
+  if(sel==='__custom'&&vid!==old.voiceId) ttsCheckVoice();
+}
+// Voce effettiva: ID personalizzato > voce scelta qui > VOCE= del personaggio > voce selezionata nell'app
+function ttsResolveVoice(){
+  const sel=document.getElementById('ttsVoiceSel').value, vid=document.getElementById('ttsVoiceId').value.trim();
+  if(sel==='__custom'&&vid) return vid;
+  if(sel&&sel!=='__custom') return sel;
+  const c=ttsCurChar(); if(c&&GEMINI_VOICES.includes(c.voice)) return c.voice;
+  const v=document.getElementById('selVoice')?.value; return GEMINI_VOICES.includes(v)?v:'Aoede';
+}
+
+// Prepara il testo per la voce:
+// - [tono] tra quadre: tolto dal testo (non va letto) e aggiunto allo stile
+// - dizionario pronuncia applicato SOLO qui (il cervello non lo vede)
+// - i tag <laugh>, <short pause>... restano: sono quelli giusti per il 3.8
+function ttsPrepare(raw, baseStyle, pron){
+  const tones=[];
+  let t=String(raw||'').replace(/\[([^\]]{1,60})\]/g,(m,g)=>{tones.push(g.trim());return ' ';});
+  t=t.replace(/[*_#`]+/g,' ');
+  String(pron||'').split(/\r?\n/).forEach(line=>{
+    const i=line.indexOf('='); if(i<1) return;
+    const from=line.slice(0,i).trim(), to=line.slice(i+1).trim(); if(!from||!to) return;
+    const esc=from.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    try{t=t.replace(new RegExp('(^|[^\\p{L}\\p{N}])'+esc+'(?=$|[^\\p{L}\\p{N}])','giu'),(m,p)=>p+to);}catch(e){}
+  });
+  t=t.replace(/\s+/g,' ').trim();
+  const style=[baseStyle,...tones].filter(Boolean).join(', ');
+  return {text:t, style};
+}
+
+// ── Riproduzione: coda senza buchi (ogni pezzo parte esattamente dove finisce il precedente)
+function ttsEnsureCtx(){
+  // Va chiamata DENTRO il click: sblocca l'audio su iOS/Android
+  if(!ttsCtx||ttsCtx.state==='closed'){
+    const AC=window.AudioContext||window.webkitAudioContext; ttsCtx=new AC();
+    dbg('🔈 AudioContext voce creato · '+ttsCtx.sampleRate+' Hz');
+  }
+  if(ttsCtx.state==='suspended') ttsCtx.resume().catch(()=>{});
+  return ttsCtx;
+}
+function ttsPlayPcm(int16){
+  if(!int16.length) return;
+  const ctx=ttsEnsureCtx(), f=new Float32Array(int16.length);
+  for(let i=0;i<int16.length;i++) f[i]=int16[i]/32768;
+  const buf=ctx.createBuffer(1,f.length,TTS_SR); buf.copyToChannel(f,0);
+  const src=ctx.createBufferSource(); src.buffer=buf; src.connect(ctx.destination);
+  const now=ctx.currentTime;
+  if(ttsNextTime<now+0.02){ if(ttsNextTime>0&&ttsSources.length) dbgWarn('⚠️ TTS: buco nella riproduzione ('+Math.round((now-ttsNextTime)*1000)+' ms)'); ttsNextTime=now+0.08; }
+  src.start(ttsNextTime); ttsNextTime+=buf.duration;
+  ttsSources.push(src); src.onended=()=>{ttsSources=ttsSources.filter(s=>s!==src);};
+}
+function ttsStop(){
+  if(ttsAbort){try{ttsAbort.abort();}catch(e){} ttsAbort=null;}
+  ttsSources.forEach(s=>{try{s.stop();}catch(e){}}); ttsSources=[]; ttsNextTime=0;
+}
+
+// ── Utilità audio
+function ttsB64ToBytes(b64){const bin=atob(b64), u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u;}
+// Se è un WAV (inizia con RIFF) prende solo il blocco "data"; altrimenti sono già campioni L16
+function ttsPcmFromBytes(u){
+  if(u.length>12&&u[0]===82&&u[1]===73&&u[2]===70&&u[3]===70){
+    const dv=new DataView(u.buffer,u.byteOffset,u.byteLength); let p=12;
+    while(p+8<=u.length){
+      const id=String.fromCharCode(u[p],u[p+1],u[p+2],u[p+3]), len=dv.getUint32(p+4,true);
+      if(id==='data') return u.slice(p+8,Math.min(u.length,p+8+len));
+      p+=8+len+(len&1);
+    }
+    return u.slice(44);
+  }
+  return u;
+}
+function ttsMakeWav(int16,sr){
+  const b=new ArrayBuffer(44+int16.length*2), v=new DataView(b), w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
+  w(0,'RIFF');v.setUint32(4,36+int16.length*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,int16.length*2,true);
+  new Int16Array(b,44).set(int16); return new Blob([b],{type:'audio/wav'});
+}
+function ttsSaveWav(){
+  if(!ttsLastPcm||!ttsLastPcm.length){toast('Niente da salvare');return;}
+  const url=URL.createObjectURL(ttsMakeWav(ttsLastPcm,TTS_SR)), a=document.createElement('a');
+  a.href=url; a.download='robot-tts-voce-'+Date.now()+'.wav'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+// Cerca nel JSON di risposta il blocco audio (type:"audio", data base64), ovunque sia
+function ttsFindAudio(o,out=[]){
+  if(!o||typeof o!=='object') return out;
+  if(o.type==='audio'&&typeof o.data==='string') out.push(o.data);
+  for(const k in o) if(o[k]&&typeof o[k]==='object') ttsFindAudio(o[k],out);
+  return out;
+}
+
+// ── Sintesi: restituisce {pcm, usage, tHttp, tFirst, tEnd, mode}
+async function ttsSynth({text, style, voice, model, stream, onPcm}){
+  const key=ttsKey(); if(key.length<20) throw new Error('Chiave Gemini mancante (scheda API KEY)');
+  const content={type:'text', text};
+  if(style) content.annotations=[{type:'speech_metadata', style}];
+  const body={model, input:[{type:'user_input', content:[content]}],
+    response_format:{type:'audio'}, generation_config:{speech_config:[{voice}]}};
+  if(stream) body.stream=true;
+  ttsAbort=new AbortController();
+  const t0=performance.now(), r={pcm:[], usage:null, tHttp:0, tFirst:0, tEnd:0, mode:stream?'streaming':'singola'};
+  const res=await fetch(TTS_ENDPOINT,{method:'POST', signal:ttsAbort.signal,
+    headers:{'x-goog-api-key':key,'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  r.tHttp=performance.now()-t0;
+  if(!res.ok){
+    let msg=''; try{const j=await res.json(); msg=j?.error?.message||JSON.stringify(j).slice(0,300);}catch(e){try{msg=await res.text();}catch(_){}}
+    const err=new Error('HTTP '+res.status+' — '+(msg||res.statusText)); err.status=res.status; throw err;
+  }
+  const push=(bytes)=>{const pcm=ttsPcmFromBytes(bytes); const n=pcm.length>>1; if(!n) return;
+    const i16=new Int16Array(pcm.buffer.slice(pcm.byteOffset,pcm.byteOffset+n*2));
+    if(!r.tFirst) r.tFirst=performance.now()-t0; r.pcm.push(i16); onPcm&&onPcm(i16);};
+  if(!stream){
+    const j=await res.json(); r.usage=j.usage||null;
+    const blocks=ttsFindAudio(j); if(!blocks.length) throw new Error('Risposta senza audio: '+JSON.stringify(j).slice(0,200));
+    push(ttsB64ToBytes(blocks[blocks.length-1]));
+  }else{
+    // Server-Sent Events: blocchi separati da riga vuota, righe "event:" e "data:"
+    const rd=res.body.getReader(), dec=new TextDecoder(); let buf='', carry=null, got=0;
+    const handle=(block)=>{
+      const data=block.split(/\r?\n/).filter(l=>l.startsWith('data:')).map(l=>l.slice(5).trimStart()).join('\n');
+      if(!data||data==='[DONE]') return;
+      let ev; try{ev=JSON.parse(data);}catch(e){dbgWarn('⚠️ TTS evento non leggibile: '+data.slice(0,120));return;}
+      const type=ev.event_type;
+      if(type==='step.delta'&&ev.delta?.type==='audio'&&ev.delta.data){
+        let b=ttsB64ToBytes(ev.delta.data); got++;
+        if(got===1) dbg('🔎 TTS primo pezzo audio · '+b.length+' byte'+(ev.delta.mime_type?' · '+ev.delta.mime_type:''));
+        if(carry){const m=new Uint8Array(carry.length+b.length); m.set(carry); m.set(b,carry.length); b=m; carry=null;}
+        if(b.length&1 && !(b[0]===82&&b[1]===73)){carry=b.slice(-1); b=b.slice(0,-1);}
+        push(b);
+      }else if(type==='interaction.completed'){ r.usage=ev.interaction?.usage||ev.usage||null; }
+      else if(type==='error'){ throw new Error('Errore dal server: '+(ev.error?.message||data.slice(0,200))); }
+    };
+    while(true){
+      const {done,value}=await rd.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      let i; while((i=buf.search(/\r?\n\r?\n/))>=0){const blk=buf.slice(0,i); buf=buf.slice(i).replace(/^\r?\n\r?\n/,''); handle(blk);}
+    }
+    if(buf.trim()) handle(buf);
+    if(!got) throw new Error('Streaming terminato senza audio');
+  }
+  r.tEnd=performance.now()-t0; ttsAbort=null;
+  return r;
+}
+
+// Costo di una chiamata: usa il consumo vero dell'API; se manca, stima dai secondi di audio
+function ttsCost(m, usage, audioSec){
+  let inTok=usage?.total_input_tokens, outTok=usage?.total_output_tokens, stima=false;
+  if(!(outTok>0)){outTok=Math.round(audioSec*TTS_AUDIO_TOKEN_SEC); stima=true;}
+  if(!(inTok>=0)) inTok=0;
+  return {inTok,outTok,stima,usd:inTok*m.inText/1e6+outTok*m.outAudio/1e6};
+}
+
+async function ttsSpeakBox(){
+  if(ttsBusy){toast('⏳ Sta già parlando');return;}
+  ttsStop(); ttsEnsureCtx();                // sblocco audio subito, dentro il click
+  const c=ttsCurChar();
+  const prep=ttsPrepare(document.getElementById('ttsText').value, document.getElementById('ttsStyle').value.trim(), document.getElementById('ttsPron').value);
+  if(!prep.text){toast('⚠️ Scrivi un testo');return;}
+  const m=ttsModelInfo(), voice=ttsResolveVoice(), stream=document.getElementById('ttsStream').checked;
+  const info=document.getElementById('ttsInfo'), btn=document.getElementById('ttsBtnSpeak');
+  ttsBusy=true; btn.disabled=true; btn.textContent='⏳ Genero…';
+  info.innerHTML='Voce <b>'+voice+'</b> · '+m.id+(prep.style?' · stile: '+prep.style:'')+'<br>Testo inviato: '+prep.text.replace(/</g,'&lt;');
+  dbg('🗣 TTS → '+m.id+' · voce '+voice+' · '+(stream?'streaming':'singola')+(prep.style?' · stile "'+prep.style+'"':'')+' · '+prep.text.length+' caratteri');
+  let r=null;
+  try{
+    try{ r=await ttsSynth({text:prep.text, style:prep.style, voice, model:m.id, stream, onPcm:ttsPlayPcm}); }
+    catch(e){
+      if(e.name==='AbortError') throw e;
+      // Ripiego: se lo streaming fallisce prima di produrre audio, riprovo con la chiamata singola
+      if(stream && !ttsSources.length && !(e.status>=400&&e.status<500)){
+        dbgWarn('⚠️ TTS streaming fallito ('+e.message+') → riprovo con chiamata singola');
+        r=await ttsSynth({text:prep.text, style:prep.style, voice, model:m.id, stream:false, onPcm:ttsPlayPcm});
+      } else throw e;
+    }
+    const n=r.pcm.reduce((s,a)=>s+a.length,0), all=new Int16Array(n); let o=0; r.pcm.forEach(a=>{all.set(a,o);o+=a.length;});
+    ttsLastPcm=all; document.getElementById('ttsBtnWav').disabled=false;
+    const sec=n/TTS_SR, k=ttsCost(m,r.usage,sec);
+    ttsSession.calls++; ttsSession.inTok+=k.inTok; ttsSession.outTok+=k.outTok; ttsSession.usd+=k.usd; ttsSession.audioSec+=sec;
+    const lat='⏱ risposta '+Math.round(r.tHttp)+' ms · <b>primo audio '+Math.round(r.tFirst)+' ms</b> · completo '+Math.round(r.tEnd)+' ms ('+r.mode+')';
+    info.innerHTML+='<br>'+lat+'<br>🔊 audio '+sec.toFixed(1)+' s · token '+k.inTok+' in / '+k.outTok+' out'+(k.stima?' (stima)':'')
+      +' · $'+k.usd.toFixed(5)+'<br>Sessione voce: '+ttsSession.calls+' frasi · '+ttsSession.audioSec.toFixed(0)+' s · $'+ttsSession.usd.toFixed(4)
+      +' <span style="opacity:.6">(prezzi verificati il '+TTS_PREZZI_VERIFICATI+')</span>';
+    dbg('⏱ TTS '+r.mode+': HTTP '+Math.round(r.tHttp)+' ms · primo audio '+Math.round(r.tFirst)+' ms · completo '+Math.round(r.tEnd)+' ms · audio '+sec.toFixed(1)+' s · usage '+(r.usage?JSON.stringify(r.usage):'assente → stima'));
+  }catch(e){
+    if(e.name==='AbortError'){dbg('⏹ TTS interrotto'); info.innerHTML+='<br>⏹ Interrotto';}
+    else{
+      dbgErr('❌ TTS: '+e.message);
+      const hint=/Failed to fetch|NetworkError|Load failed/i.test(e.message)?' (rete assente o chiamata bloccata dal browser)':'';
+      info.innerHTML+='<br><span style="color:var(--red)">❌ '+e.message.replace(/</g,'&lt;')+hint+'</span>';
+      toast('❌ Voce non generata');
+    }
+  }finally{ ttsBusy=false; btn.disabled=false; btn.textContent='▶ Parla'; }
+}
+
+// Controlla la voce personalizzata: esiste? quando scade? (scadenza = 1 anno dall'ULTIMO utilizzo)
+function ttsExpireText(iso){
+  const d=new Date(iso); if(isNaN(d)) return '';
+  const days=Math.floor((d-Date.now())/86400000);
+  return (days<30?'⚠️ ':'✅ ')+'Scade il '+d.toLocaleDateString('it-IT')+' ('+days+' giorni) — si rinnova a ogni utilizzo';
+}
+async function ttsCheckVoice(){
+  const id=document.getElementById('ttsVoiceId').value.trim(), out=document.getElementById('ttsVoiceInfo');
+  if(!/^voice_[\w-]+$/.test(id)){out.textContent='⚠️ L\'ID deve iniziare con voice_';return;}
+  const key=ttsKey(); if(key.length<20){out.textContent='⚠️ Manca la chiave Gemini';return;}
+  out.textContent='Controllo…';
+  try{
+    const res=await fetch(VOICES_ENDPOINT+encodeURIComponent(id),{headers:{'x-goog-api-key':key}});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok){out.textContent='❌ '+(j?.error?.message||('HTTP '+res.status));return;}
+    dbg('🔎 Voce '+id+': '+JSON.stringify(j).slice(0,400));
+    const exp=j.expire_time||j.expireTime, cre=j.create_time||j.createTime;
+    let txt=exp?ttsExpireText(exp):'✅ Voce trovata (scadenza non indicata dall\'API)';
+    if(cre) txt+=' · creata il '+new Date(cre).toLocaleDateString('it-IT');
+    out.textContent=txt;
+    const c=ttsCurChar(); if(c&&exp){const all=ttsGetExtras(); if(all[c.name]&&all[c.name].voiceId===id){all[c.name].voiceExpire=exp; ttsSetExtras(all);}}
+  }catch(e){out.textContent='❌ '+e.message;}
+}
+
 init();
+try{ ttsInit(); }catch(e){ dbgErr('❌ ttsInit: '+e.message); }
+// Quando cambia il personaggio, la scheda voce mostra le sue impostazioni
+const _onCharChgOrig=onCharChg;
+onCharChg=function(){ _onCharChgOrig(); try{ ttsLoadChar(); }catch(e){} };
 
 // ═══ SERVICE WORKER Robot_TTS ═══
 // Scope './Robot_TTS.html' → controlla SOLO questa pagina, non gemini.html né il launcher.
