@@ -5,7 +5,10 @@
      Personaggi, conoscenze, foto persone e chiave Gemini sono CONDIVISI con gemini.html
      (stesse chiavi). Le impostazioni proprie di Robot_TTS usano il prefisso robottts_.
      File propri accanto a gemini.html: robottts-manifest.webmanifest, robottts-sw.js, icone robottts-*.png.
-     Il service worker controlla solo questa pagina (scope ./Robot_TTS.html). -->
+     Il service worker controlla solo questa pagina (scope ./Robot_TTS.html).
+     21/11/2026 — orecchio in tempo reale (gemini-3.5-transcribe-live, testo mentre parli, ripiego
+     automatico sul classico), cervello a testo, Flash-Lite TTS predefinita, frasi d'attesa,
+     token dalla cache in console, chat senza tag, avvisi sui dati in comune con gemini.html. -->
 <html lang="it">
 <head>
   <meta charset="UTF-8">
@@ -306,6 +309,14 @@
     </div>
     <label class="tsw"><input type="checkbox" id="chkAutoMute" checked onchange="earSavePrefs()"><span class="ts"></span></label>
   </div>
+  <div class="f" style="margin-top:10px">
+    <label>👂 Orecchio (riconoscimento voce)</label>
+    <select id="selEar" onchange="earSavePrefs()">
+      <option value="live">Google in tempo reale (gemini-3.5-transcribe-live) — testo mentre parli</option>
+      <option value="classic">Classico — registra tutto e manda l'audio al cervello</option>
+    </select>
+    <div id="sttInfo" style="font-family:var(--mono);font-size:.62rem;color:var(--muted);margin-top:5px">Con "tempo reale", se la connessione cade il turno passa da solo al classico.</div>
+  </div>
 </div>
 
 <!-- CERVELLO — impostazioni (il parlato arriva dal microfono) -->
@@ -318,6 +329,17 @@
   <div class="f">
     <label>Memoria: ultimi <span id="vBrainTurns">10</span> scambi</label>
     <input type="range" id="brainTurns" min="2" max="30" step="1" value="10" oninput="document.getElementById('vBrainTurns').textContent=this.value;brainSavePrefs()">
+  </div>
+  <div class="trow" style="border-bottom:none;padding-top:0">
+    <div><div class="tlbl">💬 Frase d'attesa</div><div class="tsub">Se la risposta tarda, il robot dice subito una di queste frasi (già pronte, partono all'istante)</div></div>
+    <label class="tsw"><input type="checkbox" id="chkFiller" checked onchange="fillerSavePrefs()"><span class="ts"></span></label>
+  </div>
+  <div class="f">
+    <label>Frasi d'attesa (una per riga) — dopo <span id="vFillerMs">600</span> ms senza voce</label>
+    <textarea id="fillerText" rows="3" onchange="fillerSavePrefs()">Mmh...
+Allora...
+Aspetta un attimo...</textarea>
+    <input type="range" id="fillerMs" min="200" max="2000" step="100" value="600" oninput="document.getElementById('vFillerMs').textContent=this.value;fillerSavePrefs()" style="margin-top:8px">
   </div>
   <div class="brow">
     <button class="bs dn" onclick="brainStop(true)">⏹ Stop</button>
@@ -357,8 +379,8 @@
     <div id="ttsVoiceInfo" style="font-size:.7rem;color:var(--muted);margin-top:5px"></div>
   </div>
   <div class="f">
-    <label>Stile voce (STILEVOCE) — corto, es. "allegra, ritmo da presentatrice"</label>
-    <input type="text" id="ttsStyle" placeholder="vuoto = naturale">
+    <label>Stile voce (STILEVOCE) — corto e sempre uguale, es. "allegra". Accento, genere ed età NO: stanno nella voce voice_…</label>
+    <input type="text" id="ttsStyle" placeholder="vuoto = consigliato da Google con la voce personalizzata">
   </div>
   <div class="f">
     <label>Dizionario pronuncia (una riga: parola=come si legge)</label>
@@ -655,14 +677,16 @@ function addMsg(txt,type){
 function appendRobotTxt(delta){
   robotTxt+=delta;
   if(!robotMsgEl){robotMsgEl=document.createElement('div');robotMsgEl.className='msg robot';document.getElementById('chatBox').appendChild(robotMsgEl);}
-  robotMsgEl.textContent=robotTxt;
+  robotMsgEl.textContent=chatClean(robotTxt);
   document.getElementById('chatBox').scrollTop=document.getElementById('chatBox').scrollHeight;
 }
 function finalizeRobot(){
   // Frase robot completa: salvala nel log prima di azzerare il buffer streaming
-  if(robotTxt && robotTxt.trim()){ chatLog.push({role:'robot', text:robotTxt.trim()}); }
+  if(robotTxt && robotTxt.trim()){ chatLog.push({role:'robot', text:chatClean(robotTxt)}); }
   robotMsgEl=null;robotTxt='';
 }
+// Testo per la chat: senza tag voce <laugh> e senza toni [ironico] (servono solo alla voce)
+function chatClean(s){ return String(s||'').replace(/<[^<>]{1,40}>/g,' ').replace(/\[[^\[\]]{1,60}\]/g,' ').replace(/\s+/g,' ').trim(); }
 function saveChatToFile(reason){
   if(!chatLog || chatLog.length === 0){
     dbg('💬 saveChatToFile skip: chat vuota');
@@ -934,6 +958,7 @@ function saveChar(){
 }
 function delChar(){
   if(!editingChar)return;
+  if(!confirm('Eliminare il personaggio "'+editingChar+'"?\n\nSparisce anche dalla vecchia app (gemini.html).')) return;
   saveCharsLS(getChars().filter(c=>c.name!==editingChar));
   renderChars(); closeCharEd(); toast('🗑 Eliminato');
 }
@@ -1035,7 +1060,7 @@ function importBackup(inp){
       try{if(localStorage.getItem(LS_CHARS)) existing.push('personaggi');}catch(e){}
       try{if(localStorage.getItem(LS_KNOW_LIST) || localStorage.getItem(LS_KNOW)) existing.push('conoscenze');}catch(e){}
       if(existing.length > 0){
-        if(!confirm('Importare il backup sovrascriverà: '+existing.join(', ')+'.\n\nContinuare?')){
+        if(!confirm('Importare il backup sovrascriverà: '+existing.join(', ')+'.\n\nATTENZIONE: personaggi, conoscenze e foto sono IN COMUNE con la vecchia app (gemini.html): cambiano anche lì.\n\nContinuare?')){
           inp.value=''; return;
         }
       }
@@ -1380,7 +1405,7 @@ function saveKnow(){
 
 function delKnow(){
   if(!editingKnow) return;
-  if(!confirm('Eliminare la conoscenza "'+editingKnow+'"?')) return;
+  if(!confirm('Eliminare la conoscenza "'+editingKnow+'"?\n\nSparisce anche dalla vecchia app (gemini.html).')) return;
   knowList=knowList.filter(k=>k.name!==editingKnow);
   activeKnowNames=activeKnowNames.filter(n=>n!==editingKnow);
   saveKnowsLS(); saveActiveLS();
@@ -1391,7 +1416,7 @@ function delKnow(){
 
 function clearAllKnows(){
   if(!knowList.length){toast('⚠️ Nessuna conoscenza da rimuovere'); return;}
-  if(!confirm('Eliminare TUTTE le conoscenze ('+knowList.length+')? L\'operazione è irreversibile.')) return;
+  if(!confirm('Eliminare TUTTE le conoscenze ('+knowList.length+')? L\'operazione è irreversibile.\n\nATTENZIONE: spariscono anche dalla vecchia app (gemini.html), sono in comune.')) return;
   knowList=[]; activeKnowNames=[];
   try{localStorage.removeItem(LS_KNOW_LIST);}catch{}
   try{localStorage.removeItem(LS_KNOW_ACTIVE);}catch{}
@@ -1483,8 +1508,10 @@ const TTS_ENDPOINT='https://generativelanguage.googleapis.com/v1beta/interaction
 const VOICES_ENDPOINT='https://generativelanguage.googleapis.com/v1beta/voices/';
 const TTS_MODELS=[
   // prezzi USD per 1M token (paid tier, Standard) — verificati il 21/11/2026, dal 1/1/2027 raddoppiano
-  {id:'gemini-3.8-flash-tts',      label:'Flash TTS — qualità massima',       inText:0.50, outAudio:9.00},
-  {id:'gemini-3.8-flash-lite-tts', label:'Flash-Lite TTS — economica e veloce', inText:0.50, outAudio:6.00},
+  // Google consiglia Flash-Lite per le conversazioni dal vivo ("real-time voice agent cascades")
+  // e Flash per recitazione impegnativa, audiolibri, dialetti → Flash per le clip del monologo.
+  {id:'gemini-3.8-flash-lite-tts', label:'Flash-Lite TTS — veloce, consigliata dal vivo', inText:0.50, outAudio:6.00},
+  {id:'gemini-3.8-flash-tts',      label:'Flash TTS — recitazione massima (clip, monologhi)', inText:0.50, outAudio:9.00},
 ];
 const TTS_PREZZI_VERIFICATI='21/11/2026';
 const TTS_AUDIO_TOKEN_SEC=25;   // usato SOLO se l'API non restituisce il consumo (doc: 25 o 32 tok/s, in conflitto)
@@ -1638,16 +1665,17 @@ function ttsFindAudio(o,out=[]){
 }
 
 // ── Sintesi: restituisce {pcm, usage, tHttp, tFirst, tEnd, mode}
-async function ttsSynth({text, style, voice, model, stream, onPcm}){
+async function ttsSynth({text, style, voice, model, stream, onPcm, detached}){
   const key=ttsKey(); if(key.length<20) throw new Error('Chiave Gemini mancante (scheda API KEY)');
   const content={type:'text', text};
   if(style) content.annotations=[{type:'speech_metadata', style}];
   const body={model, input:[{type:'user_input', content:[content]}],
     response_format:{type:'audio'}, generation_config:{speech_config:[{voice}]}};
   if(stream) body.stream=true;
-  ttsAbort=new AbortController();
+  // detached = generazione in sottofondo (frasi d'attesa): non la ferma lo Stop della risposta
+  const ctl=new AbortController(); if(!detached) ttsAbort=ctl;
   const t0=performance.now(), r={pcm:[], usage:null, tHttp:0, tFirst:0, tEnd:0, mode:stream?'streaming':'singola'};
-  const res=await fetch(TTS_ENDPOINT,{method:'POST', signal:ttsAbort.signal,
+  const res=await fetch(TTS_ENDPOINT,{method:'POST', signal:ctl.signal,
     headers:{'x-goog-api-key':key,'Content-Type':'application/json'}, body:JSON.stringify(body)});
   r.tHttp=performance.now()-t0;
   if(!res.ok){
@@ -1686,7 +1714,7 @@ async function ttsSynth({text, style, voice, model, stream, onPcm}){
     if(buf.trim()) handle(buf);
     if(!got) throw new Error('Streaming terminato senza audio');
   }
-  r.tEnd=performance.now()-t0; ttsAbort=null;
+  r.tEnd=performance.now()-t0; if(ttsAbort===ctl) ttsAbort=null;
   return r;
 }
 
@@ -1782,12 +1810,12 @@ const LS_BRAIN_MODEL='robottts_brain_model', LS_BRAIN_TURNS='robottts_brain_turn
 // Regole voce aggiunte in automatico al prompt (dopo il personaggio, prima delle conoscenze)
 const REGOLE_VOCE='\n\n---\nREGOLE VOCE (importanti): quello che scrivi viene letto ad alta voce da una voce sintetica. '
  +'1) Scrivi solo parlato naturale: niente elenchi, asterischi, titoli, emoji, link o simboli. Numeri e sigle come si pronunciano. '
- +'2) Puoi usare, con parsimonia (al massimo uno o due per risposta), questi tag vocali in inglese tra parentesi angolari: '
- +'<laugh> <chuckle> <giggle> <sigh> <gasp> <short pause> <long pause> <whispers>. Non inventarne altri. '
- +'3) Per enfatizzare una parola scrivila in MAIUSCOLO, raramente. '
+ +'2) Puoi usare, con parsimonia (al massimo uno o due per risposta), questi tag vocali in inglese tra parentesi angolari, sempre in inglese anche se parli italiano: '
+ +'<laugh> <chuckle> <giggle> <snicker> <sigh> <gasp> <tsk> <cheer> <throat-clearing> <short pause> <long pause> <whispers>. Non inventarne altri e non usare effetti sonori. '
+ +'3) Per enfatizzare una parola scrivila in MAIUSCOLO, raramente. Per esitare usa puntini e trattini, anche "ehm" o "mmh". '
  +'4) Se vuoi cambiare tono, metti il tono tra parentesi quadre all\'inizio della frase, es. [ironico] oppure [sottovoce]: non viene letto. Non usare parentesi quadre per altro. '
- +'5) Frasi brevi, con punteggiatura chiara: la voce parte appena finisci la prima frase. '
- +'6) Ti arriva l\'audio del microfono: se non contiene parole rivolte a te (solo rumore, silenzio, parole incomprensibili o persone che parlano tra loro), rispondi soltanto [SILENZIO] e nient\'altro.';
+ +'5) La PRIMA frase di ogni risposta deve essere brevissima (da 2 a 6 parole, es. "Soccia, bella domanda!"): la voce parte appena la finisci. Poi frasi brevi, con punteggiatura chiara. '
+ +'6) Ti arriva la trascrizione automatica di quello che dice la persona (a volte l\'audio): può contenere errori di riconoscimento, interpretala nel modo più sensato. Se non contiene parole rivolte a te (solo rumore, parole senza senso o persone che parlano tra loro), rispondi soltanto [SILENZIO] e nient\'altro.';
 
 let brainHistory=[];              // [{q, a}] scambi completi
 let brainGen=0, brainAbortCtl=null, brainBusy=false, brainActiveGen=-1;
@@ -1864,6 +1892,8 @@ function brainEnqueue(sentences, gen, turn){
 async function brainSpeakOne(s, gen, turn){
   const prep=ttsPrepare(s, document.getElementById('ttsStyle').value.trim(), document.getElementById('ttsPron').value);
   if(!prep.text) return;
+  // Pezzo fatto solo di tag (es. un <laugh> rimasto in fondo): niente chiamata a vuoto
+  if(!/[\p{L}\p{N}]/u.test(prep.text.replace(/<[^<>]*>/g,''))){ dbg('🗣 saltato pezzo senza parole: '+prep.text); return; }
   const m=ttsModelInfo(), voice=ttsResolveVoice();
   let r=null;
   for(let tent=1;tent<=2 && !r && gen===brainGen;tent++){
@@ -1886,10 +1916,11 @@ async function brainSpeakOne(s, gen, turn){
 
 function brainUpdInfo(t){
   const f=v=>v?Math.round(v)+' ms':'—';
+  const tot=t.tAudio?Math.round(t.tAudio+t.silMs+t.sttMs):0;
   document.getElementById('brainInfo').innerHTML=
-    (t.silMs?'⏱ fine parlato → primo audio ≈ <b>'+(t.tAudio?Math.round(t.tAudio+t.silMs)+' ms':'—')+'</b> (silenzio '+t.silMs+' + '+f(t.tAudio)+')<br>':'')+'⏱ primo testo '+f(t.tTok)+' · prima frase '+f(t.tSent)+' · <b>primo audio '+f(t.tAudio)+'</b> · testo completo '+f(t.tDone)
+    (t.silMs?'⏱ fine parlato → primo audio risposta ≈ <b>'+(tot?tot+' ms':'—')+'</b> (silenzio '+t.silMs+(t.sttMs?' + testo '+Math.round(t.sttMs):'')+' + '+f(t.tAudio)+')'+(t.filler?' · 💬 attesa: "'+t.filler+'"':'')+'<br>':'')+'⏱ primo testo '+f(t.tTok)+' · prima frase '+f(t.tSent)+' · <b>primo audio '+f(t.tAudio)+'</b> · testo completo '+f(t.tDone)
     +(t.tAudio?(t.tAudio<=1500?' ✅':' (obiettivo 1500 ms)'):'')
-    +'<br>🧠 '+t.model+' · token '+t.inTok+' in / '+t.outTok+' out'+(t.thTok?' + '+t.thTok+' ragionamento':'')+' · $'+t.brainUsd.toFixed(5)
+    +'<br>🧠 '+t.model+' · token '+t.inTok+' in'+(t.cacheTok?' ('+t.cacheTok+' dalla cache)':'')+' / '+t.outTok+' out'+(t.thTok?' + '+t.thTok+' ragionamento':'')+' · $'+t.brainUsd.toFixed(5)
     +'<br>🗣 '+t.ttsCalls+' frasi · '+t.audioSec.toFixed(1)+' s · $'+t.ttsUsd.toFixed(5)
     +'<br>Sessione: '+brainSession.turns+' domande · cervello $'+brainSession.usd.toFixed(4)+' · voce $'+ttsSession.usd.toFixed(4)
     +' · memoria '+brainHistory.length+'/'+document.getElementById('brainTurns').value+' scambi';
@@ -1897,7 +1928,8 @@ function brainUpdInfo(t){
 
 // Domanda al cervello. Con il microfono arriva l'AUDIO (opzione A: Gemini ascolta direttamente);
 // la trascrizione per la chat viene fatta in parallelo e non rallenta la risposta.
-async function brainAsk(q, audio){
+async function brainAsk(q, audio, opts){
+  opts=opts||{};
   q=String(q||'').trim(); if(!q&&!audio) return;
   brainStop(false); ttsEnsureCtx();
   const gen=brainGen, key=ttsKey(); brainActiveGen=gen;
@@ -1912,17 +1944,22 @@ async function brainAsk(q, audio){
   input.push({type:'user_input', content:audio?[{type:'audio', data:audio.b64, mime_type:'audio/wav'}]:[{type:'text', text:q}]});
   const body={model:m.id, system_instruction:brainSystemPrompt(), input, store:false,
     generation_config:{thinking_level:m.think, max_output_tokens:BRAIN_MAX_TOKENS}};
-  const turn={t0:performance.now(), silMs:audio?audio.silMs:0, tTok:0, tSent:0, tAudio:0, tDone:0, model:m.id, inTok:0, outTok:0, thTok:0, brainUsd:0, ttsUsd:0, ttsCalls:0, audioSec:0};
-  // bolla utente: con l'audio si riempie quando arriva la trascrizione
-  const box=document.getElementById('chatBox'), ub=document.createElement('div'); ub.className='msg user';
-  ub.textContent=audio?'🎤 … ('+audio.sec.toFixed(1)+' s)':q; box.appendChild(ub); box.scrollTop=box.scrollHeight;
+  const turn={t0:performance.now(), silMs:audio?audio.silMs:(opts.silMs||0), sttMs:opts.sttMs||0, tTok:0, tSent:0, tAudio:0, tDone:0, model:m.id, inTok:0, outTok:0, thTok:0, cacheTok:0, brainUsd:0, ttsUsd:0, ttsCalls:0, audioSec:0, filler:''};
+  // bolla utente: con l'orecchio "tempo reale" esiste già (scritta mentre parlavi);
+  // con l'audio (classico) si riempie quando arriva la trascrizione
+  const box=document.getElementById('chatBox');
+  let ub=opts.bubble;
+  if(!ub){ ub=document.createElement('div'); ub.className='msg user'; box.appendChild(ub); }
+  ub.style.opacity=''; ub.textContent=audio?'🎤 … ('+audio.sec.toFixed(1)+' s)':q; box.scrollTop=box.scrollHeight;
   const hist={q:audio?'':q, audio:audio?audio.b64:null, a:''};
   if(audio) brainTranscribe(audio.b64, key).then(t=>{
-    if(t===null) return;
-    if(!t||t==='-'){ ub.textContent='🎤 (non comprensibile)'; return; }
+    // Trascrizione fallita: niente audio nella memoria (verrebbe rimandato per 10 turni, con costi e tempi in crescita)
+    if(t===null){ hist.q='(audio non trascritto)'; hist.audio=null; return; }
+    if(!t||t==='-'){ ub.textContent='🎤 (non comprensibile)'; hist.q='(audio non comprensibile)'; hist.audio=null; return; }
     ub.textContent=t; hist.q=t; hist.audio=null; chatLog.push({role:'user', text:t});
   });
   else chatLog.push({role:'user', text:q});
+  fillerArm(gen, turn);
   finalizeRobot();
   brainBusy=true; setSt('🧠 PENSO…'); dot('dAI','tk');
   dbg('🧠 → '+m.id+' · thinking '+m.think+' · '+(audio?'audio '+audio.sec.toFixed(1)+' s':'testo')+' · memoria '+(input.length-1)/2+' scambi · prompt '+body.system_instruction.length+' caratteri');
@@ -1966,8 +2003,10 @@ async function brainAsk(q, audio){
     const sp=brainSplit(pending, first, true);
     if(sp.sentences.length){ if(first) turn.tSent=performance.now()-turn.t0; brainEnqueue(sp.sentences,gen,turn); }
     turn.tDone=performance.now()-turn.t0; finalizeRobot();
-    turn.inTok=usage?.total_input_tokens||0; turn.outTok=usage?.total_output_tokens||0; turn.thTok=usage?.total_thought_tokens||0;
-    turn.brainUsd=turn.inTok*(audio?m.inAudio:m.inPrice)/1e6+(turn.outTok+turn.thTok)*m.outPrice/1e6;   // ragionamento pagato come uscita
+    turn.inTok=usage?.total_input_tokens||0; turn.outTok=usage?.total_output_tokens||0; turn.thTok=usage?.total_thought_tokens||0; turn.cacheTok=usage?.total_cached_tokens||0;
+    // ragionamento pagato come uscita; i token presi dalla cache costano il 10% (lettura cache Flash-Lite 0,03 $ contro 0,30 $)
+    const inP=(audio?m.inAudio:m.inPrice), cached=Math.min(turn.cacheTok,turn.inTok);
+    turn.brainUsd=(turn.inTok-cached)*inP/1e6+cached*inP*0.1/1e6+(turn.outTok+turn.thTok)*m.outPrice/1e6;
     brainSession.turns++; brainSession.inTok+=turn.inTok; brainSession.outTok+=turn.outTok+turn.thTok; brainSession.usd+=turn.brainUsd;
     if(/^\s*\[SILENZIO\]\s*$/i.test(full)){
       dbg('🤫 Il cervello ha giudicato l\'audio rumore/non rivolto al robot: nessuna risposta');
@@ -1978,7 +2017,7 @@ async function brainAsk(q, audio){
     hist.a=full.trim(); brainHistory.push(hist); if(brainHistory.length>30) brainHistory.shift();
     brainUpdInfo(turn); dot('dAI','on');
     brainChain.then(()=>{ if(gen===brainGen){ setSt(connected?'◉ IN ASCOLTO':'● IDLE'); silStart=Date.now(); dot('dVoice',''); } });
-    dbg('⏱ TURNO: primo testo '+Math.round(turn.tTok)+' ms · prima frase '+Math.round(turn.tSent)+' ms · testo completo '+Math.round(turn.tDone)+' ms · usage '+(usage?JSON.stringify(usage):'assente'));
+    dbg('⏱ TURNO: '+(turn.sttMs?'attesa testo '+Math.round(turn.sttMs)+' ms · ':'')+'primo testo '+Math.round(turn.tTok)+' ms · prima frase '+Math.round(turn.tSent)+' ms · testo completo '+Math.round(turn.tDone)+' ms · token dalla cache '+turn.cacheTok+' di '+turn.inTok+' · usage '+(usage?JSON.stringify(usage):'assente'));
   }catch(e){
     if(e.name==='AbortError'||gen!==brainGen){dbg('⏹ Risposta interrotta');return;}
     dbgErr('❌ Cervello: '+e.message); finalizeRobot(); dot('dAI','er'); setSt(connected?'◉ IN ASCOLTO':'● IDLE');
@@ -2001,6 +2040,216 @@ async function brainTranscribe(b64, key){
     const u=j.usage; if(u){ const c=(u.total_input_tokens||0)*TRANSCRIBE_MODEL.inAudio/1e6+((u.total_output_tokens||0)+(u.total_thought_tokens||0))*TRANSCRIBE_MODEL.outPrice/1e6; brainSession.usd+=c; brainSession.inTok+=u.total_input_tokens||0; brainSession.outTok+=u.total_output_tokens||0; }
     return (j.steps||[]).filter(s=>s.type==='model_output').flatMap(s=>s.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('').trim();
   }catch(e){ dbgWarn('⚠️ Trascrizione: '+e.message); return null; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FRASI D'ATTESA — generate UNA volta con la voce del personaggio e tenute in memoria.
+// Se dopo X ms dall'invio della domanda non c'è ancora audio, ne parte una all'istante;
+// la risposta vera si accoda dietro senza buchi (stessa coda audio).
+// ═══════════════════════════════════════════════════════════════
+const LS_FILLER_ON='robottts_filler_on', LS_FILLER_TXT='robottts_filler_txt', LS_FILLER_MS='robottts_filler_ms';
+const fillerCache=new Map();     // "voce|modello|stile|pronuncia|testo" → Int16Array
+let fillerLast='', fillerBusy=false;
+function fillerLoadPrefs(){
+  try{const v=localStorage.getItem(LS_FILLER_ON); if(v!==null) document.getElementById('chkFiller').checked=(v==='1');}catch(e){}
+  try{const v=localStorage.getItem(LS_FILLER_TXT); if(v!==null) document.getElementById('fillerText').value=v;}catch(e){}
+  try{const v=parseInt(localStorage.getItem(LS_FILLER_MS)); if(v>=200&&v<=2000){document.getElementById('fillerMs').value=v; document.getElementById('vFillerMs').textContent=v;}}catch(e){}
+}
+function fillerSavePrefs(){
+  try{localStorage.setItem(LS_FILLER_ON,document.getElementById('chkFiller').checked?'1':'0');
+      localStorage.setItem(LS_FILLER_TXT,document.getElementById('fillerText').value);
+      localStorage.setItem(LS_FILLER_MS,document.getElementById('fillerMs').value);}catch(e){}
+  if(connected) fillerPrepare();
+}
+function fillerList(){ return document.getElementById('fillerText').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).slice(0,8); }
+function fillerKey(t){ return [ttsResolveVoice(), ttsModelInfo().id, document.getElementById('ttsStyle').value.trim(), document.getElementById('ttsPron').value, t].join('|'); }
+// Genera in sottofondo le frasi che mancano (con la voce, lo stile e la pronuncia attuali)
+async function fillerPrepare(){
+  if(fillerBusy || !document.getElementById('chkFiller').checked) return;
+  fillerBusy=true; let n=0;
+  try{
+    for(const t of fillerList()){
+      const k=fillerKey(t); if(fillerCache.has(k)) continue;
+      const prep=ttsPrepare(t, document.getElementById('ttsStyle').value.trim(), document.getElementById('ttsPron').value);
+      if(!prep.text) continue;
+      const m=ttsModelInfo();
+      const r=await ttsSynth({text:prep.text, style:prep.style, voice:ttsResolveVoice(), model:m.id, stream:false, detached:true});
+      const len=r.pcm.reduce((s,a)=>s+a.length,0), all=new Int16Array(len); let o=0; r.pcm.forEach(a=>{all.set(a,o);o+=a.length;});
+      fillerCache.set(k, all); n++;
+      const sec=len/TTS_SR, c=ttsCost(m,r.usage,sec);
+      ttsSession.calls++; ttsSession.inTok+=c.inTok; ttsSession.outTok+=c.outTok; ttsSession.usd+=c.usd; ttsSession.audioSec+=sec;
+    }
+    if(n) dbgOk('✅ Frasi d\'attesa pronte: '+n+' nuove ('+fillerList().length+' in lista)');
+  }catch(e){ dbgWarn('⚠️ Frasi d\'attesa non generate: '+e.message); }
+  finally{ fillerBusy=false; }
+}
+// Chiamata a ogni domanda: arma il timer della frase d'attesa per questo turno
+function fillerArm(gen, turn){
+  if(!document.getElementById('chkFiller').checked) return;
+  const ms=parseInt(document.getElementById('fillerMs').value)||600;
+  setTimeout(()=>{
+    if(gen!==brainGen || turn.tAudio || turn.filler) return;          // la risposta è già partita
+    const ready=fillerList().filter(t=>fillerCache.has(fillerKey(t)));
+    if(!ready.length){ fillerPrepare(); return; }
+    let pick=ready[Math.floor(Math.random()*ready.length)];
+    if(ready.length>1 && pick===fillerLast) pick=ready[(ready.indexOf(pick)+1)%ready.length];
+    fillerLast=pick; turn.filler=pick;
+    ttsEnsureCtx(); ttsPlayPcm(fillerCache.get(fillerKey(pick)));
+    setSt('🔊 ROBOT PARLA'); brainUpdInfo(turn);
+    dbg('💬 Frase d\'attesa dopo '+ms+' ms: "'+pick+'"');
+  }, ms);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ORECCHIO "TEMPO REALE" — gemini-3.5-transcribe-live via WebSocket (Live API)
+// Il microfono manda l'audio a Google SOLO mentre parli (risparmio): torna il testo
+// provvisorio (interimInputTranscription) e quello definitivo (inputTranscription).
+// La fine del turno la decide ancora il nostro rilevatore (slider "Silenzio fine turno"):
+// a quel punto mandiamo audioStreamEnd e Google chiude subito la trascrizione.
+// Se qualcosa va storto, il turno usa l'audio registrato (orecchio classico): il robot non resta mai sordo.
+// Campi verificati sulla guida Google "gemini-live-api-dev" (nov. 2026); la pagina ufficiale
+// del modello va ricontrollata: i messaggi grezzi dei primi turni finiscono nella console di debug.
+// ═══════════════════════════════════════════════════════════════
+const STT_MODEL='gemini-3.5-transcribe-live';
+const STT_WS='wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
+const STT_USD_MIN=0.009;          // stima di Google ~0,009 $/minuto di audio (fatturati solo i token definitivi)
+const STT_FINAL_WAIT_MS=1200;     // dopo la fine del parlato aspetto il testo definitivo al massimo per questo tempo
+const STT_FINAL_DEBOUNCE_MS=150;  // il testo definitivo può arrivare a pezzi: aspetto un attimo che finisca
+const LS_EAR_MODE='robottts_ear_mode';
+const stt={ws:null, ready:false, final:'', interim:'', bubble:null, turnOpen:false, waiting:false, waitT0:0,
+           waitTimer:null, debTimer:null, gotText:false, fails:0, variant:0, msgLog:0, reconnTimer:null, goAway:false, chunks:null, totMs:0};
+const sttSession={sec:0, usd:0};
+let earModeApplied='';
+
+function earModeLive(){ return document.getElementById('selEar').value==='live'; }
+function sttSetInfo(t){ const e=document.getElementById('sttInfo'); if(e) e.textContent=t; }
+
+function sttConnect(){
+  if(!connected || !earModeLive()) return;
+  sttClose();
+  const ws=new WebSocket(STT_WS+'?key='+encodeURIComponent(ttsKey()));
+  stt.ws=ws; stt.ready=false; stt.goAway=false;
+  const variant=stt.variant;
+  sttSetInfo('◌ collegamento a '+STT_MODEL+'…');
+  ws.onopen=()=>{
+    // variante 0: modalità SMART (toglie "ehm", corregge gli auto-correggimenti); variante 1: configurazione minima
+    const setup={model:'models/'+STT_MODEL, generationConfig:{responseModalities:['TEXT']},
+                 inputAudioTranscription: variant===0?{mode:'SMART'}:{}};
+    ws.send(JSON.stringify({setup}));
+    dbg('👂 STT: connesso, invio setup'+(variant===0?' (modalità smart)':' (configurazione minima)'));
+  };
+  ws.onmessage=e=>{ if(e.data instanceof Blob) e.data.text().then(sttOnMsg); else sttOnMsg(e.data); };
+  ws.onerror=()=>dbgWarn('⚠️ STT: errore WebSocket');
+  ws.onclose=e=>{
+    if(stt.ws!==ws) return;                       // chiusura voluta (sostituita da una nuova connessione)
+    const wasReady=stt.ready; stt.ready=false; stt.ws=null;
+    dbgWarn('⚠️ STT chiuso · codice '+e.code+(e.reason?' · '+e.reason:''));
+    if(stt.waiting) sttFire('connessione chiusa');  // turno in attesa: usa quello che c'è o l'audio registrato
+    if(!connected || !earModeLive()) return;
+    if(!wasReady){
+      stt.fails++;
+      if(stt.fails===2 && stt.variant===0){ stt.variant=1; dbg('👂 STT: riprovo con la configurazione minima'); }
+      if(stt.fails>=4){
+        document.getElementById('selEar').value='classic'; earModeApplied='classic';
+        sttSetInfo('❌ tempo reale non disponibile ('+(e.reason||('codice '+e.code))+') → uso il classico per questa sessione');
+        toast('⚠️ Orecchio in tempo reale non disponibile: uso il classico');
+        return;
+      }
+    }
+    sttSetInfo('◌ riconnessione…');
+    stt.reconnTimer=setTimeout(sttConnect, wasReady?200:1200);
+  };
+}
+function sttClose(){
+  clearTimeout(stt.reconnTimer); stt.reconnTimer=null;
+  const ws=stt.ws; stt.ws=null; stt.ready=false;
+  if(ws){ try{ ws.onclose=null; ws.onmessage=null; ws.onerror=null; ws.onopen=null; ws.close(); }catch(e){} }
+}
+function sttOnMsg(raw){
+  let m; try{ m=JSON.parse(raw); }catch(e){ return; }
+  if('setupComplete' in m){
+    stt.ready=true; stt.fails=0;
+    dbgOk('✅ STT pronto · '+STT_MODEL); sttSetInfo('✅ tempo reale attivo ('+STT_MODEL+')');
+    return;
+  }
+  // primi messaggi grezzi in console: servono a verificare il formato reale delle risposte
+  if(stt.msgLog<15){ stt.msgLog++; dbg('👂 STT ← '+String(raw).slice(0,220)); }
+  if(m.goAway){ stt.goAway=true; dbg('⚠️ STT goAway: la connessione sta per scadere, mi riconnetto appena c\'è silenzio'); if(!stt.turnOpen&&!stt.waiting) sttConnect(); }
+  const sc=m.serverContent||{};
+  const it=sc.interimInputTranscription?.text ?? m.interimInputTranscription?.text;
+  const ft=sc.inputTranscription?.text ?? m.inputTranscription?.text;
+  if(typeof it==='string'){ stt.interim=it; if(it.trim()) stt.gotText=true; sttShow(); }
+  if(typeof ft==='string' && ft){
+    stt.final=sttJoin(stt.final, ft); stt.interim=''; stt.gotText=true; sttShow();
+    if(stt.waiting){ clearTimeout(stt.debTimer); stt.debTimer=setTimeout(()=>sttFire('testo definitivo'), STT_FINAL_DEBOUNCE_MS); }
+  }
+  if(sc.turnComplete && stt.waiting && stt.final){ clearTimeout(stt.debTimer); sttFire('turno completo'); }
+}
+// I pezzi di testo definitivo possono arrivare con o senza spazio iniziale
+function sttJoin(a,b){ if(!a) return b.trim(); if(/^\s/.test(b)||/\s$/.test(a)) return (a+b).replace(/\s+/g,' '); return a+' '+b; }
+function sttText(){ return (stt.final+' '+stt.interim).replace(/\s+/g,' ').trim(); }
+function sttShow(){
+  if(!stt.turnOpen && !stt.waiting) return;
+  if(!stt.bubble){ const box=document.getElementById('chatBox'); stt.bubble=document.createElement('div'); stt.bubble.className='msg user'; box.appendChild(stt.bubble); }
+  stt.bubble.style.opacity='.7'; stt.bubble.textContent=sttText()||'🎤 …';
+  const box=document.getElementById('chatBox'); box.scrollTop=box.scrollHeight;
+}
+// Float32 alla frequenza del microfono → PCM 16 kHz 16 bit (con gain)
+function earTo16k(f32, sr, gain){
+  const ratio=sr/EAR_SR, outN=Math.floor(f32.length/ratio), pcm=new Int16Array(outN);
+  for(let i=0;i<outN;i++){ const a=Math.floor(i*ratio), b=Math.min(f32.length,Math.floor((i+1)*ratio)); let s=0; for(let k=a;k<b;k++) s+=f32[k];
+    const v=Math.max(-1,Math.min(1,(s/Math.max(1,b-a))*gain)); pcm[i]=v<0?v*32768:v*32767; }
+  return pcm;
+}
+function sttSend(f32){
+  if(!stt.ws || !stt.ready) return;
+  const pcm=earTo16k(f32, ttsCtx.sampleRate, earGain);
+  try{ stt.ws.send(JSON.stringify({realtimeInput:{audio:{data:earB64(new Uint8Array(pcm.buffer)), mimeType:'audio/pcm;rate=16000'}}})); }catch(e){ return; }
+  const sec=pcm.length/EAR_SR; sttSession.sec+=sec; sttSession.usd=sttSession.sec/60*STT_USD_MIN;
+}
+// Inizio parlato: mando anche l'audio di "pre-roll" (le prime sillabe)
+function sttTurnStart(preroll){
+  if(stt.waiting){                       // hai ripreso a parlare prima che il turno fosse inviato: continua lo stesso turno
+    clearTimeout(stt.waitTimer); clearTimeout(stt.debTimer); stt.waiting=false;
+    dbg('👂 Riprendi a parlare: continuo lo stesso turno');
+  }else{ stt.final=''; stt.interim=''; stt.gotText=false; stt.bubble=null; }
+  stt.turnOpen=!!(stt.ws && stt.ready);
+  if(!stt.turnOpen) return;
+  preroll.forEach(sttSend); sttShow();
+}
+function sttAbortTurn(why){
+  if(!stt.turnOpen && !stt.waiting) return;
+  try{ if(stt.ws&&stt.ready) stt.ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}})); }catch(e){}
+  clearTimeout(stt.waitTimer); clearTimeout(stt.debTimer);
+  if(stt.bubble){ stt.bubble.style.opacity='.4'; if(!sttText()) stt.bubble.remove(); }
+  stt.turnOpen=false; stt.waiting=false; stt.final=''; stt.interim=''; stt.bubble=null;
+}
+// Fine parlato (dal nostro rilevatore): chiedo a Google di chiudere la trascrizione e aspetto il testo
+function sttTurnEnd(chunks, totMs){
+  stt.turnOpen=false; stt.waiting=true; stt.waitT0=performance.now(); stt.chunks=chunks; stt.totMs=totMs;
+  try{ stt.ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}})); }catch(e){}
+  clearTimeout(stt.waitTimer); stt.waitTimer=setTimeout(()=>sttFire('tempo scaduto'), STT_FINAL_WAIT_MS);
+  if(stt.final){ clearTimeout(stt.debTimer); stt.debTimer=setTimeout(()=>sttFire('testo già pronto'), STT_FINAL_DEBOUNCE_MS); }
+}
+function sttFire(reason){
+  if(!stt.waiting) return;
+  clearTimeout(stt.waitTimer); clearTimeout(stt.debTimer);
+  const text=sttText(), bubble=stt.bubble, chunks=stt.chunks, totMs=stt.totMs, got=stt.gotText;
+  const waited=performance.now()-stt.waitT0;
+  stt.waiting=false; stt.final=''; stt.interim=''; stt.bubble=null; stt.chunks=null;
+  if(text){
+    dbg('👂 Testo pronto in '+Math.round(waited)+' ms ('+reason+'): "'+text.slice(0,80)+'"');
+    brainAsk(text, null, {bubble, silMs:earSilMs, sttMs:waited});
+  }else if(!got && chunks){
+    // Google non ha restituito niente in tutto il turno: forse l'orecchio non funziona → uso l'audio registrato
+    dbgWarn('⚠️ Nessun testo dall\'orecchio in tempo reale ('+reason+'): mando l\'audio registrato (classico)');
+    const wav=earToWav(chunks, ttsCtx.sampleRate, earGain);
+    brainAsk('', {b64:earB64(wav), sec:totMs/1000, silMs:earSilMs}, {bubble});
+  }else{
+    dbg('🎤 Nessuna parola riconosciuta: turno ignorato');
+    if(bubble) bubble.remove();
+  }
+  if(stt.goAway && connected) sttConnect();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2033,9 +2282,18 @@ function earLoadPrefs(){
   try{const t=parseInt(localStorage.getItem(LS_EAR_THR)); if(t>=5&&t<=95){document.getElementById('rThr').value=t;}}catch(e){}
   try{const s=parseInt(localStorage.getItem(LS_EAR_SIL)); if(s>=300&&s<=2000){document.getElementById('rSil').value=s;}}catch(e){}
   try{const a=localStorage.getItem(LS_EAR_AUTOMUTE); if(a!==null) document.getElementById('chkAutoMute').checked=(a==='1');}catch(e){}
+  try{const v=localStorage.getItem(LS_EAR_MODE); if(v==='live'||v==='classic') document.getElementById('selEar').value=v;}catch(e){}
   earSetGain(document.getElementById('rGain').value,true); earSetThr(document.getElementById('rThr').value,true); earSetSil(document.getElementById('rSil').value,true);
 }
-function earSavePrefs(){try{localStorage.setItem(LS_EAR_AUTOMUTE,document.getElementById('chkAutoMute').checked?'1':'0');}catch(e){}}
+function earSavePrefs(){
+  try{localStorage.setItem(LS_EAR_AUTOMUTE,document.getElementById('chkAutoMute').checked?'1':'0');
+      localStorage.setItem(LS_EAR_MODE,document.getElementById('selEar').value);}catch(e){}
+  // cambio orecchio a sessione aperta: apro o chiudo subito la connessione di trascrizione
+  if(connected && document.getElementById('selEar').value!==earModeApplied){
+    earModeApplied=document.getElementById('selEar').value;
+    if(earModeLive()){ stt.fails=0; stt.variant=0; sttConnect(); } else { sttAbortTurn('cambio orecchio'); sttClose(); sttSetInfo('Orecchio classico attivo.'); }
+  }
+}
 function earSetGain(v,nosave){earGain=v/100; document.getElementById('vGain').textContent=v+'%'; if(!nosave) try{localStorage.setItem(LS_EAR_GAIN,v);}catch(e){}}
 function earSetThr(v,nosave){earThr=+v; document.getElementById('vThr').textContent=v+'%'; document.getElementById('thrLine').style.left=v+'%'; if(!nosave) try{localStorage.setItem(LS_EAR_THR,v);}catch(e){}}
 function earSetSil(v,nosave){earSilMs=+v; document.getElementById('vSil').textContent=v+' ms'; if(!nosave) try{localStorage.setItem(LS_EAR_SIL,v);}catch(e){}}
@@ -2080,23 +2338,31 @@ function earOnChunk(f32){
     if(earAboveMs>=EAR_START_MS){
       earState='speech'; earChunks=earPre.slice(); earPre=[]; earPreMs=0; earSpeechMs=earAboveMs; earBelowMs=0;
       if(busy){ dbg('🛑 Barge-in: la persona parla mentre il robot risponde → lo fermo'); brainStop(false); }
+      if(earModeLive()) sttTurnStart(earChunks);
       setSt('▶ TU PARLI'); dot('dMic','tk');
     }
   }else if(earState==='speech'){
     earChunks.push(f32);
+    if(stt.turnOpen) sttSend(f32);
     if(loud){earSpeechMs+=ms; earBelowMs=0;} else earBelowMs+=ms;
     const totMs=earChunks.length*ms;
     if(earBelowMs>=earSilMs || totMs>=EAR_MAX_SPEECH_MS) earEndTurn(totMs);
   }
 }
-function earReset(why){ earState='idle'; earChunks=[]; earAboveMs=0; earBelowMs=0; earSpeechMs=0; if(why) dbg('🎤 turno annullato ('+why+')'); if(connected){ setSt('◉ IN ASCOLTO'); dot('dMic','on'); } }
+function earReset(why){ if(why) sttAbortTurn(why); earState='idle'; earChunks=[]; earAboveMs=0; earBelowMs=0; earSpeechMs=0; if(why) dbg('🎤 turno annullato ('+why+')'); if(connected){ setSt('◉ IN ASCOLTO'); dot('dMic','on'); } }
 
 function earEndTurn(totMs){
   const chunks=earChunks, speech=earSpeechMs; earReset();
-  if(speech<EAR_MIN_SPEECH_MS){ dbg('🎤 rumore breve scartato ('+Math.round(speech)+' ms)'); return; }
+  if(speech<EAR_MIN_SPEECH_MS){ dbg('🎤 rumore breve scartato ('+Math.round(speech)+' ms)'); sttAbortTurn('rumore'); return; }
+  // Orecchio in tempo reale: il testo sta già arrivando, aspetto solo la chiusura
+  if(stt.turnOpen && stt.ws && stt.ready){ dbg('🎤 Fine turno: '+(totMs/1000).toFixed(1)+' s · silenzio di chiusura '+earSilMs+' ms → chiedo il testo definitivo'); sttTurnEnd(chunks, totMs); return; }
+  // Connessione caduta a metà turno: se c'è già del testo uso quello, altrimenti l'audio (classico)
+  let liveBubble=null;
+  if(stt.turnOpen){ const t=sttText(); liveBubble=stt.bubble; stt.turnOpen=false; stt.final=''; stt.interim=''; stt.bubble=null;
+    if(t){ dbgWarn('⚠️ Orecchio caduto a metà turno: uso il testo già ricevuto'); brainAsk(t,null,{bubble:liveBubble, silMs:earSilMs}); return; } }
   const wav=earToWav(chunks, ttsCtx.sampleRate, earGain);
   dbg('🎤 Fine turno: '+(totMs/1000).toFixed(1)+' s di audio ('+Math.round(wav.length/1024)+' KB) · silenzio di chiusura '+earSilMs+' ms');
-  brainAsk('', {b64:earB64(wav), sec:totMs/1000, silMs:earSilMs});
+  brainAsk('', {b64:earB64(wav), sec:totMs/1000, silMs:earSilMs}, {bubble:liveBubble});
 }
 // Float32 alla frequenza del contesto → WAV 16 kHz mono 16 bit (con gain)
 function earToWav(chunks, sr, gain){
@@ -2187,12 +2453,16 @@ async function conn(){
   b.classList.add('off'); b.textContent='🔴  DISCONNETTI';
   chatLog=[]; chatLogStartedAt=Date.now(); silStart=Date.now();
   setSt('◉ IN ASCOLTO'); dot('dMic','on');
-  addMsg('✨ Connesso · '+brainModelInfo().id+' → '+ttsModelInfo().id,'sys');
-  dbg('✅ Connesso: in ascolto · soglia '+earThr+'% · silenzio fine turno '+earSilMs+' ms · auto-mute '+(document.getElementById('chkAutoMute').checked?'ON':'OFF'));
+  earModeApplied=document.getElementById('selEar').value;
+  if(earModeLive()){ stt.fails=0; stt.variant=0; stt.msgLog=0; sttConnect(); } else sttSetInfo('Orecchio classico attivo.');
+  fillerPrepare();
+  addMsg('✨ Connesso · '+(earModeLive()?STT_MODEL+' → ':'')+brainModelInfo().id+' → '+ttsModelInfo().id,'sys');
+  dbg('✅ Connesso: in ascolto · orecchio '+(earModeLive()?'tempo reale':'classico')+' · soglia '+earThr+'% · silenzio fine turno '+earSilMs+' ms · auto-mute '+(document.getElementById('chkAutoMute').checked?'ON':'OFF'));
   try{ if('wakeLock' in navigator) earWakeLock=await navigator.wakeLock.request('screen'); }catch(e){}
 }
 function disc(reason){
-  connected=false; brainStop(false); earStopMic();
+  connected=false; brainStop(false); sttAbortTurn('disconnesso'); sttClose(); earStopMic();
+  sttSetInfo('Con "tempo reale", se la connessione cade il turno passa da solo al classico.');
   const b=document.getElementById('btnConn'); b.classList.remove('off'); b.textContent='✨  CONNETTI';
   setSt('● IDLE'); silStart=null; dot('dAI',''); dot('dVoice','');
   try{ earWakeLock&&earWakeLock.release(); }catch(e){} earWakeLock=null;
@@ -2220,12 +2490,14 @@ function renderCost(){
   document.getElementById('costBox').innerHTML=
     '🧠 Cervello: '+brainSession.turns+' risposte · '+brainSession.inTok.toLocaleString()+' token in / '+brainSession.outTok.toLocaleString()+' out → '+f(brainSession.usd)+'<br>'
    +'🗣 Voce: '+ttsSession.calls+' frasi · '+ttsSession.audioSec.toFixed(0)+' s audio · '+ttsSession.outTok.toLocaleString()+' token audio → '+f(ttsSession.usd)+'<br>'
-   +'<div style="font-size:.6rem;color:var(--muted);margin-top:4px">Calcolato dai token restituiti dalle API · prezzi verificati il '+TTS_PREZZI_VERIFICATI+' · dal 1/1/2027 il TTS raddoppia</div>'
-   +'<div class="costtot">💵 TOTALE: '+f(brainSession.usd+ttsSession.usd)+'</div>';
+   +'👂 Orecchio tempo reale: '+(sttSession.sec/60).toFixed(1)+' min di audio inviato → '+f(sttSession.usd)+' (stima)<br>'
+   +'<div style="font-size:.6rem;color:var(--muted);margin-top:4px">Cervello e voce calcolati dai token restituiti dalle API · orecchio stimato a ~'+STT_USD_MIN+' $/min · prezzi verificati il '+TTS_PREZZI_VERIFICATI+' · dal 1/1/2027 il TTS raddoppia</div>'
+   +'<div class="costtot">💵 TOTALE: '+f(brainSession.usd+ttsSession.usd+sttSession.usd)+'</div>';
 }
 function resetCost(){
   Object.assign(brainSession,{turns:0,inTok:0,outTok:0,usd:0});
   Object.assign(ttsSession,{calls:0,inTok:0,outTok:0,usd:0,audioSec:0});
+  Object.assign(sttSession,{sec:0,usd:0});
   renderCost(); toast('🗑 Costi azzerati');
 }
 
@@ -2240,6 +2512,7 @@ function init(){
   try{ loadFacesLS(); }catch(e){ dbg('⚠️ loadFacesLS: '+e.message); }
   try{ brainInit(); }catch(e){ dbgErr('❌ brainInit: '+e.message); }
   try{ ttsInit(); }catch(e){ dbgErr('❌ ttsInit: '+e.message); }
+  try{ fillerLoadPrefs(); }catch(e){}
   renderChars();
   renderCost();
   setInterval(tickTimer,500); setInterval(renderCost,2000);
