@@ -239,22 +239,78 @@
 <body>
 <a class="back" href="index.html">← LAUNCHER</a>
 
-<!-- STATO -->
+<!-- CONNETTI -->
 <div class="card conn-card">
-  <div style="font-family:var(--sans);font-weight:900;font-size:1.1rem;letter-spacing:1px">🤖 ROBOT TTS <span style="font-size:.6rem;color:var(--muted);font-family:var(--mono);letter-spacing:0">orecchio → cervello → voce</span></div>
+  <button id="btnConn" onclick="toggleConn()">✨  CONNETTI</button>
   <div class="dot-row">
     <div class="dw"><div class="dot on" id="dHealth"></div><span>OK</span></div>
     <div class="dw"><div class="dot" id="dNet"></div><span>NET</span></div>
-    <div class="dw"><div class="dot" id="dAI"></div><span>CERVELLO</span></div>
+    <div class="dw"><div class="dot" id="dAI"></div><span>AI</span></div>
     <div class="dw"><div class="dot" id="dVoice"></div><span>VOCE</span></div>
+    <div class="dw"><div class="dot" id="dMic"></div><span>MIC</span></div>
   </div>
-  <div class="state" id="stLbl">● PRONTO</div>
+  <div class="state" id="stLbl">● IDLE</div>
   <div class="charinfo" id="charInfo">— nessun personaggio —</div>
 </div>
 
-<!-- CERVELLO (fase 4) — Gemini testo via Interactions API: domanda scritta → risposta → voce TTS -->
+<!-- VU -->
+<div class="card">
+  <div class="vu-top">
+    <div>
+      <div class="card-hd" style="margin:0">🎤 Input Level</div>
+      <div style="font-size:.6rem;color:var(--muted);font-family:var(--mono);margin-top:2px">linea rossa = soglia voce</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button id="btnZero" onclick="earCalibrate()" style="font-family:var(--mono);font-size:.55rem;padding:5px 9px;background:var(--surf);border:1px solid var(--bord);border-radius:7px;color:var(--muted);cursor:pointer;white-space:nowrap;letter-spacing:1px">LIV.ZERO</button>
+      <div class="rms-val" id="rmsVal">  0%</div>
+    </div>
+  </div>
+  <div class="mic-row">
+    <select class="mic-sel" id="selMic" onchange="earMicChanged()"><option value="">🎤 Auto</option></select>
+    <button class="btn-sm gr" onclick="earStartMic(true)">▶ MIC</button>
+  </div>
+  <div class="vu-wrap">
+    <div class="vu-segs" id="vuSegs"></div>
+    <div class="thr" id="thrLine"></div>
+    <div class="vu-mute-overlay" id="vuMuteOverlay">🔇 MIC SOSPESO — ROBOT PARLA</div>
+  </div>
+  <div id="amuteBadge" class="amute-badge">⚪ Auto-mute: standby</div>
+  <div class="sg" style="margin-top:10px">
+    <div class="sh"><span class="l">Gain Microfono</span><span class="v" id="vGain">100%</span></div>
+    <input type="range" id="rGain" min="0" max="300" step="10" value="100" oninput="earSetGain(this.value)">
+    <div class="sticks"><span>0%</span><span>100%</span><span>300%</span></div>
+  </div>
+  <div class="sg">
+    <div class="sh"><span class="l">Soglia voce</span><span class="v" id="vThr">35%</span></div>
+    <input type="range" id="rThr" min="5" max="95" step="1" value="35" oninput="earSetThr(this.value)">
+    <div class="sticks"><span>sensibile</span><span>LIV.ZERO la regola da sola</span><span>sorda</span></div>
+  </div>
+  <div class="sg">
+    <div class="sh"><span class="l">Silenzio fine turno</span><span class="v" id="vSil">800 ms</span></div>
+    <input type="range" id="rSil" min="300" max="2000" step="50" value="800" oninput="earSetSil(this.value)">
+    <div class="sticks"><span>300ms</span><span>più corto = risponde prima</span><span>2s</span></div>
+  </div>
+</div>
+
+<!-- MIC CONTROLLI -->
+<div class="card">
+  <div class="card-hd">🎙 Microfono & Controlli</div>
+  <div class="trow">
+    <div><div class="tlbl">🔇 Mute Mic</div><div class="tsub">Il robot finisce la frase in corso</div></div>
+    <button id="btnMute" onclick="toggleMute()">🎙 ATTIVO</button>
+  </div>
+  <div class="trow">
+    <div>
+      <div class="tlbl">🔇 Auto-mute durante risposta</div>
+      <div class="tsub">Il mic non ascolta mentre il robot parla · niente eco · spento = puoi interromperlo parlando (barge-in)</div>
+    </div>
+    <label class="tsw"><input type="checkbox" id="chkAutoMute" checked onchange="earSavePrefs()"><span class="ts"></span></label>
+  </div>
+</div>
+
+<!-- CERVELLO — impostazioni (il parlato arriva dal microfono) -->
 <div class="card" id="brainCard">
-  <div class="card-hd">🧠 Cervello — Gemini (stessa chiave) → Voce TTS</div>
+  <div class="card-hd">🧠 Cervello — Gemini (stessa chiave della vecchia app)</div>
   <div class="f">
     <label>Modello cervello</label>
     <select id="brainModel" onchange="brainSavePrefs()"></select>
@@ -263,18 +319,12 @@
     <label>Memoria: ultimi <span id="vBrainTurns">10</span> scambi</label>
     <input type="range" id="brainTurns" min="2" max="30" step="1" value="10" oninput="document.getElementById('vBrainTurns').textContent=this.value;brainSavePrefs()">
   </div>
-  <div class="f">
-    <label>Domanda (al posto del microfono, finché non arriva l'orecchio)</label>
-    <textarea id="brainQ" rows="2" placeholder="es. Ciao! Chi sei e da dove vieni?"></textarea>
-  </div>
   <div class="brow">
-    <button class="bs" id="brainBtnAsk" style="border-color:var(--green);color:var(--green)" onclick="brainAskBox()">💬 Chiedi</button>
     <button class="bs dn" onclick="brainStop(true)">⏹ Stop</button>
     <button class="bs" onclick="brainReset()">🗑 Nuova conversazione</button>
     <button class="bs" onclick="brainShowPrompt()">📄 Prompt</button>
   </div>
-  <div id="brainOut" style="font-size:.85rem;margin-top:10px;line-height:1.5;white-space:pre-wrap"></div>
-  <div id="brainInfo" style="font-family:var(--mono);font-size:.68rem;color:var(--muted);margin-top:8px;line-height:1.6">Usa personaggio, conoscenze spuntate e voce della scheda 🗣 qui sopra.</div>
+  <div id="brainInfo" style="font-family:var(--mono);font-size:.68rem;color:var(--muted);margin-top:8px;line-height:1.6">Tempi e costi del turno compaiono qui. Usa personaggio, conoscenze spuntate e voce della scheda 🗣.</div>
 </div>
 
 
@@ -500,7 +550,7 @@
 
 <script>
 // ═══════════════════════════════════════════════════════════════
-// ROBOT_TTS — solo motore a cascata. Niente Gemini Live (resta in gemini.html).
+// ROBOT_TTS — motore a cascata: microfono → cervello Gemini → voce TTS. Niente Gemini Live (resta in gemini.html).
 // ═══════════════════════════════════════════════════════════════
 // DATI CONDIVISI CON gemini.html (stesse chiavi, stesso sito): chiave, personaggi,
 // ultimo personaggio, conoscenze, foto persone. REGOLA: non togliere né rinominare
@@ -674,10 +724,6 @@ function dbgClassify(msg){
   if(/^❌|errore|error|fallit/i.test(s)) return 'err';
   if(/^⚠️|^🛑|^🚨|warn|drop/i.test(s)) return 'warn';
   if(/^✅|connesso|riuscit|pronto|attivo|ripristin|sbloccato/i.test(s)) return 'ok';
-  if(/WS|websocket|🌐|🔗|🔌|goAway|setup|handle/i.test(s)) return 'ws';
-  if(/🎥|video|frame|📷|streaming|cam|👁/i.test(s)) return 'video';
-  if(/audio|🔊|🎤|mic|chunk|PCM|🔇|audioStream/i.test(s)) return 'audio';
-  if(/VAD|vad|soglia|silenzi/i.test(s)) return 'vad';
   return 'info';
 }
 
@@ -1725,10 +1771,12 @@ async function ttsCheckVoice(){
 // ═══════════════════════════════════════════════════════════════
 const BRAIN_MODELS=[
   // prezzi USD per 1M token (testo, paid tier) verificati il 21/11/2026 · thinking al minimo consentito
-  {id:'gemini-3.5-flash-lite', label:'Gemini 3.5 Flash-Lite — veloce (consigliato)', think:'minimal', inPrice:0.30, outPrice:2.50},
-  {id:'gemini-3.1-flash-lite', label:'Gemini 3.1 Flash-Lite — il più economico',     think:'minimal', inPrice:0.25, outPrice:1.50},
-  {id:'gemini-3.8-flash',      label:'Gemini 3.8 Flash — più intelligente, più lento', think:'low',   inPrice:0.75, outPrice:3.75},
+  {id:'gemini-3.5-flash-lite', label:'Gemini 3.5 Flash-Lite — veloce (consigliato)', think:'minimal', inPrice:0.30, inAudio:0.30, outPrice:2.50},
+  {id:'gemini-3.1-flash-lite', label:'Gemini 3.1 Flash-Lite — il più economico',     think:'minimal', inPrice:0.25, inAudio:0.50, outPrice:1.50},
+  {id:'gemini-3.8-flash',      label:'Gemini 3.8 Flash — più intelligente, più lento', think:'low',   inPrice:0.75, inAudio:0.75, outPrice:3.75}, // prezzo audio in ingresso non indicato: uso quello testo
 ];
+// Trascrizione per la chat (in parallelo, non rallenta la risposta)
+const TRANSCRIBE_MODEL={id:'gemini-3.1-flash-lite', inAudio:0.50, outPrice:1.50};
 const BRAIN_MAX_TOKENS=1024;      // tetto risposta (include il ragionamento interno)
 const LS_BRAIN_MODEL='robottts_brain_model', LS_BRAIN_TURNS='robottts_brain_turns';
 // Regole voce aggiunte in automatico al prompt (dopo il personaggio, prima delle conoscenze)
@@ -1738,7 +1786,8 @@ const REGOLE_VOCE='\n\n---\nREGOLE VOCE (importanti): quello che scrivi viene le
  +'<laugh> <chuckle> <giggle> <sigh> <gasp> <short pause> <long pause> <whispers>. Non inventarne altri. '
  +'3) Per enfatizzare una parola scrivila in MAIUSCOLO, raramente. '
  +'4) Se vuoi cambiare tono, metti il tono tra parentesi quadre all\'inizio della frase, es. [ironico] oppure [sottovoce]: non viene letto. Non usare parentesi quadre per altro. '
- +'5) Frasi brevi, con punteggiatura chiara: la voce parte appena finisci la prima frase.';
+ +'5) Frasi brevi, con punteggiatura chiara: la voce parte appena finisci la prima frase. '
+ +'6) Ti arriva l\'audio del microfono: se non contiene parole rivolte a te (solo rumore, silenzio, parole incomprensibili o persone che parlano tra loro), rispondi soltanto [SILENZIO] e nient\'altro.';
 
 let brainHistory=[];              // [{q, a}] scambi completi
 let brainGen=0, brainAbortCtl=null, brainBusy=false, brainActiveGen=-1;
@@ -1764,10 +1813,10 @@ function brainShowPrompt(){
   const p=brainSystemPrompt(); dbg('📄 PROMPT CERVELLO ('+p.length+' caratteri):\n'+p);
   document.getElementById('brainInfo').textContent='📄 Prompt di '+p.length+' caratteri (circa '+Math.round(p.length/4)+' token) — testo completo nella console di debug.';
 }
-function brainReset(){brainStop(true); brainHistory=[]; document.getElementById('brainOut').textContent=''; addMsg('🔄 Nuova conversazione (memoria cervello azzerata)','sys'); toast('🗑 Memoria azzerata');}
+function brainReset(){brainStop(true); brainHistory=[]; addMsg('🔄 Nuova conversazione (memoria cervello azzerata)','sys'); toast('🗑 Memoria azzerata');}
 
 function brainStop(manual){
-  brainGen++; setSt('● PRONTO');                              // invalida tutto quello che sta girando
+  brainGen++; setSt(connected?'◉ IN ASCOLTO':'● IDLE');                              // invalida tutto quello che sta girando
   if(brainAbortCtl){try{brainAbortCtl.abort();}catch(e){} brainAbortCtl=null;}
   ttsStop();
   if(manual) dbg('⏹ Cervello + voce fermati');
@@ -1810,7 +1859,7 @@ function brainSplit(buf, isFirst, final){
 // le frasi ancora in coda vengono saltate.
 let brainChain=Promise.resolve();
 function brainEnqueue(sentences, gen, turn){
-  sentences.forEach(s=>{ brainChain=brainChain.then(()=>gen===brainGen?brainSpeakOne(s,gen,turn):null).catch(e=>dbgWarn('⚠️ coda voce: '+e.message)); });
+  sentences.forEach(s=>{ brainPendingSpeak++; brainChain=brainChain.then(()=>gen===brainGen?brainSpeakOne(s,gen,turn):null).catch(e=>dbgWarn('⚠️ coda voce: '+e.message)).then(()=>{ brainPendingSpeak=Math.max(0,brainPendingSpeak-1); }); });
 }
 async function brainSpeakOne(s, gen, turn){
   const prep=ttsPrepare(s, document.getElementById('ttsStyle').value.trim(), document.getElementById('ttsPron').value);
@@ -1838,7 +1887,7 @@ async function brainSpeakOne(s, gen, turn){
 function brainUpdInfo(t){
   const f=v=>v?Math.round(v)+' ms':'—';
   document.getElementById('brainInfo').innerHTML=
-    '⏱ primo testo '+f(t.tTok)+' · prima frase '+f(t.tSent)+' · <b>primo audio '+f(t.tAudio)+'</b> · testo completo '+f(t.tDone)
+    (t.silMs?'⏱ fine parlato → primo audio ≈ <b>'+(t.tAudio?Math.round(t.tAudio+t.silMs)+' ms':'—')+'</b> (silenzio '+t.silMs+' + '+f(t.tAudio)+')<br>':'')+'⏱ primo testo '+f(t.tTok)+' · prima frase '+f(t.tSent)+' · <b>primo audio '+f(t.tAudio)+'</b> · testo completo '+f(t.tDone)
     +(t.tAudio?(t.tAudio<=1500?' ✅':' (obiettivo 1500 ms)'):'')
     +'<br>🧠 '+t.model+' · token '+t.inTok+' in / '+t.outTok+' out'+(t.thTok?' + '+t.thTok+' ragionamento':'')+' · $'+t.brainUsd.toFixed(5)
     +'<br>🗣 '+t.ttsCalls+' frasi · '+t.audioSec.toFixed(1)+' s · $'+t.ttsUsd.toFixed(5)
@@ -1846,31 +1895,42 @@ function brainUpdInfo(t){
     +' · memoria '+brainHistory.length+'/'+document.getElementById('brainTurns').value+' scambi';
 }
 
-async function brainAsk(q){
-  q=String(q||'').trim(); if(!q) return;
+// Domanda al cervello. Con il microfono arriva l'AUDIO (opzione A: Gemini ascolta direttamente);
+// la trascrizione per la chat viene fatta in parallelo e non rallenta la risposta.
+async function brainAsk(q, audio){
+  q=String(q||'').trim(); if(!q&&!audio) return;
   brainStop(false); ttsEnsureCtx();
   const gen=brainGen, key=ttsKey(); brainActiveGen=gen;
   if(key.length<20){toast('❌ Manca la chiave Gemini (scheda API KEY)');return;}
   const m=brainModelInfo(), maxTurns=parseInt(document.getElementById('brainTurns').value)||10;
   const input=[];
   brainHistory.slice(-maxTurns).forEach(h=>{
-    input.push({type:'user_input', content:[{type:'text', text:h.q}]});
+    const uc=h.q?[{type:'text', text:h.q}]:(h.audio?[{type:'audio', data:h.audio, mime_type:'audio/wav'}]:[{type:'text', text:'(audio)'}]);
+    input.push({type:'user_input', content:uc});
     input.push({type:'model_output', content:[{type:'text', text:h.a}]});
   });
-  input.push({type:'user_input', content:[{type:'text', text:q}]});
+  input.push({type:'user_input', content:audio?[{type:'audio', data:audio.b64, mime_type:'audio/wav'}]:[{type:'text', text:q}]});
   const body={model:m.id, system_instruction:brainSystemPrompt(), input, store:false,
     generation_config:{thinking_level:m.think, max_output_tokens:BRAIN_MAX_TOKENS}};
-  const turn={t0:performance.now(), tTok:0, tSent:0, tAudio:0, tDone:0, model:m.id, inTok:0, outTok:0, thTok:0, brainUsd:0, ttsUsd:0, ttsCalls:0, audioSec:0};
-  addMsg(q,'user'); finalizeRobot();
-  const out=document.getElementById('brainOut'); out.textContent='';
-  const btn=document.getElementById('brainBtnAsk'); brainBusy=true; btn.disabled=true; btn.textContent='⏳ Penso…';
-  setSt('🧠 PENSO…'); dot('dAI','tk');
-  dbg('🧠 → '+m.id+' · thinking '+m.think+' · memoria '+(input.length-1)/2+' scambi · prompt '+body.system_instruction.length+' caratteri');
+  const turn={t0:performance.now(), silMs:audio?audio.silMs:0, tTok:0, tSent:0, tAudio:0, tDone:0, model:m.id, inTok:0, outTok:0, thTok:0, brainUsd:0, ttsUsd:0, ttsCalls:0, audioSec:0};
+  // bolla utente: con l'audio si riempie quando arriva la trascrizione
+  const box=document.getElementById('chatBox'), ub=document.createElement('div'); ub.className='msg user';
+  ub.textContent=audio?'🎤 … ('+audio.sec.toFixed(1)+' s)':q; box.appendChild(ub); box.scrollTop=box.scrollHeight;
+  const hist={q:audio?'':q, audio:audio?audio.b64:null, a:''};
+  if(audio) brainTranscribe(audio.b64, key).then(t=>{
+    if(t===null) return;
+    if(!t||t==='-'){ ub.textContent='🎤 (non comprensibile)'; return; }
+    ub.textContent=t; hist.q=t; hist.audio=null; chatLog.push({role:'user', text:t});
+  });
+  else chatLog.push({role:'user', text:q});
+  finalizeRobot();
+  brainBusy=true; setSt('🧠 PENSO…'); dot('dAI','tk');
+  dbg('🧠 → '+m.id+' · thinking '+m.think+' · '+(audio?'audio '+audio.sec.toFixed(1)+' s':'testo')+' · memoria '+(input.length-1)/2+' scambi · prompt '+body.system_instruction.length+' caratteri');
   let full='', pending='', first=true, usage=null;
   const onText=(d)=>{
     if(gen!==brainGen) return;
     if(!turn.tTok){turn.tTok=performance.now()-turn.t0; brainUpdInfo(turn);}
-    full+=d; out.textContent=full; appendRobotTxt(d);
+    full+=d; if(!/^\s*\[?S?I?L?E?N?Z?I?O?\]?\s*$/i.test(full)) { if(!robotMsgEl) appendRobotTxt(full); else appendRobotTxt(d); }
     pending+=d; const sp=brainSplit(pending, first, false); pending=sp.rest;
     if(sp.sentences.length){ if(first){turn.tSent=performance.now()-turn.t0; first=false;} brainEnqueue(sp.sentences,gen,turn); }
   };
@@ -1906,25 +1966,239 @@ async function brainAsk(q){
     const sp=brainSplit(pending, first, true);
     if(sp.sentences.length){ if(first) turn.tSent=performance.now()-turn.t0; brainEnqueue(sp.sentences,gen,turn); }
     turn.tDone=performance.now()-turn.t0; finalizeRobot();
-    if(!full.trim()) throw new Error('Il cervello non ha risposto (testo vuoto)');
-    brainHistory.push({q, a:full.trim()}); if(brainHistory.length>30) brainHistory.shift();
     turn.inTok=usage?.total_input_tokens||0; turn.outTok=usage?.total_output_tokens||0; turn.thTok=usage?.total_thought_tokens||0;
-    turn.brainUsd=turn.inTok*m.inPrice/1e6+(turn.outTok+turn.thTok)*m.outPrice/1e6;   // il ragionamento si paga come uscita
+    turn.brainUsd=turn.inTok*(audio?m.inAudio:m.inPrice)/1e6+(turn.outTok+turn.thTok)*m.outPrice/1e6;   // ragionamento pagato come uscita
     brainSession.turns++; brainSession.inTok+=turn.inTok; brainSession.outTok+=turn.outTok+turn.thTok; brainSession.usd+=turn.brainUsd;
+    if(/^\s*\[SILENZIO\]\s*$/i.test(full)){
+      dbg('🤫 Il cervello ha giudicato l\'audio rumore/non rivolto al robot: nessuna risposta');
+      ub.style.opacity='.45'; brainUpdInfo(turn); dot('dAI','on'); setSt(connected?'◉ IN ASCOLTO':'● IDLE');
+      return;
+    }
+    if(!full.trim()) throw new Error('Il cervello non ha risposto (testo vuoto)');
+    hist.a=full.trim(); brainHistory.push(hist); if(brainHistory.length>30) brainHistory.shift();
     brainUpdInfo(turn); dot('dAI','on');
-    brainChain.then(()=>{ if(gen===brainGen){ setSt('● PRONTO'); silStart=Date.now(); } });
+    brainChain.then(()=>{ if(gen===brainGen){ setSt(connected?'◉ IN ASCOLTO':'● IDLE'); silStart=Date.now(); dot('dVoice',''); } });
     dbg('⏱ TURNO: primo testo '+Math.round(turn.tTok)+' ms · prima frase '+Math.round(turn.tSent)+' ms · testo completo '+Math.round(turn.tDone)+' ms · usage '+(usage?JSON.stringify(usage):'assente'));
   }catch(e){
-    if(e.name==='AbortError'||gen!==brainGen){dbg('⏹ Domanda interrotta');return;}
-    dbgErr('❌ Cervello: '+e.message); finalizeRobot(); dot('dAI','er'); setSt('● PRONTO');
+    if(e.name==='AbortError'||gen!==brainGen){dbg('⏹ Risposta interrotta');return;}
+    dbgErr('❌ Cervello: '+e.message); finalizeRobot(); dot('dAI','er'); setSt(connected?'◉ IN ASCOLTO':'● IDLE');
     const hint=/Failed to fetch|NetworkError|Load failed/i.test(e.message)?' (rete assente o chiamata bloccata dal browser)':'';
     document.getElementById('brainInfo').innerHTML='<span style="color:var(--red)">❌ '+e.message.replace(/</g,'&lt;')+hint+'</span>';
-    toast('❌ Il cervello non ha risposto');
+    addMsg('⚠️ Il cervello non ha risposto','sys');
   }finally{
-    if(brainActiveGen===gen){ brainBusy=false; btn.disabled=false; btn.textContent='💬 Chiedi'; }
+    if(brainActiveGen===gen){ brainBusy=false; }
   }
 }
-function brainAskBox(){const t=document.getElementById('brainQ'); const q=t.value; if(!q.trim()){toast('⚠️ Scrivi una domanda');return;} t.value=''; brainAsk(q);}
+// Trascrizione per la chat (in parallelo, modello economico). null = fallita (non blocca nulla)
+async function brainTranscribe(b64, key){
+  try{
+    const res=await fetch(TTS_ENDPOINT,{method:'POST', headers:{'x-goog-api-key':key,'Content-Type':'application/json'},
+      body:JSON.stringify({model:TRANSCRIBE_MODEL.id, store:false, generation_config:{thinking_level:'minimal', max_output_tokens:300},
+        input:[{type:'user_input', content:[{type:'text', text:'Trascrivi esattamente le parole pronunciate in questo audio, nella lingua originale. Rispondi solo con la trascrizione, senza commenti. Se non ci sono parole comprensibili rispondi solo con un trattino.'},
+                                            {type:'audio', data:b64, mime_type:'audio/wav'}]}]})});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok){ dbgWarn('⚠️ Trascrizione non riuscita: '+(j?.error?.message||res.status)); return null; }
+    const u=j.usage; if(u){ const c=(u.total_input_tokens||0)*TRANSCRIBE_MODEL.inAudio/1e6+((u.total_output_tokens||0)+(u.total_thought_tokens||0))*TRANSCRIBE_MODEL.outPrice/1e6; brainSession.usd+=c; brainSession.inTok+=u.total_input_tokens||0; brainSession.outTok+=u.total_output_tokens||0; }
+    return (j.steps||[]).filter(s=>s.type==='model_output').flatMap(s=>s.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('').trim();
+  }catch(e){ dbgWarn('⚠️ Trascrizione: '+e.message); return null; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ORECCHIO (fase 5) — microfono, VU meter, rilevamento voce (VAD a energia),
+// auto-mute, invio dell'audio al cervello (opzione A: audio diretto a Gemini)
+// ═══════════════════════════════════════════════════════════════
+const EAR_SR=16000;                 // audio mandato al cervello: WAV 16 kHz mono
+const EAR_N_SEGS=36;
+const EAR_START_MS=120;             // sopra soglia per almeno 120 ms = inizia a parlare
+const EAR_MIN_SPEECH_MS=300;        // parlato più corto = rumore, scartato
+const EAR_MAX_SPEECH_MS=25000;      // turno troppo lungo: lo chiudo comunque
+const EAR_PREROLL_MS=400;           // audio tenuto PRIMA dell'inizio (non taglia le prime sillabe)
+const EAR_ECHO_TAIL_MS=400;         // dopo la fine della voce del robot il mic resta chiuso ancora un attimo
+const LS_EAR_GAIN='robottts_gain', LS_EAR_THR='robottts_thr', LS_EAR_SIL='robottts_silence_ms', LS_EAR_AUTOMUTE='robottts_automute', LS_EAR_MIC='robottts_mic_id';
+const EAR_WORKLET=`class EarTap extends AudioWorkletProcessor{
+  constructor(){super();this.b=new Float32Array(1024);this.i=0;}
+  process(inp){const c=inp[0]&&inp[0][0]; if(c){for(let k=0;k<c.length;k++){this.b[this.i++]=c[k]; if(this.i===1024){this.port.postMessage(this.b.slice(0));this.i=0;}}} return true;}
+}
+registerProcessor('ear-tap',EarTap);`;
+
+let connected=false, muted=false, earStream=null, earSrc=null, earNode=null, earSink=null, earMonitorOnly=false;
+let earLevel=0, earGain=1, earThr=35, earSilMs=800;
+let earState='idle', earAboveMs=0, earBelowMs=0, earSpeechMs=0, earChunks=[], earPre=[], earPreMs=0;
+let earEchoUntil=0, earWasBusy=false, earCalib=null, earWakeLock=null;
+let brainPendingSpeak=0;
+
+function earBuildVU(){const v=document.getElementById('vuSegs'); v.innerHTML=''; for(let i=0;i<EAR_N_SEGS;i++){const d=document.createElement('div');d.className='seg';v.appendChild(d);} }
+function earLoadPrefs(){
+  try{const g=parseInt(localStorage.getItem(LS_EAR_GAIN)); if(g>=0&&g<=300){document.getElementById('rGain').value=g;}}catch(e){}
+  try{const t=parseInt(localStorage.getItem(LS_EAR_THR)); if(t>=5&&t<=95){document.getElementById('rThr').value=t;}}catch(e){}
+  try{const s=parseInt(localStorage.getItem(LS_EAR_SIL)); if(s>=300&&s<=2000){document.getElementById('rSil').value=s;}}catch(e){}
+  try{const a=localStorage.getItem(LS_EAR_AUTOMUTE); if(a!==null) document.getElementById('chkAutoMute').checked=(a==='1');}catch(e){}
+  earSetGain(document.getElementById('rGain').value,true); earSetThr(document.getElementById('rThr').value,true); earSetSil(document.getElementById('rSil').value,true);
+}
+function earSavePrefs(){try{localStorage.setItem(LS_EAR_AUTOMUTE,document.getElementById('chkAutoMute').checked?'1':'0');}catch(e){}}
+function earSetGain(v,nosave){earGain=v/100; document.getElementById('vGain').textContent=v+'%'; if(!nosave) try{localStorage.setItem(LS_EAR_GAIN,v);}catch(e){}}
+function earSetThr(v,nosave){earThr=+v; document.getElementById('vThr').textContent=v+'%'; document.getElementById('thrLine').style.left=v+'%'; if(!nosave) try{localStorage.setItem(LS_EAR_THR,v);}catch(e){}}
+function earSetSil(v,nosave){earSilMs=+v; document.getElementById('vSil').textContent=v+' ms'; if(!nosave) try{localStorage.setItem(LS_EAR_SIL,v);}catch(e){}}
+
+// Il robot sta pensando o parlando?
+function robotBusy(){ return brainBusy || brainPendingSpeak>0 || (ttsCtx && ttsNextTime>ttsCtx.currentTime); }
+
+function earDrawVU(pct, suspended){
+  const s=document.getElementById('vuSegs').children, lit=Math.round(pct/100*EAR_N_SEGS);
+  for(let i=0;i<s.length;i++){ if(suspended){s[i].className='seg muted';} else {const p=(i+1)/EAR_N_SEGS; s[i].className='seg '+(i<lit?(p<.6?'g':p<.85?'y':'r'):'');} }
+  const el=document.getElementById('rmsVal'); el.textContent=String(Math.round(pct)).padStart(3,' ')+'%'; el.className='rms-val'+(pct>85?' r':pct>60?' y':'');
+}
+function earSetBadge(mode){
+  const o=document.getElementById('vuMuteOverlay'), b=document.getElementById('amuteBadge');
+  if(mode==='sosp'){o.classList.add('show'); b.className='amute-badge mic-muted'; b.textContent='🔇 Mic sospeso — robot in risposta';}
+  else if(mode==='barge'){o.classList.remove('show'); b.className='amute-badge robot-speaking'; b.textContent='🔊 Robot parla · parla per interromperlo';}
+  else {o.classList.remove('show'); b.className='amute-badge'; b.textContent='⚪ Auto-mute: standby';}
+}
+
+// Un pezzo di audio dal microfono (~21 ms)
+function earOnChunk(f32){
+  const sr=ttsCtx.sampleRate, ms=f32.length/sr*1000;
+  let sum=0; for(let i=0;i<f32.length;i++){const v=f32[i]*earGain; sum+=v*v;}
+  const rms=Math.sqrt(sum/f32.length), db=20*Math.log10(rms+1e-9);
+  const pct=Math.max(0,Math.min(100,(db+60)/60*100));          // -60 dB = 0%, 0 dB = 100%
+  earLevel=earLevel*0.6+pct*0.4;
+  if(earCalib){ earCalib.max=Math.max(earCalib.max,pct); earCalib.ms+=ms; if(earCalib.ms>=1500) earCalibDone(); }
+  // auto-mute: mentre il robot pensa/parla (e per un attimo dopo) il mic non ascolta
+  const busy=robotBusy(), now=performance.now();
+  if(earWasBusy&&!busy) earEchoUntil=now+EAR_ECHO_TAIL_MS;
+  earWasBusy=busy;
+  const autoMute=document.getElementById('chkAutoMute').checked;
+  const suspended=muted || (autoMute && (busy || now<earEchoUntil));
+  earDrawVU(earLevel, suspended);
+  earSetBadge(!connected?'':suspended&&!muted?'sosp':(busy&&!autoMute?'barge':''));
+  if(!connected||earMonitorOnly) return;
+  if(suspended){ if(earState==='speech') earReset('sospeso'); earPre=[]; earPreMs=0; return; }
+  const loud=pct>=earThr;
+  if(earState==='idle'){
+    earPre.push(f32); earPreMs+=ms; while(earPreMs>EAR_PREROLL_MS&&earPre.length>1){earPreMs-=earPre[0].length/sr*1000; earPre.shift();}
+    earAboveMs=loud?earAboveMs+ms:0;
+    if(earAboveMs>=EAR_START_MS){
+      earState='speech'; earChunks=earPre.slice(); earPre=[]; earPreMs=0; earSpeechMs=earAboveMs; earBelowMs=0;
+      if(busy){ dbg('🛑 Barge-in: la persona parla mentre il robot risponde → lo fermo'); brainStop(false); }
+      setSt('▶ TU PARLI'); dot('dMic','tk');
+    }
+  }else if(earState==='speech'){
+    earChunks.push(f32);
+    if(loud){earSpeechMs+=ms; earBelowMs=0;} else earBelowMs+=ms;
+    const totMs=earChunks.length*ms;
+    if(earBelowMs>=earSilMs || totMs>=EAR_MAX_SPEECH_MS) earEndTurn(totMs);
+  }
+}
+function earReset(why){ earState='idle'; earChunks=[]; earAboveMs=0; earBelowMs=0; earSpeechMs=0; if(why) dbg('🎤 turno annullato ('+why+')'); if(connected){ setSt('◉ IN ASCOLTO'); dot('dMic','on'); } }
+
+function earEndTurn(totMs){
+  const chunks=earChunks, speech=earSpeechMs; earReset();
+  if(speech<EAR_MIN_SPEECH_MS){ dbg('🎤 rumore breve scartato ('+Math.round(speech)+' ms)'); return; }
+  const wav=earToWav(chunks, ttsCtx.sampleRate, earGain);
+  dbg('🎤 Fine turno: '+(totMs/1000).toFixed(1)+' s di audio ('+Math.round(wav.length/1024)+' KB) · silenzio di chiusura '+earSilMs+' ms');
+  brainAsk('', {b64:earB64(wav), sec:totMs/1000, silMs:earSilMs});
+}
+// Float32 alla frequenza del contesto → WAV 16 kHz mono 16 bit (con gain)
+function earToWav(chunks, sr, gain){
+  const n=chunks.reduce((a,c)=>a+c.length,0), all=new Float32Array(n); let o=0; chunks.forEach(c=>{all.set(c,o);o+=c.length;});
+  const ratio=sr/EAR_SR, outN=Math.floor(n/ratio), pcm=new Int16Array(outN);
+  for(let i=0;i<outN;i++){            // media sui campioni della finestra = filtro anti-aliasing semplice
+    const a=Math.floor(i*ratio), b=Math.min(n,Math.floor((i+1)*ratio)); let s=0; for(let k=a;k<b;k++) s+=all[k];
+    const v=Math.max(-1,Math.min(1,(s/Math.max(1,b-a))*gain)); pcm[i]=v<0?v*32768:v*32767;
+  }
+  const b=new ArrayBuffer(44+pcm.length*2), dv=new DataView(b), w=(p,s)=>{for(let i=0;i<s.length;i++)dv.setUint8(p+i,s.charCodeAt(i));};
+  w(0,'RIFF');dv.setUint32(4,36+pcm.length*2,true);w(8,'WAVE');w(12,'fmt ');dv.setUint32(16,16,true);dv.setUint16(20,1,true);dv.setUint16(22,1,true);
+  dv.setUint32(24,EAR_SR,true);dv.setUint32(28,EAR_SR*2,true);dv.setUint16(32,2,true);dv.setUint16(34,16,true);w(36,'data');dv.setUint32(40,pcm.length*2,true);
+  new Int16Array(b,44).set(pcm); return new Uint8Array(b);
+}
+function earB64(u8){let s=''; for(let i=0;i<u8.length;i+=0x8000) s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000)); return btoa(s);}
+
+// LIV.ZERO: ascolta 1,5 s di rumore di fondo e mette la soglia appena sopra
+function earCalibrate(){
+  if(!earStream){ toast('▶ Prima accendi il microfono (▶ MIC o CONNETTI)'); return; }
+  earCalib={max:0,ms:0}; document.getElementById('btnZero').textContent='…'; toast('🤫 Silenzio 1,5 secondi: misuro il rumore di fondo');
+}
+function earCalibDone(){
+  const v=Math.min(90,Math.max(10,Math.round(earCalib.max+12))); earCalib=null;
+  document.getElementById('rThr').value=v; earSetThr(v); document.getElementById('btnZero').textContent='LIV.ZERO';
+  toast('✅ Soglia voce impostata a '+v+'%'); dbg('🎚 LIV.ZERO: rumore max '+(v-12)+'% → soglia '+v+'%');
+}
+
+// ── Microfono
+async function earStartMic(monitorOnly){
+  earMonitorOnly=!!monitorOnly && !connected;
+  if(earStream) return true;
+  const ctx=ttsEnsureCtx();
+  try{
+    const devId=document.getElementById('selMic').value;
+    earStream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:devId?{exact:devId}:undefined, echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1}});
+  }catch(e){ dbgErr('❌ Microfono: '+e.message); toast('❌ Microfono non disponibile: '+e.message); dot('dMic','er'); return false; }
+  try{
+    const url=URL.createObjectURL(new Blob([EAR_WORKLET],{type:'application/javascript'}));
+    try{ await ctx.audioWorklet.addModule(url); }
+    catch(e){ if(!/already|registered/i.test(e.message)) await ctx.audioWorklet.addModule('data:application/javascript;charset=utf-8,'+encodeURIComponent(EAR_WORKLET)); }
+    earSrc=ctx.createMediaStreamSource(earStream);
+    earNode=new AudioWorkletNode(ctx,'ear-tap');
+    earSink=ctx.createGain(); earSink.gain.value=0;          // il mic NON va in uscita (niente larsen)
+    earSrc.connect(earNode); earNode.connect(earSink); earSink.connect(ctx.destination);
+    earNode.port.onmessage=e=>{ try{ earOnChunk(e.data); }catch(err){ dbgErr('❌ ear: '+err.message); } };
+  }catch(e){ dbgErr('❌ Elaborazione audio: '+e.message); toast('❌ Audio non avviato'); earStopMic(); return false; }
+  earStream.getAudioTracks()[0].addEventListener('ended',()=>{ dbgWarn('⚠️ Il microfono si è interrotto'); earStopMic(); if(connected){ toast('⚠️ Microfono perso: riprovo'); setTimeout(()=>{ if(connected) earStartMic(false); },800);} });
+  dot('dMic', connected?'on':'tk');
+  dbg('🎤 Microfono attivo · '+(earStream.getAudioTracks()[0].label||'predefinito')+' · '+ctx.sampleRate+' Hz');
+  earListMics();
+  return true;
+}
+function earStopMic(){
+  try{ earNode&&earNode.disconnect(); earSrc&&earSrc.disconnect(); earSink&&earSink.disconnect(); }catch(e){}
+  if(earStream) earStream.getTracks().forEach(t=>t.stop());
+  earStream=null; earNode=null; earSrc=null; earSink=null; earReset(); earDrawVU(0,false); dot('dMic','');
+}
+async function earListMics(){
+  try{
+    const sel=document.getElementById('selMic'), cur=sel.value||localStorage.getItem(LS_EAR_MIC)||'';
+    const devs=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audioinput');
+    sel.innerHTML='<option value="">🎤 Auto</option>'+devs.map((d,i)=>'<option value="'+d.deviceId+'">'+(d.label||('Microfono '+(i+1))).replace(/</g,'')+'</option>').join('');
+    if(devs.some(d=>d.deviceId===cur)) sel.value=cur;
+  }catch(e){}
+}
+async function earMicChanged(){
+  try{localStorage.setItem(LS_EAR_MIC,document.getElementById('selMic').value);}catch(e){}
+  if(earStream){ const mon=earMonitorOnly; earStopMic(); await earStartMic(mon); }
+}
+function toggleMute(){
+  muted=!muted; const b=document.getElementById('btnMute');
+  b.textContent=muted?'🔇 MUTO':'🎙 ATTIVO'; b.classList.toggle('on',muted);
+  if(muted&&earState==='speech') earReset('mute');
+  dot('dMic', muted?'muted':(earStream?'on':'')); toast(muted?'🔇 Mic silenziato':'🎙 Mic attivo');
+}
+
+// ── CONNETTI / DISCONNETTI
+async function toggleConn(){ if(connected) disc('utente'); else conn(); }
+async function conn(){
+  const b=document.getElementById('btnConn');
+  if(ttsKey().length<20){ toast('❌ Manca la chiave Gemini (scheda API KEY)'); return; }
+  ttsEnsureCtx();                      // sblocco audio dentro il click
+  b.disabled=true; setSt('◌ AVVIO...');
+  connected=true; earMonitorOnly=false;
+  const ok=await earStartMic(false);
+  b.disabled=false;
+  if(!ok){ connected=false; setSt('● IDLE'); return; }
+  b.classList.add('off'); b.textContent='🔴  DISCONNETTI';
+  chatLog=[]; chatLogStartedAt=Date.now(); silStart=Date.now();
+  setSt('◉ IN ASCOLTO'); dot('dMic','on');
+  addMsg('✨ Connesso · '+brainModelInfo().id+' → '+ttsModelInfo().id,'sys');
+  dbg('✅ Connesso: in ascolto · soglia '+earThr+'% · silenzio fine turno '+earSilMs+' ms · auto-mute '+(document.getElementById('chkAutoMute').checked?'ON':'OFF'));
+  try{ if('wakeLock' in navigator) earWakeLock=await navigator.wakeLock.request('screen'); }catch(e){}
+}
+function disc(reason){
+  connected=false; brainStop(false); earStopMic();
+  const b=document.getElementById('btnConn'); b.classList.remove('off'); b.textContent='✨  CONNETTI';
+  setSt('● IDLE'); silStart=null; dot('dAI',''); dot('dVoice','');
+  try{ earWakeLock&&earWakeLock.release(); }catch(e){} earWakeLock=null;
+  addMsg('🔌 Disconnesso','sys'); dbg('🔌 Disconnesso ('+reason+')');
+  try{ saveChatToFile(reason); }catch(e){}
+}
 
 // ═══════════════════════════════════════════════════════════════
 // STATO, TIMER, COSTO
@@ -1961,6 +2235,7 @@ function resetCost(){
 function init(){
   const ev=document.getElementById('edVoice');
   ev.innerHTML='<option value="">— nessuna —</option>'+GEMINI_VOICES.map(v=>'<option value="'+v+'">'+v+'</option>').join('');
+  earBuildVU(); earLoadPrefs(); earListMics();
   loadKey(); loadKnowLS();
   try{ loadFacesLS(); }catch(e){ dbg('⚠️ loadFacesLS: '+e.message); }
   try{ brainInit(); }catch(e){ dbgErr('❌ brainInit: '+e.message); }
@@ -1973,7 +2248,10 @@ function init(){
   window.addEventListener('offline', ()=>{ health('err','offline'); dot('dNet','er'); });
   // Tornando in primo piano l'audio può essere stato sospeso dal sistema
   document.addEventListener('visibilitychange', ()=>{
-    if(document.visibilityState==='visible'){ try{ if(ttsCtx&&ttsCtx.state==='suspended') ttsCtx.resume(); }catch(e){} }
+    if(document.visibilityState==='visible'){
+      try{ if(ttsCtx&&ttsCtx.state==='suspended') ttsCtx.resume(); }catch(e){}
+      if(connected){ try{ if('wakeLock' in navigator) navigator.wakeLock.request('screen').then(w=>earWakeLock=w).catch(()=>{}); }catch(e){} }
+    }
   });
   dbg('✅ Robot TTS pronto · '+(/Android/i.test(navigator.userAgent)?'Android':/iPhone|iPad/i.test(navigator.userAgent)?'iOS':'Desktop/altro'));
 }
